@@ -1,0 +1,42 @@
+{
+  "name": "Goblin",
+  "abilities": {
+    "strength": 10,
+    "dexterity": 14,
+    "constitution": 10,
+    "intelligence": 10,
+    "wisdom": 8,
+    "charisma": 8
+  },
+  "hit_points": 7,
+  "hit_points_max": 7,
+  "armor_class": 15,
+  "proficiency_bonus": 2,
+  "saving_throws": [],
+  "actions": [
+    {
+      "name": "Scimitar",
+      "description": "A melee weapon attack",
+      "type": "attack",
+      "bonus_to_hit": 4,
+      "damage": [
+        {
+          "type": "SLASHING",
+          "amount": 6
+        }
+      ]
+    },
+    {
+      "name": "Shortbow",
+      "description": "A ranged weapon attack",
+      "type": "attack",
+      "bonus_to_hit": 4,
+      "damage": [
+        {
+          "type": "PIERCING",
+          "amount": 5
+        }
+      ]
+    }
+  ]
+}
