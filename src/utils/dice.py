@@ -1,12 +1,13 @@
 """Dice rolling utilities."""
 
+import re
 import random
-from typing import Tuple, List
+from typing import List, Tuple
 
 
 def roll_d20() -> int:
     """Roll a d20.
-    
+
     Returns:
         Random value from 1-20
     """
@@ -15,61 +16,71 @@ def roll_d20() -> int:
 
 def roll_dice(num_dice: int, num_sides: int) -> int:
     """Roll multiple dice.
-    
+
     Args:
         num_dice: Number of dice to roll
         num_sides: Sides on each die
-        
+
     Returns:
         Sum of all dice rolled
     """
     return sum(random.randint(1, num_sides) for _ in range(num_dice))
 
 
-def parse_dice_formula(formula: str) -> Tuple[int, int, int]:
-    """Parse a dice formula like "2d6+3".
-    
+# Matches tokens like: +2d6, -1d8, +5, -3, 2d6 (leading token, no sign)
+_TOKEN_RE = re.compile(r"([+-]?)(\d+)(?:d(\d+))?", re.IGNORECASE)
+
+
+def parse_dice_formula(formula: str) -> List[Tuple[int, int, int]]:
+    """Parse an arbitrary dice formula like "2d6+1d8+5".
+
+    Each token is returned as (sign, num_dice, num_sides) where num_sides=0
+    means a flat modifier (num_dice holds the value).
+
     Args:
-        formula: Dice formula string
-        
+        formula: Dice formula string, e.g. "2d6+1d8-3" or "1d20+5"
+
     Returns:
-        Tuple of (num_dice, num_sides, modifier)
-        
+        List of (signed_count, num_dice, num_sides) tuples.
+        For flat modifiers num_sides is 0 and signed_count is the modifier value.
+
     Raises:
-        ValueError: If formula is invalid
+        ValueError: If the formula contains no valid tokens.
     """
-    formula = formula.strip().lower()
-    
-    # Split by + or -
-    parts = formula.replace("+", " +").replace("-", " -").split()
-    
-    # Parse dice part
-    if not parts or "d" not in parts[0]:
-        raise ValueError(f"Invalid dice formula: {formula}")
-    
-    dice_parts = parts[0].split("d")
-    num_dice = int(dice_parts[0]) if dice_parts[0] else 1
-    num_sides = int(dice_parts[1])
-    
-    # Parse modifier
-    modifier = 0
-    for part in parts[1:]:
-        modifier += int(part)
-    
-    return num_dice, num_sides, modifier
+    formula = formula.strip().lower().replace(" ", "")
+    tokens = _TOKEN_RE.findall(formula)
+    if not tokens:
+        raise ValueError(f"Invalid dice formula: {formula!r}")
+
+    result = []
+    for sign, number, sides in tokens:
+        multiplier = -1 if sign == "-" else 1
+        if sides:
+            result.append((multiplier * int(number), int(sides), True))
+        else:
+            result.append((multiplier * int(number), 0, False))
+    return result
 
 
 def roll_formula(formula: str) -> int:
-    """Roll a dice formula.
-    
+    """Roll an arbitrary dice formula.
+
+    Supports formulas like "2d6+1d8+5" or "1d20-2".
+
     Args:
-        formula: Dice formula like "2d6+3"
-        
+        formula: Dice formula string
+
     Returns:
         Total result
     """
-    num_dice, num_sides, modifier = parse_dice_formula(formula)
-    return roll_dice(num_dice, num_sides) + modifier
+    total = 0
+    for count_or_val, sides, is_dice in parse_dice_formula(formula):
+        if is_dice:
+            sign = -1 if count_or_val < 0 else 1
+            total += sign * roll_dice(abs(count_or_val), sides)
+        else:
+            total += count_or_val
+    return total
 
 
 def roll_with_advantage() -> int:
