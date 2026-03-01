@@ -24,7 +24,7 @@ longsword = AttackAction(
     name="Longsword",
     description="A melee weapon attack with a longsword",
     bonus_to_hit=5,
-    damage=[Damage(DamageType.SLASHING, 8)]
+    damage=[Damage(DamageType.SLASHING, formula="1d8")]
 )
 fighter_block.add_action(longsword)
 

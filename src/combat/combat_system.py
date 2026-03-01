@@ -8,7 +8,7 @@ from src.models.entity import Entity
 from src.models.damage import Damage, DamageType
 from src.models.action import AttackAction, SpellAction
 from src.models.condition import Condition, ConditionType
-from src.utils.dice import roll_d20, roll_dice
+from src.utils.dice import roll_d20, roll_dice, roll_formula
 from .enums import CombatState
 from .initiative import InitiativeTracker
 
@@ -93,8 +93,10 @@ class CombatSystem:
         total_damage = 0
         if hit or not action.damage:
             for damage in action.damage:
-                # TODO: Parse and roll formula if present
-                total_damage += damage.amount
+                if damage.formula:
+                    total_damage += roll_formula(damage.formula)
+                else:
+                    total_damage += damage.amount
         
         # Apply damage
         if hit:

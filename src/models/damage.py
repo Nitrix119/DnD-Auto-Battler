@@ -33,7 +33,7 @@ class Damage:
     """
     
     damage_type: DamageType
-    amount: int
+    amount: int = 0
     formula: Optional[str] = None
     
     def __post_init__(self) -> None:

@@ -10,7 +10,7 @@
   },
   "hit_points": 7,
   "hit_points_max": 7,
-  "armor_class": 15,
+  "armor_class": 12,
   "proficiency_bonus": 2,
   "saving_throws": [],
   "actions": [
@@ -22,7 +22,8 @@
       "damage": [
         {
           "type": "SLASHING",
-          "amount": 6
+          "amount": 6,
+          "formula": "1d6"
         }
       ]
     },
@@ -34,7 +35,8 @@
       "damage": [
         {
           "type": "PIERCING",
-          "amount": 5
+          "amount": 5,
+          "formula": "1d6"
         }
       ]
     }
