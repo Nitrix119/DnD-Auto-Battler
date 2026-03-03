@@ -1,0 +1,195 @@
+"""Built-in effect handlers for the rule engine.
+
+Writing a new effect handler
+-----------------------------
+An effect handler is any callable with this exact signature::
+
+    def my_effect(
+        effect: dict,
+        ctx: dict,
+        event: CombatEvent,
+        event_bus: EventBus,
+    ) -> None:
+        ...
+
+Parameters
+~~~~~~~~~~
+effect
+    The raw JSON object for this particular effect, as a Python dict.  Every
+    key defined in the JSON is available here.  For example, the JSON fragment::
+
+        { "action": "MyEffect", "target": "event.attacker", "amount": 5 }
+
+    arrives as ``{"action": "MyEffect", "target": "event.attacker", "amount": 5}``.
+
+ctx
+    The expression-evaluation namespace built by ``RuleEngine._make_context``.
+    Pass this to ``_resolve()`` when reading any field that might contain a
+    Python expression string (see below).
+
+event
+    The live ``CombatEvent`` that triggered the rule.  Set
+    ``event.cancelled = True`` inside a handler to abort the action that fired
+    the event (only meaningful for ``ATTACK_DECLARED`` and similar pre-action
+    events that ``CombatSystem`` checks after emitting).
+
+event_bus
+    The ``EventBus`` for this combat.  Call ``event_bus.emit(EventType.X, ...)``
+    if your effect should itself raise further events (e.g. emitting
+    ``CONDITION_ADDED`` after adding a condition).
+
+Using ``_resolve(expr, ctx)``
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Effect fields in JSON can be either literal values or Python expression
+strings that reference the triggering event.  Always use ``_resolve`` when
+reading fields that may be expressions::
+
+    target = _resolve(effect["target"], ctx)  # "event.target" → Entity object
+    dc     = _resolve(effect["dc"],     ctx)  # "max(10, event.total // 2)" → int
+    source = effect.get("source", "")         # plain string literal — no eval needed
+
+``_resolve`` checks ``isinstance(expr, str)``.  If the value *is* a string it
+runs ``eval(expr, {"__builtins__": {}}, ctx)``; otherwise it returns the value
+unchanged.  This means ``"duration": 3`` (an int) and ``"duration": "event.round_num"``
+(a string expression) both work correctly.
+
+Registering a handler
+~~~~~~~~~~~~~~~~~~~~~
+After defining a handler, register it with the ``RuleEngine`` before loading
+any rule that uses it::
+
+    engine.register_effect("MyEffect", my_effect)
+
+Full example — Thorns retaliation
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Python::
+
+    from src.models.damage import Damage, DamageType
+    from src.utils.dice import roll_formula
+
+    def thorns_retaliation(
+        effect: dict,
+        ctx: dict,
+        event: CombatEvent,
+        event_bus: EventBus,
+    ) -> None:
+        attacker = _resolve(effect["attacker"], ctx)
+        amount   = roll_formula(effect["formula"])
+        attacker.take_damage(Damage(DamageType.PIERCING, amount))
+
+    engine.register_effect("ThornsRetaliation", thorns_retaliation)
+
+Matching JSON rule (``rules/thorns.json``)::
+
+    {
+      "name": "thorns_retaliation",
+      "trigger": "ATTACK_HIT",
+      "condition": "hasattr(event, 'defender') and event.defender.has_thorns",
+      "effects": [
+        {
+          "action": "ThornsRetaliation",
+          "attacker": "event.attacker",
+          "formula": "1d6"
+        }
+      ]
+    }
+"""
+
+from src.combat.event_bus import CombatEvent, EventBus
+from src.combat.events import EventType
+from src.models.condition import Condition, ConditionType
+from src.utils.dice import roll_d20, roll_formula
+
+
+_SAFE_BUILTINS = {
+    "max": max, "min": min, "abs": abs, "int": int,
+    "round": round, "bool": bool, "len": len, "hasattr": hasattr,
+}
+
+
+def _resolve(expr, ctx: dict):
+    """Evaluate an expression string in the rule context."""
+    if isinstance(expr, str):
+        return eval(expr, {"__builtins__": {}}, ctx)
+    return expr  # literal value (int, bool, …) — pass through unchanged
+
+
+# ---------------------------------------------------------------------------
+# Built-in effects
+# ---------------------------------------------------------------------------
+
+def apply_condition(effect: dict, ctx: dict, event: CombatEvent, event_bus: EventBus) -> None:
+    """Add a condition to a target entity.
+
+    Required keys:  target (expr), condition_type (str)
+    Optional keys:  duration (int or expr, default None), source (str, default "")
+    """
+    target = _resolve(effect["target"], ctx)
+    ctype = ConditionType[effect["condition_type"].upper()]
+    duration = _resolve(effect.get("duration"), ctx) if "duration" in effect else None
+    source = effect.get("source", "")
+    condition = Condition(condition_type=ctype, duration_rounds=duration, source=source)
+    target.add_condition(condition)
+    event_bus.emit(EventType.CONDITION_ADDED, entity=target, condition=condition)
+
+
+def remove_condition_type(effect: dict, ctx: dict, event: CombatEvent, event_bus: EventBus) -> None:
+    """Remove all conditions of a given type from a target.
+
+    Required keys:  target (expr), condition_type (str)
+    """
+    target = _resolve(effect["target"], ctx)
+    ctype = ConditionType[effect["condition_type"].upper()]
+    indices = [
+        i for i, c in enumerate(target.get_active_conditions())
+        if c.condition_type == ctype
+    ]
+    for i in reversed(indices):  # remove back-to-front to keep indices valid
+        target.remove_condition(i)
+        event_bus.emit(EventType.CONDITION_REMOVED, entity=target, condition_type=ctype)
+
+
+def force_concentration_check(effect: dict, ctx: dict, event: CombatEvent, event_bus: EventBus) -> None:
+    """Force a CON saving throw to maintain concentration.
+
+    Required keys:  target (expr), dc (expr → int)
+
+    On a failed save, ``target.concentrating_on`` is set to None.
+    """
+    target = _resolve(effect["target"], ctx)
+    dc = int(_resolve(effect["dc"], ctx))
+    con_bonus = target.stat_block.get_saving_throw_bonus("constitution")
+    roll = roll_d20() + con_bonus
+    if roll < dc:
+        target.concentrating_on = None
+
+
+def cancel_event(effect: dict, ctx: dict, event: CombatEvent, event_bus: EventBus) -> None:
+    """Cancel the triggering event, aborting the action that caused it.
+
+    No required keys.
+    """
+    event.cancelled = True
+
+
+def heal_target(effect: dict, ctx: dict, event: CombatEvent, event_bus: EventBus) -> None:
+    """Heal a target by a dice formula.
+
+    Required keys:  target (expr), formula (str, e.g. "1d6" or "2d4+2")
+    """
+    target = _resolve(effect["target"], ctx)
+    amount = roll_formula(effect["formula"])
+    target.heal(amount)
+
+
+# ---------------------------------------------------------------------------
+# Registry
+# ---------------------------------------------------------------------------
+
+BUILTIN_EFFECTS = {
+    "ApplyCondition": apply_condition,
+    "RemoveConditionType": remove_condition_type,
+    "ForceConcentrationCheck": force_concentration_check,
+    "Cancel": cancel_event,
+    "HealTarget": heal_target,
+}

@@ -9,6 +9,8 @@ from src.models.action import AttackAction, SpellAction
 from src.models.condition import Condition, ConditionType
 from src.utils.dice import roll_d20, roll_dice, roll_formula
 from .enums import CombatState
+from .event_bus import EventBus
+from .events import EventType
 from .initiative import InitiativeTracker
 
 
@@ -42,6 +44,7 @@ class CombatSystem:
         self.turn: int = 0
         self.combatants: List[Entity] = []
         self.log: List[CombatLog] = []
+        self.event_bus: EventBus = EventBus()
     
     def add_combatant(self, entity: Entity, initiative_modifier: int = 0) -> None:
         """Add an entity to combat.
@@ -66,8 +69,12 @@ class CombatSystem:
         self.state = CombatState.ACTIVE
         self.round = 1
         self.turn = 1
-        self._log_action(self.initiative_tracker.get_current_entity(), 
+        self._log_action(self.initiative_tracker.get_current_entity(),
                         "Combat started!")
+        self.event_bus.emit(EventType.ROUND_START, round_num=self.round)
+        self.event_bus.emit(EventType.TURN_START,
+                            entity=self.initiative_tracker.get_current_entity(),
+                            round_num=self.round, turn_num=self.turn)
     
     def resolve_attack(self, attacker: Entity, defender: Entity, 
                        action: AttackAction) -> Tuple[bool, int]:
@@ -81,29 +88,47 @@ class CombatSystem:
         Returns:
             Tuple of (hit, total_damage)
         """
+        # Allow handlers to cancel before the roll (e.g. Shield spell)
+        declared = self.event_bus.emit(EventType.ATTACK_DECLARED,
+                                       attacker=attacker, defender=defender, action=action)
+        if declared.cancelled:
+            return False, 0
+
         # Attack roll
         attack_roll = roll_d20()
         attack_total = attack_roll + action.bonus_to_hit
-        
+
         # Determine if hit
         hit = attack_total >= defender.ac
-        
+
         # Roll and apply damage per type
         total_damage = 0
         if hit:
-            for d in action.roll_damage():
+            self.event_bus.emit(EventType.ATTACK_HIT,
+                                attacker=attacker, defender=defender,
+                                action=action, roll=attack_total)
+            was_alive = defender.is_alive()
+            rolled_damages = action.roll_damage()
+            for d in rolled_damages:
                 defender.take_damage(d)
                 total_damage += d.amount
+            self.event_bus.emit(EventType.DAMAGE_DEALT,
+                                defender=defender, damage_list=rolled_damages, total=total_damage)
+            if was_alive and not defender.is_alive():
+                self.event_bus.emit(EventType.ENTITY_DIES, entity=defender, killer=attacker)
             self._log_action(attacker,
-                           f"attacked {defender.name} with {action.name}. "
-                           f"Attack: {attack_roll}+{action.bonus_to_hit}={attack_total} vs AC {defender.ac}. "
-                           f"Hit! Damage: {total_damage}")
+                             f"attacked {defender.name} with {action.name}. "
+                             f"Attack: {attack_roll}+{action.bonus_to_hit}={attack_total} vs AC {defender.ac}. "
+                             f"Hit! Damage: {total_damage}")
         else:
+            self.event_bus.emit(EventType.ATTACK_MISS,
+                                attacker=attacker, defender=defender,
+                                action=action, roll=attack_total)
             self._log_action(attacker,
-                           f"attacked {defender.name} with {action.name}. "
-                           f"Attack: {attack_roll}+{action.bonus_to_hit}={attack_total} vs AC {defender.ac}. "
-                           f"Miss!")
-        
+                             f"attacked {defender.name} with {action.name}. "
+                             f"Attack: {attack_roll}+{action.bonus_to_hit}={attack_total} vs AC {defender.ac}. "
+                             f"Miss!")
+
         return hit, total_damage
 
     def resolve_spell(self, caster: Entity, defenders: List[Entity],
@@ -126,6 +151,8 @@ class CombatSystem:
             List of (hit, damage_dealt) per defender, in the same order as
             defenders.
         """
+        self.event_bus.emit(EventType.SPELL_CAST, caster=caster, defenders=defenders, action=action)
+
         # Roll damage once — the same total applies to every target
         rolled_damages = action.roll_damage()
         total_damage = sum(d.amount for d in rolled_damages)
@@ -144,8 +171,17 @@ class CombatSystem:
 
                 damage_dealt = total_damage if hit else 0
                 if hit:
+                    self.event_bus.emit(EventType.SPELL_HIT,
+                                        caster=caster, defender=defender,
+                                        action=action, roll=attack_total)
+                    was_alive = defender.is_alive()
                     for d in rolled_damages:
                         defender.take_damage(d)
+                    self.event_bus.emit(EventType.DAMAGE_DEALT,
+                                        defender=defender, damage_list=rolled_damages,
+                                        total=damage_dealt)
+                    if was_alive and not defender.is_alive():
+                        self.event_bus.emit(EventType.ENTITY_DIES, entity=defender, killer=caster)
 
                 hit_str = f"Hit! Damage: {damage_dealt}" if hit else "Miss!"
                 self._log_action(
@@ -158,8 +194,15 @@ class CombatSystem:
                 # No attack roll — auto-hit (saving throws via TODO above)
                 hit = True
                 damage_dealt = total_damage
+                self.event_bus.emit(EventType.SPELL_HIT,
+                                    caster=caster, defender=defender, action=action, roll=None)
+                was_alive = defender.is_alive()
                 for d in rolled_damages:
                     defender.take_damage(d)
+                self.event_bus.emit(EventType.DAMAGE_DEALT,
+                                    defender=defender, damage_list=rolled_damages, total=damage_dealt)
+                if was_alive and not defender.is_alive():
+                    self.event_bus.emit(EventType.ENTITY_DIES, entity=defender, killer=caster)
 
                 self._log_action(
                     caster,
@@ -192,19 +235,27 @@ class CombatSystem:
     
     def end_turn(self) -> None:
         """End the current entity's turn and advance to the next."""
+        current_entity = self.initiative_tracker.get_current_entity()
+        self.event_bus.emit(EventType.TURN_END,
+                            entity=current_entity, round_num=self.round, turn_num=self.turn)
+
         next_entity = self.initiative_tracker.next_turn()
         self.turn += 1
-        
+
         # If we've gone through all entities, increment round
         if self.initiative_tracker.current_turn_index == 0:
+            self.event_bus.emit(EventType.ROUND_END, round_num=self.round)
             self.round += 1
             self.turn = 1
-        
+            self.event_bus.emit(EventType.ROUND_START, round_num=self.round)
+
         # Check for alive combatants
         alive_combatants = [c for c in self.combatants if c.is_alive()]
         if len(alive_combatants) <= 1:
             self.end_combat()
         else:
+            self.event_bus.emit(EventType.TURN_START,
+                                entity=next_entity, round_num=self.round, turn_num=self.turn)
             self._log_action(next_entity, "takes turn")
     
     def end_combat(self) -> None:

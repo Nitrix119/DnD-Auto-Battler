@@ -24,6 +24,7 @@ class Entity:
     entity_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     initiative_roll: Optional[int] = None
     is_player_controlled: bool = False
+    concentrating_on: Optional[str] = None  # spell name if currently concentrating
     
     def __post_init__(self) -> None:
         """Validate entity."""
@@ -98,6 +99,11 @@ class Entity:
         """
         return self.stat_block.conditions.copy()
     
+    @property
+    def has_concentration(self) -> bool:
+        """True if the entity is currently concentrating on a spell."""
+        return self.concentrating_on is not None
+
     @property
     def name(self) -> str:
         """Get entity name from stat block."""

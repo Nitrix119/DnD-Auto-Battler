@@ -1,0 +1,12 @@
+{
+  "name": "concentration_damage_check",
+  "trigger": "DAMAGE_DEALT",
+  "condition": "event.defender.has_concentration",
+  "effects": [
+    {
+      "action": "ForceConcentrationCheck",
+      "target": "event.defender",
+      "dc": "max(10, event.total // 2)"
+    }
+  ]
+}
