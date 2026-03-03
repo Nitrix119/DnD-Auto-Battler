@@ -6,6 +6,7 @@ import uuid
 
 from .stat_block import StatBlock
 from .condition import Condition
+from .damage import Damage
 
 
 @dataclass
@@ -39,16 +40,16 @@ class Entity:
             return self.entity_id == other.entity_id
         return False
     
-    def take_damage(self, amount: int) -> int:
+    def take_damage(self, damage: Damage) -> int:
         """Damage the entity.
-        
+
         Args:
-            amount: Damage to take
-            
+            damage: The damage to apply
+
         Returns:
             Current hit points
         """
-        return self.stat_block.take_damage(amount)
+        return self.stat_block.take_damage(damage)
     
     def heal(self, amount: int) -> int:
         """Heal the entity.

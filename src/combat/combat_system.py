@@ -89,19 +89,14 @@ class CombatSystem:
         # Determine if hit
         hit = attack_total >= defender.ac
         
-        # Calculate damage
+        # Roll and apply damage per type
         total_damage = 0
-        if hit or not action.damage:
-            for damage in action.damage:
-                if damage.formula:
-                    total_damage += roll_formula(damage.formula)
-                else:
-                    total_damage += damage.amount
-        
-        # Apply damage
         if hit:
-            defender.take_damage(total_damage)
-            self._log_action(attacker, 
+            for d in action.damage:
+                amount = roll_formula(d.formula) if d.formula else d.amount
+                defender.take_damage(Damage(d.damage_type, amount))
+                total_damage += amount
+            self._log_action(attacker,
                            f"attacked {defender.name} with {action.name}. "
                            f"Attack: {attack_roll}+{action.bonus_to_hit}={attack_total} vs AC {defender.ac}. "
                            f"Hit! Damage: {total_damage}")
@@ -112,7 +107,76 @@ class CombatSystem:
                            f"Miss!")
         
         return hit, total_damage
-    
+
+    def resolve_spell(self, caster: Entity, defenders: List[Entity],
+                      action: SpellAction) -> List[Tuple[bool, int]]:
+        """Resolve a spell action against one or more targets.
+
+        Damage is rolled once and applied to every target, matching D&D rules
+        (e.g. Fireball rolls 8d6 once and deals that total to each creature
+        in the area).
+
+        Spell attack rolls are made per-target when the spell uses them.
+        Saving throws are not yet implemented (see TODO below).
+
+        Args:
+            caster: Entity casting the spell
+            defenders: Entities the spell is targeting
+            action: The spell action being resolved
+
+        Returns:
+            List of (hit, damage_dealt) per defender, in the same order as
+            defenders.
+        """
+        # Roll damage once — the same total applies to every target
+        rolled_damages: List[Damage] = []
+        total_damage = 0
+        for d in action.damage:
+            amount = roll_formula(d.formula) if d.formula else d.amount
+            rolled_damages.append(Damage(d.damage_type, amount))
+            total_damage += amount
+
+        # TODO: Implement saving throws (action.save_dc > 0).  Currently all
+        #       targets with a save DC are treated as if they failed the save
+        #       and take full damage.
+
+        results: List[Tuple[bool, int]] = []
+        for defender in defenders:
+            if action.spell_attack_bonus != 0 and action.save_dc == 0:
+                # Spell requires an attack roll (e.g. Fire Bolt, Chromatic Orb)
+                attack_roll = roll_d20()
+                attack_total = attack_roll + action.spell_attack_bonus
+                hit = attack_total >= defender.ac
+
+                damage_dealt = total_damage if hit else 0
+                if hit:
+                    for d in rolled_damages:
+                        defender.take_damage(d)
+
+                hit_str = f"Hit! Damage: {damage_dealt}" if hit else "Miss!"
+                self._log_action(
+                    caster,
+                    f"cast {action.name} at {defender.name}. "
+                    f"Spell attack: {attack_roll}+{action.spell_attack_bonus}"
+                    f"={attack_total} vs AC {defender.ac}. {hit_str}"
+                )
+            else:
+                # No attack roll — auto-hit (saving throws via TODO above)
+                hit = True
+                damage_dealt = total_damage
+                for d in rolled_damages:
+                    defender.take_damage(d)
+
+                self._log_action(
+                    caster,
+                    f"cast {action.name} at {defender.name}. "
+                    f"Damage: {damage_dealt}"
+                )
+
+            results.append((hit, damage_dealt))
+
+        return results
+
     def resolve_saving_throw(self, defender: Entity, ability: str, 
                             dc: int) -> Tuple[int, bool]:
         """Resolve a saving throw.

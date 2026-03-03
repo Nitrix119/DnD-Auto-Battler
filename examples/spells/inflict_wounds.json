@@ -1,0 +1,32 @@
+{
+  "name": "Inflict Wounds",
+  "description": "Make a melee spell attack against a creature you can reach. On a hit, the target takes 3d10 necrotic damage.",
+  "type": "spell",
+  "spell_level": 1,
+  "spell_attack_bonus": 0,
+  "save_dc": 0,
+  "damage": [
+    {
+      "type": "NECROTIC",
+      "amount": 16,
+      "formula": "3d10"
+    }
+  ],
+  "spell_range": {
+    "type": "touch"
+  },
+  "targeting_type": "single_target",
+  "casting_time": {
+    "type": "action",
+    "count": 1
+  },
+  "duration": {
+    "unit": "instantaneous"
+  },
+  "components": {
+    "verbal": true,
+    "somatic": true,
+    "material": []
+  },
+  "higher_level_scaling": "When you cast this spell using a spell slot of 2nd level or higher, the damage increases by 1d10 for each slot level above 1st."
+}

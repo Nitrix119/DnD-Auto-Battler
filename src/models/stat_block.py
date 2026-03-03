@@ -6,6 +6,7 @@ from typing import Dict, List, Optional
 from .ability import AbilityScores
 from .skill import Skill, STANDARD_SKILLS
 from .condition import Condition
+from .damage import Damage
 from .action import Action
 
 
@@ -84,16 +85,16 @@ class StatBlock:
             return ability_modifier + self.proficiency_bonus
         return ability_modifier
     
-    def take_damage(self, amount: int) -> int:
+    def take_damage(self, damage: Damage) -> int:
         """Reduce hit points and return remaining HP.
-        
+
         Args:
-            amount: The damage to take
-            
+            damage: The damage to apply
+
         Returns:
             Current hit points after damage
         """
-        self.hit_points = max(0, self.hit_points - amount)
+        self.hit_points = max(0, self.hit_points - damage.amount)
         return self.hit_points
     
     def heal(self, amount: int) -> int:
