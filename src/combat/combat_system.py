@@ -5,7 +5,6 @@ from typing import List, Optional, Tuple
 from enum import Enum
 
 from src.models.entity import Entity
-from src.models.damage import Damage, DamageType
 from src.models.action import AttackAction, SpellAction
 from src.models.condition import Condition, ConditionType
 from src.utils.dice import roll_d20, roll_dice, roll_formula
@@ -92,10 +91,9 @@ class CombatSystem:
         # Roll and apply damage per type
         total_damage = 0
         if hit:
-            for d in action.damage:
-                amount = roll_formula(d.formula) if d.formula else d.amount
-                defender.take_damage(Damage(d.damage_type, amount))
-                total_damage += amount
+            for d in action.roll_damage():
+                defender.take_damage(d)
+                total_damage += d.amount
             self._log_action(attacker,
                            f"attacked {defender.name} with {action.name}. "
                            f"Attack: {attack_roll}+{action.bonus_to_hit}={attack_total} vs AC {defender.ac}. "
@@ -129,12 +127,8 @@ class CombatSystem:
             defenders.
         """
         # Roll damage once — the same total applies to every target
-        rolled_damages: List[Damage] = []
-        total_damage = 0
-        for d in action.damage:
-            amount = roll_formula(d.formula) if d.formula else d.amount
-            rolled_damages.append(Damage(d.damage_type, amount))
-            total_damage += amount
+        rolled_damages = action.roll_damage()
+        total_damage = sum(d.amount for d in rolled_damages)
 
         # TODO: Implement saving throws (action.save_dc > 0).  Currently all
         #       targets with a save DC are treated as if they failed the save

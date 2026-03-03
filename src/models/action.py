@@ -5,6 +5,7 @@ from typing import Optional, List
 from enum import Enum
 
 from .damage import DamageType, Damage
+from src.utils.dice import roll_formula
 from .spell_properties import (
     SpellRange, RangeType,
     TargetingType,
@@ -38,10 +39,27 @@ class Action:
     description: str
     action_type: ActionType
     recharge: Optional[str] = None
-    
+    damage: List[Damage] = field(default_factory=list)
+
     def __hash__(self) -> int:
         """Make action hashable for use in sets/dicts."""
         return hash(self.name)
+
+    def roll_damage(self) -> List[Damage]:
+        """Roll all damage formulas and return concrete Damage instances.
+
+        Each entry in damage is rolled independently and returned as a new
+        Damage object with a concrete amount and the original damage type.
+        Entries without a formula use their fixed amount directly.
+
+        Returns:
+            List of Damage objects with rolled amounts, one per damage entry.
+        """
+        rolled = []
+        for d in self.damage:
+            amount = roll_formula(d.formula) if d.formula else d.amount
+            rolled.append(Damage(d.damage_type, amount))
+        return rolled
 
 
 @dataclass
@@ -56,13 +74,7 @@ class AttackAction(Action):
 
     action_type: ActionType = ActionType.ATTACK
     bonus_to_hit: int = 0
-    damage: List[Damage] = None
     damage_half_on_save: Optional[tuple] = None  # (ability, dc)
-    
-    def __post_init__(self) -> None:
-        """Initialize default values."""
-        if self.damage is None:
-            self.damage = []
 
 
 @dataclass
@@ -87,7 +99,6 @@ class SpellAction(Action):
     action_type: ActionType = ActionType.SPELL
     spell_level: int = 0
     save_dc: int = 0
-    damage: List[Damage] = None
     spell_attack_bonus: int = 0
     spell_range: SpellRange = field(default_factory=lambda: SpellRange(RangeType.TOUCH))
     targeting_type: TargetingType = TargetingType.SINGLE_TARGET
@@ -98,9 +109,7 @@ class SpellAction(Action):
     higher_level_scaling: Optional[str] = None  # TODO: structured scaling rules
 
     def __post_init__(self) -> None:
-        """Initialize default values and validate."""
-        if self.damage is None:
-            self.damage = []
+        """Validate spell properties."""
         if self.spell_level < 0 or self.spell_level > 9:
             raise ValueError("Spell level must be between 0 and 9")
         if self.targeting_type == TargetingType.AOE and self.aoe is None:
