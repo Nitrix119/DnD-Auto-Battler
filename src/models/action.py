@@ -40,6 +40,7 @@ class Action:
     action_type: ActionType
     recharge: Optional[str] = None
     damage: List[Damage] = field(default_factory=list)
+    bonus_damage: List[Damage] = field(default_factory=list)
 
     def __hash__(self) -> int:
         """Make action hashable for use in sets/dicts."""
@@ -52,13 +53,17 @@ class Action:
         Damage object with a concrete amount and the original damage type.
         Entries without a formula use their fixed amount directly.
 
+        bonus_damage entries are also included and consumed (cleared) so that
+        one-shot additions (e.g. Colossus Slayer) don't persist to future attacks.
+
         Returns:
             List of Damage objects with rolled amounts, one per damage entry.
         """
         rolled = []
-        for d in self.damage:
+        for d in self.damage + self.bonus_damage:
             amount = roll_formula(d.formula) if d.formula else d.amount
             rolled.append(Damage(d.damage_type, amount))
+        self.bonus_damage.clear()
         return rolled
 
 

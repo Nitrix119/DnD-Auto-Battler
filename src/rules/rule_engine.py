@@ -66,9 +66,10 @@ for ``ROUND_START``, not crash the combat.
 """
 
 from types import SimpleNamespace
-from typing import Callable, Dict, List
+from typing import Callable, Dict, List, Optional
 
 from src.combat.event_bus import CombatEvent, EventBus
+from src.combat.events import EventType
 from .effects import BUILTIN_EFFECTS
 from .rule import Rule
 from .rule_loader import RuleLoader
@@ -98,10 +99,15 @@ class RuleEngine:
     example of writing a new effect.
     """
 
-    def __init__(self, event_bus: EventBus) -> None:
+    def __init__(self, event_bus: EventBus,
+                 entities_getter: Optional[Callable[[], list]] = None) -> None:
         self.event_bus = event_bus
+        self._entities_getter = entities_getter
         self._rules: List[Rule] = []
         self._effect_registry: Dict[str, EffectHandler] = dict(BUILTIN_EFFECTS)
+        if entities_getter is not None:
+            for event_type in EventType:
+                event_bus.subscribe(event_type, self._handle_entity_effects)
 
     # ------------------------------------------------------------------
     # Public API
@@ -140,6 +146,14 @@ class RuleEngine:
         self.load_rule(rule)
         return rule
 
+    def apply_effect(self, entity, rule: Rule) -> None:
+        """Attach a rule as an entity-scoped effect."""
+        entity.add_effect(rule.trigger.value, rule)
+
+    def remove_effect(self, entity, name: str) -> None:
+        """Remove a named effect from an entity."""
+        entity.remove_effect(name)
+
     # ------------------------------------------------------------------
     # Internal
     # ------------------------------------------------------------------
@@ -164,11 +178,13 @@ class RuleEngine:
     def _eval(self, expr: str, ctx: dict):
         return eval(expr, {"__builtins__": {}}, ctx)
 
-    def _dispatch(self, rule: Rule, event: CombatEvent) -> None:
+    def _dispatch(self, rule: Rule, event: CombatEvent, entity=None) -> None:
         if not rule.enabled:
             return
 
         ctx = self._make_context(event)
+        if entity is not None:
+            ctx["entity"] = entity
 
         if rule.condition:
             try:
@@ -191,3 +207,27 @@ class RuleEngine:
             # Stop processing further effects if the event was cancelled.
             if event.cancelled:
                 break
+
+    def _handle_entity_effects(self, event: CombatEvent) -> None:
+        """Iterate all entities and dispatch their effects for this trigger."""
+        trigger_str = event.event_type.value
+        for entity in self._entities_getter():
+            for effect_rule in list(entity.get_effects_for_trigger(trigger_str)):
+                self._dispatch(effect_rule, event, entity=entity)
+        if event.event_type == EventType.TURN_END:
+            self._tick_durations(event.data.get("entity"))
+
+    def _tick_durations(self, entity) -> None:
+        """Decrement duration_rounds for entity's effects; remove expired ones."""
+        if entity is None:
+            return
+        for trigger_str, bucket in list(entity.active_effects.items()):
+            bucket[:] = [e for e in bucket if not self._tick_one(e)]
+
+    @staticmethod
+    def _tick_one(rule: Rule) -> bool:
+        """Decrement and return True if expired."""
+        if rule.duration_rounds is None:
+            return False
+        rule.duration_rounds -= 1
+        return rule.duration_rounds <= 0

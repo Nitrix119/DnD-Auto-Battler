@@ -98,6 +98,7 @@ Matching JSON rule (``rules/thorns.json``)::
 from src.combat.event_bus import CombatEvent, EventBus
 from src.combat.events import EventType
 from src.models.condition import Condition, ConditionType
+from src.models.damage import Damage, DamageType
 from src.utils.dice import roll_d20, roll_formula
 
 
@@ -182,6 +183,62 @@ def heal_target(effect: dict, ctx: dict, event: CombatEvent, event_bus: EventBus
     target.heal(amount)
 
 
+def _resolve_damage_type(raw, ctx: dict) -> DamageType:
+    """Resolve a damage_type value to a DamageType enum member.
+
+    Accepts three forms:
+    - A ``DamageType`` instance already (returned as-is).
+    - A plain string name such as ``"POISON"`` or ``"fire"`` (looked up directly).
+    - A Python expression string such as ``"event.action.damage[0].damage_type"``
+      (evaluated via ``_resolve``; the result is then coerced to ``DamageType``).
+
+    Falls back to ``DamageType.GENERIC`` if none of the above succeed.
+    """
+    if isinstance(raw, DamageType):
+        return raw
+    if isinstance(raw, str):
+        # Try as a literal enum name first to avoid eval on simple strings.
+        try:
+            return DamageType[raw.upper()]
+        except KeyError:
+            pass
+        # Must be an expression — evaluate it.
+        try:
+            resolved = _resolve(raw, ctx)
+            return resolved if isinstance(resolved, DamageType) else DamageType[resolved.upper()]
+        except (AttributeError, KeyError, NameError):
+            pass
+    return DamageType.GENERIC
+
+
+def deal_damage(effect: dict, ctx: dict, event: CombatEvent, event_bus: EventBus) -> None:
+    """Deal damage to a target by dice formula.
+
+    Required keys:  target (expr), formula (str), damage_type (str)
+    """
+    target = _resolve(effect["target"], ctx)
+    amount = roll_formula(effect["formula"])
+    dtype = _resolve_damage_type(effect["damage_type"], ctx)
+    dmg = Damage(dtype, amount)
+    target.take_damage(dmg)
+    event_bus.emit(EventType.DAMAGE_DEALT,
+                   defender=target, damage_list=[dmg], total=amount)
+
+
+def add_damage(effect: dict, ctx: dict, event: CombatEvent, event_bus: EventBus) -> None:
+    """Add a bonus damage die to the triggering attack's roll_damage() call.
+
+    The damage is appended to ``event.action.bonus_damage`` and consumed when
+    ``action.roll_damage()`` is called, so it is applied in the same instance
+    as the attack damage and does not fire a separate DAMAGE_DEALT event.
+
+    Required keys:  attack_action (expr → Action), formula (str), damage_type (str or expr)
+    """
+    action = _resolve(effect["attack_action"], ctx)
+    dtype = _resolve_damage_type(effect["damage_type"], ctx)
+    action.bonus_damage.append(Damage(dtype, formula=effect["formula"]))
+
+
 # ---------------------------------------------------------------------------
 # Registry
 # ---------------------------------------------------------------------------
@@ -192,4 +249,6 @@ BUILTIN_EFFECTS = {
     "ForceConcentrationCheck": force_concentration_check,
     "Cancel": cancel_event,
     "HealTarget": heal_target,
+    "DealDamage": deal_damage,
+    "AddDamage": add_damage,
 }

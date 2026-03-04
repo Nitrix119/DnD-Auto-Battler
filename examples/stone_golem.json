@@ -1,0 +1,31 @@
+{
+  "name": "Stone Golem",
+  "abilities": {
+    "strength": 20,
+    "dexterity": 9,
+    "constitution": 20,
+    "intelligence": 3,
+    "wisdom": 11,
+    "charisma": 1
+  },
+  "hit_points": 178,
+  "hit_points_max": 178,
+  "armor_class": 17,
+  "proficiency_bonus": 5,
+  "saving_throws": [],
+  "actions": [
+    {
+      "name": "Slam",
+      "description": "Melee weapon attack",
+      "type": "attack",
+      "bonus_to_hit": 10,
+      "damage": [
+        {
+          "type": "BLUDGEONING",
+          "amount": 19,
+          "formula": "3d8+6"
+        }
+      ]
+    }
+  ]
+}

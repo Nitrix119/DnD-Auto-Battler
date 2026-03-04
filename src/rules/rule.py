@@ -23,3 +23,5 @@ class Rule:
     effects: List[Dict[str, Any]]
     condition: Optional[str] = None
     enabled: bool = True
+    duration_rounds: Optional[int] = None  # None = permanent; set for entity effects that expire
+    source: str = ""                       # what applied this effect (spell name, item, etc.)

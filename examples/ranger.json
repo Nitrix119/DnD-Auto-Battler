@@ -1,0 +1,57 @@
+{
+  "name": "Hunter Ranger",
+  "abilities": {
+    "strength": 10,
+    "dexterity": 16,
+    "constitution": 12,
+    "intelligence": 10,
+    "wisdom": 14,
+    "charisma": 8
+  },
+  "hit_points": 38,
+  "hit_points_max": 38,
+  "armor_class": 15,
+  "proficiency_bonus": 2,
+  "saving_throws": ["strength", "dexterity"],
+  "actions": [
+    {
+      "name": "Club",
+      "description": "A melee weapon attack",
+      "type": "attack",
+      "bonus_to_hit": 2,
+      "damage": [
+        {
+          "type": "BLUDGEONING",
+          "amount": 3,
+          "formula": "1d4"
+        }
+      ]
+    },
+    {
+      "name": "Shortsword",
+      "description": "A light finesse melee weapon attack. Note: assigned SLASHING here to cover all three mundane types in tests; RAW a shortsword deals piercing.",
+      "type": "attack",
+      "bonus_to_hit": 5,
+      "damage": [
+        {
+          "type": "SLASHING",
+          "amount": 6,
+          "formula": "1d6"
+        }
+      ]
+    },
+    {
+      "name": "Shortbow",
+      "description": "A ranged weapon attack",
+      "type": "attack",
+      "bonus_to_hit": 5,
+      "damage": [
+        {
+          "type": "PIERCING",
+          "amount": 6,
+          "formula": "1d6"
+        }
+      ]
+    }
+  ]
+}

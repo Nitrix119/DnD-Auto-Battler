@@ -1,0 +1,15 @@
+{
+  "name": "poisoned",
+  "trigger": "TURN_START",
+  "condition": "event.entity == entity",
+  "effects": [
+    {
+      "action": "DealDamage",
+      "target": "entity",
+      "formula": "1d6",
+      "damage_type": "POISON"
+    }
+  ],
+  "duration_rounds": 3,
+  "source": "Spider Bite"
+}

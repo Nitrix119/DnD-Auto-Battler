@@ -7,6 +7,7 @@ from typing import Optional
 
 class DamageType(Enum):
     """D&D 5e damage types."""
+    GENERIC = "generic"
     ACID = "acid"
     BLUDGEONING = "bludgeoning"
     COLD = "cold"

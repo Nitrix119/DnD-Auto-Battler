@@ -54,4 +54,6 @@ class RuleLoader:
             effects=data["effects"],
             condition=data.get("condition"),
             enabled=data.get("enabled", True),
+            duration_rounds=data.get("duration_rounds"),
+            source=data.get("source", ""),
         )

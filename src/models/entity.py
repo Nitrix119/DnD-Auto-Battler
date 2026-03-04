@@ -25,7 +25,8 @@ class Entity:
     initiative_roll: Optional[int] = None
     is_player_controlled: bool = False
     concentrating_on: Optional[str] = None  # spell name if currently concentrating
-    
+    active_effects: dict = field(default_factory=dict)  # {trigger_str: [Rule, ...]}
+
     def __post_init__(self) -> None:
         """Validate entity."""
         if not self.stat_block:
@@ -99,6 +100,19 @@ class Entity:
         """
         return self.stat_block.conditions.copy()
     
+    def add_effect(self, trigger: str, effect) -> None:
+        """Add an effect to the trigger bucket. Called by RuleEngine.apply_effect."""
+        self.active_effects.setdefault(trigger, []).append(effect)
+
+    def remove_effect(self, name: str) -> None:
+        """Remove all effects matching this name across all trigger buckets."""
+        for bucket in self.active_effects.values():
+            bucket[:] = [e for e in bucket if e.name != name]
+
+    def get_effects_for_trigger(self, trigger: str) -> list:
+        """Get all effects for a given trigger string."""
+        return self.active_effects.get(trigger, [])
+
     @property
     def has_concentration(self) -> bool:
         """True if the entity is currently concentrating on a spell."""
