@@ -1,0 +1,44 @@
+{
+  "name": "Fighter",
+  "abilities": {
+    "strength": 18,
+    "dexterity": 13,
+    "constitution": 16,
+    "intelligence": 10,
+    "wisdom": 12,
+    "charisma": 8
+  },
+  "hit_points": 52,
+  "hit_points_max": 52,
+  "armor_class": 18,
+  "proficiency_bonus": 3,
+  "saving_throws": ["strength", "constitution"],
+  "actions": [
+    {
+      "name": "Longsword",
+      "description": "A melee weapon attack",
+      "type": "attack",
+      "bonus_to_hit": 7,
+      "damage": [
+        {
+          "type": "SLASHING",
+          "amount": 8,
+          "formula": "1d8+4"
+        }
+      ]
+    },
+    {
+      "name": "Handaxe",
+      "description": "A thrown melee weapon attack",
+      "type": "attack",
+      "bonus_to_hit": 7,
+      "damage": [
+        {
+          "type": "SLASHING",
+          "amount": 10,
+          "formula": "1d6+4"
+        }
+      ]
+    }
+  ]
+}

@@ -20,12 +20,12 @@ ENTITY_EFFECTS_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "..", "
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
 def load_ranger() -> Entity:
-    sb = StatBlockLoader.load_from_json(os.path.join(EXAMPLES_DIR, "ranger.json"))
+    sb = StatBlockLoader.load_from_json(os.path.join(EXAMPLES_DIR, "creatures/characters/ranger.json"))
     return Entity(sb)
 
 
 def load_golem() -> Entity:
-    sb = StatBlockLoader.load_from_json(os.path.join(EXAMPLES_DIR, "stone_golem.json"))
+    sb = StatBlockLoader.load_from_json(os.path.join(EXAMPLES_DIR, "creatures/stone_golem.json"))
     return Entity(sb)
 
 
@@ -125,6 +125,22 @@ class TestColossusSlayerDamageInheritance:
         _, action = self._hit_with_weapon("Shortbow")
         action.roll_damage()
         assert len(action.bonus_damage) == 0
+
+    def test_bonus_damage_only_applies_to_ranger_not_other_attackers(self):
+        """Colossus Slayer must not grant bonus damage to a non-ranger attacker."""
+        ranger = load_ranger()
+        golem = load_golem()
+        # Pre-wound the ranger so hp < max_hp (CS condition satisfied if it were checked).
+        ranger.take_damage(Damage(DamageType.BLUDGEONING, 10))
+
+        bus, _ = setup_engine(ranger, golem)
+
+        # Use one of the golem's actions as the attacking action.
+        golem_action = golem.stat_block.actions[0]
+        # Golem attacks the (wounded) ranger — CS effect should not apply.
+        bus.emit(EventType.ATTACK_HIT, attacker=golem, defender=ranger, action=golem_action)
+
+        assert len(golem_action.bonus_damage) == 0
 
     def test_does_not_fire_at_full_hp(self):
         """Colossus Slayer must not fire if the target is at full HP."""

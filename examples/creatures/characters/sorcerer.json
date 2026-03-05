@@ -1,0 +1,31 @@
+{
+  "name": "Sorcerer",
+  "abilities": {
+    "strength": 8,
+    "dexterity": 14,
+    "constitution": 14,
+    "intelligence": 12,
+    "wisdom": 10,
+    "charisma": 18
+  },
+  "hit_points": 28,
+  "hit_points_max": 28,
+  "armor_class": 12,
+  "proficiency_bonus": 3,
+  "saving_throws": ["constitution", "charisma"],
+  "actions": [
+    {
+      "name": "Dagger",
+      "description": "A melee weapon attack",
+      "type": "attack",
+      "bonus_to_hit": 5,
+      "damage": [
+        {
+          "type": "PIERCING",
+          "amount": 6,
+          "formula": "1d4+2"
+        }
+      ]
+    }
+  ]
+}

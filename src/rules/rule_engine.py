@@ -103,8 +103,11 @@ class RuleEngine:
                  entities_getter: Optional[Callable[[], list]] = None) -> None:
         self.event_bus = event_bus
         self._entities_getter = entities_getter
-        self._rules: List[Rule] = []
+        self._rules: Dict[EventType, List[Rule]] = {}  # {trigger: [Rule, ...]}
         self._effect_registry: Dict[str, EffectHandler] = dict(BUILTIN_EFFECTS)
+        # Index for fast entity-effect dispatch: {EventType: [(entity, Rule), ...]}
+        # Avoids iterating all entities on every event.
+        self._entity_effects: Dict[EventType, list] = {}
         if entities_getter is not None:
             for event_type in EventType:
                 event_bus.subscribe(event_type, self._handle_entity_effects)
@@ -129,9 +132,12 @@ class RuleEngine:
         Args:
             rule: A Rule instance (e.g. from RuleLoader).
         """
-        self._rules.append(rule)
-        # Capture rule in closure so each subscription references its own Rule.
-        self.event_bus.subscribe(rule.trigger, lambda e, r=rule: self._dispatch(r, e))
+        trigger = rule.trigger
+        if trigger not in self._rules:
+            self._rules[trigger] = []
+            # Subscribe one handler per trigger; it dispatches all rules for that event.
+            self.event_bus.subscribe(trigger, lambda e, t=trigger: self._dispatch_trigger(t, e))
+        self._rules[trigger].append(rule)
 
     def load_from_file(self, path: str) -> Rule:
         """Load a JSON rule file and register it.
@@ -149,10 +155,16 @@ class RuleEngine:
     def apply_effect(self, entity, rule: Rule) -> None:
         """Attach a rule as an entity-scoped effect."""
         entity.add_effect(rule.trigger.value, rule)
+        self._entity_effects.setdefault(rule.trigger, []).append((entity, rule))
 
     def remove_effect(self, entity, name: str) -> None:
         """Remove a named effect from an entity."""
         entity.remove_effect(name)
+        for trigger in list(self._entity_effects):
+            self._entity_effects[trigger] = [
+                (e, r) for e, r in self._entity_effects[trigger]
+                if not (e is entity and r.name == name)
+            ]
 
     # ------------------------------------------------------------------
     # Internal
@@ -178,6 +190,11 @@ class RuleEngine:
     def _eval(self, expr: str, ctx: dict):
         return eval(expr, {"__builtins__": {}}, ctx)
 
+    def _dispatch_trigger(self, trigger: EventType, event: CombatEvent) -> None:
+        """Dispatch all global rules registered for *trigger*."""
+        for rule in list(self._rules.get(trigger, [])):
+            self._dispatch(rule, event)
+
     def _dispatch(self, rule: Rule, event: CombatEvent, entity=None) -> None:
         if not rule.enabled:
             return
@@ -186,9 +203,9 @@ class RuleEngine:
         if entity is not None:
             ctx["entity"] = entity
 
-        if rule.condition:
+        if rule._compiled_condition is not None:
             try:
-                if not self._eval(rule.condition, ctx):
+                if not self._eval(rule._compiled_condition, ctx):
                     return
             except Exception:
                 # Condition couldn't be evaluated (e.g. missing attribute on
@@ -209,11 +226,9 @@ class RuleEngine:
                 break
 
     def _handle_entity_effects(self, event: CombatEvent) -> None:
-        """Iterate all entities and dispatch their effects for this trigger."""
-        trigger_str = event.event_type.value
-        for entity in self._entities_getter():
-            for effect_rule in list(entity.get_effects_for_trigger(trigger_str)):
-                self._dispatch(effect_rule, event, entity=entity)
+        """Dispatch entity-scoped effects for this trigger using the pre-built index."""
+        for entity, rule in list(self._entity_effects.get(event.event_type, [])):
+            self._dispatch(rule, event, entity=entity)
         if event.event_type == EventType.TURN_END:
             self._tick_durations(event.data.get("entity"))
 
@@ -221,8 +236,21 @@ class RuleEngine:
         """Decrement duration_rounds for entity's effects; remove expired ones."""
         if entity is None:
             return
+        expired_names: set = set()
         for trigger_str, bucket in list(entity.active_effects.items()):
-            bucket[:] = [e for e in bucket if not self._tick_one(e)]
+            surviving = []
+            for rule in bucket:
+                if self._tick_one(rule):
+                    expired_names.add(rule.name)
+                else:
+                    surviving.append(rule)
+            bucket[:] = surviving
+        if expired_names:
+            for trigger in list(self._entity_effects):
+                self._entity_effects[trigger] = [
+                    (e, r) for e, r in self._entity_effects[trigger]
+                    if not (e is entity and r.name in expired_names)
+                ]
 
     @staticmethod
     def _tick_one(rule: Rule) -> bool:

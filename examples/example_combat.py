@@ -32,7 +32,7 @@ fighter = Entity(fighter_block, is_player_controlled=True)
 
 # Load goblin from JSON
 try:
-    goblin_block = StatBlockLoader.load_from_json("examples/goblin.json")
+    goblin_block = StatBlockLoader.load_from_json("examples/creatures/goblin.json")
     goblin = Entity(goblin_block)
     
     # Set up combat

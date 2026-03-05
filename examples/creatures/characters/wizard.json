@@ -1,0 +1,15 @@
+{
+  "name": "Wizard",
+  "abilities": {
+    "strength": 8,
+    "dexterity": 14,
+    "constitution": 14,
+    "intelligence": 18,
+    "wisdom": 12,
+    "charisma": 10
+  },
+  "hit_points": 28,
+  "hit_points_max": 28,
+  "armor_class": 12,
+  "proficiency_bonus": 3
+}

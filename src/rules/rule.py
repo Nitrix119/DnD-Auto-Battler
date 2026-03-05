@@ -25,3 +25,11 @@ class Rule:
     enabled: bool = True
     duration_rounds: Optional[int] = None  # None = permanent; set for entity effects that expire
     source: str = ""                       # what applied this effect (spell name, item, etc.)
+
+    def __post_init__(self):
+        # Pre-compile the condition expression once so eval() uses bytecode on
+        # every subsequent trigger rather than re-parsing the string each time.
+        self._compiled_condition = (
+            compile(self.condition, f"<rule:{self.name}>", "eval")
+            if self.condition else None
+        )

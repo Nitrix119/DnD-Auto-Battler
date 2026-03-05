@@ -1,0 +1,44 @@
+{
+  "name": "Rogue",
+  "abilities": {
+    "strength": 10,
+    "dexterity": 18,
+    "constitution": 12,
+    "intelligence": 14,
+    "wisdom": 12,
+    "charisma": 12
+  },
+  "hit_points": 33,
+  "hit_points_max": 33,
+  "armor_class": 15,
+  "proficiency_bonus": 3,
+  "saving_throws": ["dexterity", "intelligence"],
+  "actions": [
+    {
+      "name": "Shortsword",
+      "description": "A melee weapon attack",
+      "type": "attack",
+      "bonus_to_hit": 7,
+      "damage": [
+        {
+          "type": "PIERCING",
+          "amount": 8,
+          "formula": "1d6+4"
+        }
+      ]
+    },
+    {
+      "name": "Hand Crossbow",
+      "description": "A ranged weapon attack",
+      "type": "attack",
+      "bonus_to_hit": 7,
+      "damage": [
+        {
+          "type": "PIERCING",
+          "amount": 8,
+          "formula": "1d6+4"
+        }
+      ]
+    }
+  ]
+}

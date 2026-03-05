@@ -4,7 +4,7 @@ import pytest
 from pathlib import Path
 
 from src.models import (
-    AbilityScores, StatBlock, Entity,
+    Entity,
     SpellAction, Damage, DamageType,
     RangeType, TargetingType, AOEShape,
     CastingTimeType, DurationUnit,
@@ -15,6 +15,7 @@ from src.utils.dice import roll_d20, roll_formula
 
 EXAMPLES_DIR = Path(__file__).parent.parent / "examples"
 SPELLS_DIR = EXAMPLES_DIR / "spells"
+CHARACTERS_DIR = EXAMPLES_DIR / "creatures/characters"
 
 # Wizard stats: INT 18 (+4), proficiency +3 → spell attack +7, save DC 15
 _WIZARD_SPELL_ATTACK = 7
@@ -80,29 +81,14 @@ class TestSpellCombat:
     @pytest.fixture
     def wizard(self) -> Entity:
         """Level-5 wizard: INT 18, proficiency +3, spell attack +7, DC 15."""
-        abilities = AbilityScores(
-            strength=8,
-            dexterity=14,
-            constitution=14,
-            intelligence=18,
-            wisdom=12,
-            charisma=10,
-        )
-        stat_block = StatBlock(
-            name="Wizard",
-            ability_scores=abilities,
-            hit_points=28,
-            hit_points_max=28,
-            armor_class=12,
-            proficiency_bonus=3,
-        )
-        return Entity(stat_block, is_player_controlled=True)
+        sb = StatBlockLoader.load_from_json(str(CHARACTERS_DIR / "wizard.json"))
+        return Entity(sb, is_player_controlled=True)
 
     @pytest.fixture
     def goblins(self):
         """Three independent goblin entities loaded from examples/goblin.json."""
         def _make():
-            sb = StatBlockLoader.load_from_json(str(EXAMPLES_DIR / "goblin.json"))
+            sb = StatBlockLoader.load_from_json(str(EXAMPLES_DIR / "creatures/goblin.json"))
             return Entity(sb)
         return [_make() for _ in range(3)]
 
