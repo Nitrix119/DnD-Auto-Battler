@@ -225,6 +225,26 @@ def deal_damage(effect: dict, ctx: dict, event: CombatEvent, event_bus: EventBus
                    defender=target, damage_list=[dmg], total=amount)
 
 
+def grant_advantage(effect: dict, ctx: dict, event: CombatEvent, event_bus: EventBus) -> None:
+    """Set the advantage flag on the triggering event.
+
+    Meaningful for ATTACK_DECLARED events. The CombatSystem checks
+    event.data["advantage"] after emitting ATTACK_DECLARED to decide
+    how to roll the d20.
+
+    No required keys.
+    """
+    event.data["advantage"] = True
+
+
+def grant_disadvantage(effect: dict, ctx: dict, event: CombatEvent, event_bus: EventBus) -> None:
+    """Set the disadvantage flag on the triggering event.
+
+    See grant_advantage for details.
+    """
+    event.data["disadvantage"] = True
+
+
 def add_damage(effect: dict, ctx: dict, event: CombatEvent, event_bus: EventBus) -> None:
     """Add a bonus damage die to the triggering attack's roll_damage() call.
 
@@ -251,4 +271,6 @@ BUILTIN_EFFECTS = {
     "HealTarget": heal_target,
     "DealDamage": deal_damage,
     "AddDamage": add_damage,
+    "GrantAdvantage": grant_advantage,
+    "GrantDisadvantage": grant_disadvantage,
 }

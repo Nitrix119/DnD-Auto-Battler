@@ -1,15 +1,7 @@
 {
   "name": "poisoned",
-  "trigger": "TURN_START",
-  "condition": "event.entity == entity",
-  "effects": [
-    {
-      "action": "DealDamage",
-      "target": "entity",
-      "formula": "1d6",
-      "damage_type": "POISON"
-    }
-  ],
-  "duration_rounds": 3,
-  "source": "Spider Bite"
+  "trigger": "ATTACK_DECLARED",
+  "condition": "event.attacker == entity",
+  "effects": [],
+  "_note": "Poisoned: disadvantage on attack rolls and ability checks. Pending: advantage/disadvantage system. For damage-over-time poison effects (e.g. spider bite), use spider_bite_poison.json or a similar custom rule."
 }

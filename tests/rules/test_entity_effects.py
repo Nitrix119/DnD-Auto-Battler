@@ -30,7 +30,7 @@ def make_entity(name="Tester", hp=30, ac=10, con=10):
 
 
 def load_poison_rule(duration=None):
-    rule = RuleLoader.load(os.path.join(ENTITY_EFFECTS_DIR, "poisoned.json"))
+    rule = RuleLoader.load(os.path.join(ENTITY_EFFECTS_DIR, "spider_bite_poison.json"))
     if duration is not None:
         rule.duration_rounds = duration
     return rule
@@ -75,7 +75,7 @@ class TestEntityEffectStorage:
         entity = make_entity()
         rule = load_poison_rule()
         entity.add_effect("turn_start", rule)
-        entity.remove_effect("poisoned")
+        entity.remove_effect("spider_bite_poison")
         assert entity.get_effects_for_trigger("turn_start") == []
 
     def test_remove_effect_leaves_others(self):
@@ -85,7 +85,7 @@ class TestEntityEffectStorage:
         r2.name = "burning"
         entity.add_effect("turn_start", r1)
         entity.add_effect("turn_start", r2)
-        entity.remove_effect("poisoned")
+        entity.remove_effect("spider_bite_poison")
         assert len(entity.get_effects_for_trigger("turn_start")) == 1
         assert entity.get_effects_for_trigger("turn_start")[0].name == "burning"
 
@@ -108,7 +108,7 @@ class TestRuleEngineEntityAPI:
         entity = make_entity()
         rule = load_poison_rule()
         engine.apply_effect(entity, rule)
-        engine.remove_effect(entity, "poisoned")
+        engine.remove_effect(entity, "spider_bite_poison")
         assert entity.get_effects_for_trigger("turn_start") == []
 
 
@@ -319,10 +319,10 @@ class TestGlobalRulesWithEntitiesGetter:
 
 class TestEntityEffectJSONLoading:
 
-    def test_load_poisoned_json(self):
-        path = os.path.join(ENTITY_EFFECTS_DIR, "poisoned.json")
+    def test_load_spider_bite_poison_json(self):
+        path = os.path.join(ENTITY_EFFECTS_DIR, "spider_bite_poison.json")
         rule = RuleLoader.load(path)
-        assert rule.name == "poisoned"
+        assert rule.name == "spider_bite_poison"
         assert rule.trigger == EventType.TURN_START
         assert rule.duration_rounds == 3
         assert rule.source == "Spider Bite"

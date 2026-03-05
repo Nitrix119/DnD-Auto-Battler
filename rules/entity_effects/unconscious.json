@@ -1,0 +1,9 @@
+{
+  "name": "unconscious",
+  "trigger": "ATTACK_DECLARED",
+  "condition": "event.attacker == entity",
+  "effects": [
+    { "action": "Cancel" }
+  ],
+  "_note": "Unconscious: incapacitated, cannot move or speak, unaware of surroundings. Drops held items, falls prone. Attack rolls against it have advantage. Any attack that hits within 5 ft is a critical hit. Automatically fails STR and DEX saving throws. Pending: prone application on onset, auto-critical logic, save hooks, advantage/disadvantage."
+}

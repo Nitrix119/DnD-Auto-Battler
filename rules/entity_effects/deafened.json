@@ -1,0 +1,7 @@
+{
+  "name": "deafened",
+  "trigger": "TURN_START",
+  "condition": "event.entity == entity",
+  "effects": [],
+  "_note": "Deafened: cannot hear, automatically fails any check that requires hearing. Pending: ability check system."
+}

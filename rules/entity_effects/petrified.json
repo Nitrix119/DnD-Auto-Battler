@@ -1,0 +1,9 @@
+{
+  "name": "petrified",
+  "trigger": "ATTACK_DECLARED",
+  "condition": "event.attacker == entity",
+  "effects": [
+    { "action": "Cancel" }
+  ],
+  "_note": "Petrified: transformed into stone — incapacitated, weight increases tenfold, ceases to age. Attack rolls against it have advantage. Automatically fails STR and DEX saving throws. Resistance to all damage. Immune to poison and disease (existing poison/disease suspended). Pending: resistance system, save hooks, advantage/disadvantage."
+}

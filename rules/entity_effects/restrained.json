@@ -1,0 +1,7 @@
+{
+  "name": "restrained",
+  "trigger": "ATTACK_DECLARED",
+  "condition": "event.attacker == entity",
+  "effects": [],
+  "_note": "Restrained: speed becomes 0 and cannot benefit from any bonus to speed. Attack rolls against it have advantage. Its attack rolls have disadvantage. Disadvantage on DEX saving throws. Pending: movement system, save hooks, and advantage/disadvantage."
+}

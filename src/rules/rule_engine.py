@@ -213,6 +213,15 @@ class RuleEngine:
                 return
 
         for effect in rule.effects:
+            # Per-effect condition gate (optional "when" key)
+            when_expr = effect.get("when")
+            if when_expr is not None:
+                try:
+                    if not self._eval(when_expr, ctx):
+                        continue
+                except Exception:
+                    continue
+
             action = effect.get("action")
             handler = self._effect_registry.get(action)
             if handler is None:

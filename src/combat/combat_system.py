@@ -7,7 +7,7 @@ from enum import Enum
 from src.models.entity import Entity
 from src.models.action import AttackAction, SpellAction
 from src.models.condition import Condition, ConditionType
-from src.utils.dice import roll_d20, roll_dice, roll_formula
+from src.utils.dice import roll_d20, roll_dice, roll_formula, roll_with_advantage, roll_with_disadvantage
 from .enums import CombatState
 from .event_bus import EventBus
 from .events import EventType
@@ -76,15 +76,43 @@ class CombatSystem:
                             entity=self.initiative_tracker.get_current_entity(),
                             round_num=self.round, turn_num=self.turn)
     
-    def resolve_attack(self, attacker: Entity, defender: Entity, 
+    @staticmethod
+    def _roll_mode_label(declared) -> str:
+        """Return a log-friendly label like ' (advantage)' from event flags."""
+        has_adv = declared.data.get("advantage", False)
+        has_dis = declared.data.get("disadvantage", False)
+        if has_adv and not has_dis:
+            return " (advantage)"
+        if has_dis and not has_adv:
+            return " (disadvantage)"
+        return ""
+
+    def _resolve_attack_roll(self, declared) -> int:
+        """Roll d20 with advantage/disadvantage based on event flags.
+
+        Entity effects (e.g. Blinded) set ``advantage`` / ``disadvantage``
+        flags on the ATTACK_DECLARED event data.  Per D&D 5e, if both are
+        present they cancel out to a normal roll.
+        """
+        has_adv = declared.data.get("advantage", False)
+        has_dis = declared.data.get("disadvantage", False)
+        if has_adv and has_dis:
+            return roll_d20()
+        if has_adv:
+            return roll_with_advantage()
+        if has_dis:
+            return roll_with_disadvantage()
+        return roll_d20()
+
+    def resolve_attack(self, attacker: Entity, defender: Entity,
                        action: AttackAction) -> Tuple[bool, int]:
         """Resolve an attack roll and damage.
-        
+
         Args:
             attacker: Entity making the attack
             defender: Entity being attacked
             action: The attack action
-            
+
         Returns:
             Tuple of (hit, total_damage)
         """
@@ -94,9 +122,10 @@ class CombatSystem:
         if declared.cancelled:
             return False, 0
 
-        # Attack roll
-        attack_roll = roll_d20()
+        # Attack roll (respects advantage/disadvantage set by entity effects)
+        attack_roll = self._resolve_attack_roll(declared)
         attack_total = attack_roll + action.bonus_to_hit
+        roll_mode = self._roll_mode_label(declared)
 
         # Determine if hit
         hit = attack_total >= defender.ac
@@ -118,7 +147,7 @@ class CombatSystem:
                 self.event_bus.emit(EventType.ENTITY_DIES, entity=defender, killer=attacker)
             self._log_action(attacker,
                              f"attacked {defender.name} with {action.name}. "
-                             f"Attack: {attack_roll}+{action.bonus_to_hit}={attack_total} vs AC {defender.ac}. "
+                             f"Attack{roll_mode}: {attack_roll}+{action.bonus_to_hit}={attack_total} vs AC {defender.ac}. "
                              f"Hit! Damage: {total_damage}")
         else:
             self.event_bus.emit(EventType.ATTACK_MISS,
@@ -126,7 +155,7 @@ class CombatSystem:
                                 action=action, roll=attack_total)
             self._log_action(attacker,
                              f"attacked {defender.name} with {action.name}. "
-                             f"Attack: {attack_roll}+{action.bonus_to_hit}={attack_total} vs AC {defender.ac}. "
+                             f"Attack{roll_mode}: {attack_roll}+{action.bonus_to_hit}={attack_total} vs AC {defender.ac}. "
                              f"Miss!")
 
         return hit, total_damage
@@ -165,9 +194,17 @@ class CombatSystem:
         for defender in defenders:
             if action.spell_attack_bonus != 0 and action.save_dc == 0:
                 # Spell requires an attack roll (e.g. Fire Bolt, Chromatic Orb)
-                attack_roll = roll_d20()
+                spell_declared = self.event_bus.emit(
+                    EventType.ATTACK_DECLARED,
+                    attacker=caster, defender=defender, action=action)
+                if spell_declared.cancelled:
+                    results.append((False, 0))
+                    continue
+
+                attack_roll = self._resolve_attack_roll(spell_declared)
                 attack_total = attack_roll + action.spell_attack_bonus
                 hit = attack_total >= defender.ac
+                roll_mode = self._roll_mode_label(spell_declared)
 
                 damage_dealt = total_damage if hit else 0
                 if hit:
@@ -187,7 +224,7 @@ class CombatSystem:
                 self._log_action(
                     caster,
                     f"cast {action.name} at {defender.name}. "
-                    f"Spell attack: {attack_roll}+{action.spell_attack_bonus}"
+                    f"Spell attack{roll_mode}: {attack_roll}+{action.spell_attack_bonus}"
                     f"={attack_total} vs AC {defender.ac}. {hit_str}"
                 )
             else:

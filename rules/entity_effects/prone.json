@@ -1,0 +1,7 @@
+{
+  "name": "prone",
+  "trigger": "ATTACK_DECLARED",
+  "condition": "event.attacker == entity",
+  "effects": [],
+  "_note": "Prone: only movement option is to crawl (costs double movement) or stand up (costs half speed). Disadvantage on attack rolls. Melee attack rolls against the prone creature have advantage; ranged attack rolls have disadvantage. Pending: movement system and advantage/disadvantage."
+}
