@@ -1,6 +1,6 @@
 {
   "name": "blinded",
-  "trigger": "ATTACK_DECLARED",
+  "triggers": ["ATTACK_DECLARED"],
   "condition": "event.attacker == entity or event.defender == entity",
   "effects": [
     { "action": "GrantDisadvantage", "when": "event.attacker == entity" },

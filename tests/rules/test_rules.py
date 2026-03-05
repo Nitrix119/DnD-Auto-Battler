@@ -43,11 +43,11 @@ class TestRuleLoader:
     def test_from_dict_minimal(self):
         rule = RuleLoader.from_dict({
             "name": "my_rule",
-            "trigger": "DAMAGE_DEALT",
+            "triggers": ["DAMAGE_DEALT"],
             "effects": [{"action": "Cancel"}],
         })
         assert rule.name == "my_rule"
-        assert rule.trigger == EventType.DAMAGE_DEALT
+        assert rule.triggers == [EventType.DAMAGE_DEALT]
         assert rule.effects == [{"action": "Cancel"}]
         assert rule.condition is None
         assert rule.enabled is True
@@ -55,7 +55,7 @@ class TestRuleLoader:
     def test_from_dict_with_condition(self):
         rule = RuleLoader.from_dict({
             "name": "guarded",
-            "trigger": "ATTACK_DECLARED",
+            "triggers": ["ATTACK_DECLARED"],
             "condition": "event.defender.hp > 0",
             "effects": [],
         })
@@ -64,7 +64,7 @@ class TestRuleLoader:
     def test_from_dict_enabled_false(self):
         rule = RuleLoader.from_dict({
             "name": "disabled",
-            "trigger": "TURN_START",
+            "triggers": ["TURN_START"],
             "effects": [],
             "enabled": False,
         })
@@ -74,14 +74,14 @@ class TestRuleLoader:
         with pytest.raises(ValueError, match="Unknown trigger"):
             RuleLoader.from_dict({
                 "name": "bad",
-                "trigger": "NOT_A_REAL_EVENT",
+                "triggers": ["NOT_A_REAL_EVENT"],
                 "effects": [],
             })
 
     def test_load_from_file(self):
         rule = RuleLoader.load(CONCENTRATION_JSON)
         assert rule.name == "concentration_damage_check"
-        assert rule.trigger == EventType.DAMAGE_DEALT
+        assert rule.triggers == [EventType.DAMAGE_DEALT]
         assert rule.condition == "event.defender.has_concentration"
         assert len(rule.effects) == 1
         assert rule.effects[0]["action"] == "ForceConcentrationCheck"
@@ -104,7 +104,7 @@ class TestRuleEngine:
         engine.register_effect("Spy", lambda e, ctx, ev, eb: fired.append(True))
         engine.load_rule(Rule(
             name="spy",
-            trigger=EventType.TURN_START,
+            triggers=[EventType.TURN_START],
             effects=[{"action": "Spy"}],
         ))
         bus.emit(EventType.TURN_START, entity=make_entity())
@@ -115,7 +115,7 @@ class TestRuleEngine:
         engine.register_effect("Spy", lambda e, ctx, ev, eb: fired.append(True))
         engine.load_rule(Rule(
             name="spy",
-            trigger=EventType.TURN_START,
+            triggers=[EventType.TURN_START],
             effects=[{"action": "Spy"}],
             condition="1 == 1",
         ))
@@ -127,7 +127,7 @@ class TestRuleEngine:
         engine.register_effect("Spy", lambda e, ctx, ev, eb: fired.append(True))
         engine.load_rule(Rule(
             name="spy",
-            trigger=EventType.TURN_START,
+            triggers=[EventType.TURN_START],
             effects=[{"action": "Spy"}],
             condition="1 == 2",
         ))
@@ -140,7 +140,7 @@ class TestRuleEngine:
         engine.register_effect("Spy", lambda e, ctx, ev, eb: fired.append(True))
         engine.load_rule(Rule(
             name="spy",
-            trigger=EventType.TURN_START,
+            triggers=[EventType.TURN_START],
             effects=[{"action": "Spy"}],
             condition="event.nonexistent_field",
         ))
@@ -152,7 +152,7 @@ class TestRuleEngine:
         engine.register_effect("Spy", lambda e, ctx, ev, eb: fired.append(True))
         rule = Rule(
             name="spy",
-            trigger=EventType.TURN_START,
+            triggers=[EventType.TURN_START],
             effects=[{"action": "Spy"}],
             enabled=False,
         )
@@ -163,7 +163,7 @@ class TestRuleEngine:
     def test_rule_can_be_disabled_after_loading(self, bus, engine):
         fired = []
         engine.register_effect("Spy", lambda e, ctx, ev, eb: fired.append(True))
-        rule = Rule(name="spy", trigger=EventType.TURN_START, effects=[{"action": "Spy"}])
+        rule = Rule(name="spy", triggers=[EventType.TURN_START], effects=[{"action": "Spy"}])
         engine.load_rule(rule)
 
         rule.enabled = False
@@ -174,13 +174,13 @@ class TestRuleEngine:
         log = []
         engine.register_effect("SpyA", lambda e, ctx, ev, eb: log.append("A"))
         engine.register_effect("SpyB", lambda e, ctx, ev, eb: log.append("B"))
-        engine.load_rule(Rule("ruleA", EventType.TURN_START, [{"action": "SpyA"}]))
-        engine.load_rule(Rule("ruleB", EventType.TURN_START, [{"action": "SpyB"}]))
+        engine.load_rule(Rule("ruleA", [EventType.TURN_START], [{"action": "SpyA"}]))
+        engine.load_rule(Rule("ruleB", [EventType.TURN_START], [{"action": "SpyB"}]))
         bus.emit(EventType.TURN_START, entity=make_entity())
         assert "A" in log and "B" in log
 
     def test_unknown_effect_raises(self, bus, engine):
-        engine.load_rule(Rule("bad", EventType.TURN_START, [{"action": "DoesNotExist"}]))
+        engine.load_rule(Rule("bad", [EventType.TURN_START], [{"action": "DoesNotExist"}]))
         with pytest.raises(ValueError, match="unknown effect action"):
             bus.emit(EventType.TURN_START, entity=make_entity())
 
@@ -190,7 +190,7 @@ class TestRuleEngine:
         engine.register_effect("Spy", lambda e, ctx, ev, eb: log.append("ran"))
         engine.load_rule(Rule(
             name="cancel_then_spy",
-            trigger=EventType.ATTACK_DECLARED,
+            triggers=[EventType.ATTACK_DECLARED],
             effects=[{"action": "Cancel"}, {"action": "Spy"}],
         ))
         event = bus.emit(EventType.ATTACK_DECLARED,
@@ -201,13 +201,13 @@ class TestRuleEngine:
     def test_register_custom_effect(self, bus, engine):
         results = []
         engine.register_effect("Custom", lambda e, ctx, ev, eb: results.append(e["value"]))
-        engine.load_rule(Rule("c", EventType.TURN_END, [{"action": "Custom", "value": 42}]))
+        engine.load_rule(Rule("c", [EventType.TURN_END], [{"action": "Custom", "value": 42}]))
         bus.emit(EventType.TURN_END, entity=make_entity())
         assert results == [42]
 
     def test_load_from_file_registers_rule(self, bus, engine):
         rule = engine.load_from_file(CONCENTRATION_JSON)
-        assert rule.trigger == EventType.DAMAGE_DEALT
+        assert rule.triggers == [EventType.DAMAGE_DEALT]
         # Verify it's subscribed: a non-concentrating entity causes no crash
         entity = make_entity()
         bus.emit(EventType.DAMAGE_DEALT, defender=entity, damage_list=[], total=10)
@@ -328,7 +328,7 @@ class TestCancelEffect:
         engine = RuleEngine(combat.event_bus)
         engine.load_rule(Rule(
             name="always_cancel",
-            trigger=EventType.ATTACK_DECLARED,
+            triggers=[EventType.ATTACK_DECLARED],
             effects=[{"action": "Cancel"}],
         ))
 

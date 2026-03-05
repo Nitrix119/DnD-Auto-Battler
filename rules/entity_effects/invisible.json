@@ -1,7 +1,0 @@
-{
-  "name": "invisible",
-  "trigger": "ATTACK_DECLARED",
-  "condition": "event.attacker == entity",
-  "effects": [],
-  "_note": "Invisible: impossible to see without special sense. Attack rolls against the invisible creature have disadvantage; the creature's attack rolls have advantage. Treated as heavily obscured for hiding. Pending: advantage/disadvantage system."
-}

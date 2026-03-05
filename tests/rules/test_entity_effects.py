@@ -11,9 +11,8 @@ from src.combat import EventBus, CombatEvent, EventType
 from src.rules import Rule, RuleEngine, RuleLoader
 from src.rules.effects import deal_damage
 
-ENTITY_EFFECTS_DIR = os.path.join(
-    os.path.dirname(__file__), "..", "..", "rules", "entity_effects"
-)
+ENTITY_EFFECTS_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "rules", "entity_effects")
+CONDITIONS_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "rules", "entity_effects", "conditions")
 
 
 # ── Shared helpers ────────────────────────────────────────────────────────────
@@ -29,7 +28,7 @@ def make_entity(name="Tester", hp=30, ac=10, con=10):
 
 
 def load_poison_rule(duration=None):
-    rule = RuleLoader.load(os.path.join(ENTITY_EFFECTS_DIR, "spider_bite_poison.json"))
+    rule = RuleLoader.load(os.path.join(CONDITIONS_DIR, "spider_bite_poison.json"))
     if duration is not None:
         rule.duration_rounds = duration
     return rule
@@ -298,7 +297,7 @@ class TestGlobalRulesWithEntitiesGetter:
         # Load concentration check as a global rule
         conc_rule = RuleLoader.from_dict({
             "name": "concentration_check",
-            "trigger": "DAMAGE_DEALT",
+            "triggers": ["DAMAGE_DEALT"],
             "condition": "event.defender.has_concentration",
             "effects": [{"action": "ForceConcentrationCheck",
                          "target": "event.defender",
@@ -319,10 +318,10 @@ class TestGlobalRulesWithEntitiesGetter:
 class TestEntityEffectJSONLoading:
 
     def test_load_spider_bite_poison_json(self):
-        path = os.path.join(ENTITY_EFFECTS_DIR, "spider_bite_poison.json")
+        path = os.path.join(CONDITIONS_DIR, "spider_bite_poison.json")
         rule = RuleLoader.load(path)
         assert rule.name == "spider_bite_poison"
-        assert rule.trigger == EventType.TURN_START
+        assert rule.triggers == [EventType.TURN_START]
         assert rule.duration_rounds == 3
         assert rule.source == "Spider Bite"
 
@@ -330,7 +329,7 @@ class TestEntityEffectJSONLoading:
         path = os.path.join(ENTITY_EFFECTS_DIR, "colossus_slayer.json")
         rule = RuleLoader.load(path)
         assert rule.name == "colossus_slayer"
-        assert rule.trigger == EventType.ATTACK_HIT
+        assert rule.triggers == [EventType.ATTACK_HIT]
         assert rule.duration_rounds is None
         assert rule.source == "Colossus Slayer"
 
@@ -356,7 +355,7 @@ class TestDamageIncoming:
         # Register a global resistance rule: halve all incoming damage
         engine.load_rule(Rule(
             name="fire_resistance",
-            trigger=EventType.DAMAGE_INCOMING,
+            triggers=[EventType.DAMAGE_INCOMING],
             effects=[{"action": "ModifyDamage", "multiplier": 0.5}],
         ))
 
@@ -388,7 +387,7 @@ class TestDamageIncoming:
         engine = RuleEngine(combat.event_bus)
         engine.load_rule(Rule(
             name="immunity",
-            trigger=EventType.DAMAGE_INCOMING,
+            triggers=[EventType.DAMAGE_INCOMING],
             effects=[{"action": "Cancel"}],
         ))
 

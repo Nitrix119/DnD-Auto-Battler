@@ -1,9 +1,0 @@
-{
-  "name": "incapacitated",
-  "trigger": "ATTACK_DECLARED",
-  "condition": "event.attacker == entity",
-  "effects": [
-    { "action": "Cancel" }
-  ],
-  "_note": "Incapacitated: cannot take actions or reactions. Also cancels spell casting — add a separate SPELL_CAST rule when that event type supports cancellation."
-}

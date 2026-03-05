@@ -1,7 +1,0 @@
-{
-  "name": "charmed",
-  "trigger": "ATTACK_DECLARED",
-  "condition": "event.attacker == entity",
-  "effects": [],
-  "_note": "Charmed: cannot attack or target the charmer with harmful abilities or magical effects. Charmer has advantage on social ability checks against the charmed creature. Pending: charmer reference and advantage/disadvantage system."
-}

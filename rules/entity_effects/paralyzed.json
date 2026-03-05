@@ -1,9 +1,0 @@
-{
-  "name": "paralyzed",
-  "trigger": "ATTACK_DECLARED",
-  "condition": "event.attacker == entity",
-  "effects": [
-    { "action": "Cancel" }
-  ],
-  "_note": "Paralyzed: incapacitated (cannot take actions/reactions), cannot move or speak. Automatically fails STR and DEX saving throws. Attack rolls against the paralyzed creature have advantage. Any attack that hits within 5 ft is a critical hit. Pending: save system hooks, advantage/disadvantage, and auto-critical logic."
-}

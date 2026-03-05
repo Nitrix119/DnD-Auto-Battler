@@ -1,6 +1,6 @@
 {
   "name": "spider_bite_poison",
-  "trigger": "TURN_START",
+  "triggers": ["TURN_START"],
   "condition": "event.entity == entity",
   "effects": [
     {

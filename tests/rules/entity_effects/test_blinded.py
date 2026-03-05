@@ -13,7 +13,7 @@ from src.loaders import StatBlockLoader
 from src.rules import RuleEngine, RuleLoader
 
 EXAMPLES_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "..", "examples")
-ENTITY_EFFECTS_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "..", "rules", "entity_effects")
+CONDITIONS_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "..", "rules", "entity_effects", "conditions")
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -38,7 +38,7 @@ def setup_engine(*entities):
 
 def apply_blinded(engine, entity):
     """Load and apply the blinded entity effect to an entity."""
-    rule = RuleLoader.load(os.path.join(ENTITY_EFFECTS_DIR, "blinded.json"))
+    rule = RuleLoader.load(os.path.join(CONDITIONS_DIR, "blinded.json"))
     engine.apply_effect(entity, rule)
     return rule
 

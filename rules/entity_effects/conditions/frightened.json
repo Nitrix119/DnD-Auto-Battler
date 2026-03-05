@@ -1,0 +1,9 @@
+{
+  "name": "frightened",
+  "triggers": ["ATTACK_DECLARED"],
+  "condition": "event.attacker == entity",
+  "effects": [
+    { "action": "GrantDisadvantage" }
+  ],
+  "_note": "TODO: Disadvantage on attack rolls is implemented unconditionally; RAW it only applies while the source of fear is in line of sight (pending line-of-sight tracking). Cannot willingly move closer to fear source (pending movement system). Disadvantage on ability checks (pending ability check system)."
+}

@@ -1,0 +1,9 @@
+{
+  "name": "prone",
+  "triggers": ["ATTACK_DECLARED"],
+  "condition": "event.attacker == entity",
+  "effects": [
+    { "action": "GrantDisadvantage" }
+  ],
+  "_note": "TODO: Melee attacks against the prone creature have advantage and ranged attacks have disadvantage — both require distinguishing attack type (melee vs. ranged), which is not yet tracked on ATTACK_DECLARED. Movement: crawling costs double movement, standing up costs half speed (pending movement system)."
+}

@@ -1,6 +1,6 @@
 {
   "name": "concentration_damage_check",
-  "trigger": "DAMAGE_DEALT",
+  "triggers": ["DAMAGE_DEALT"],
   "condition": "event.defender.has_concentration",
   "effects": [
     {

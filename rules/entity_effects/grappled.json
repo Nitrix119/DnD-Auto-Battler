@@ -1,7 +1,0 @@
-{
-  "name": "grappled",
-  "trigger": "TURN_START",
-  "condition": "event.entity == entity",
-  "effects": [],
-  "_note": "Grappled: speed becomes 0 and cannot benefit from any bonus to speed. Ends if the grappler is incapacitated or if the creature is moved outside the grappler's reach. Pending: movement system."
-}

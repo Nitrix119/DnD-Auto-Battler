@@ -1,5 +1,5 @@
 import json
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 from src.combat.events import EventType
 from .rule import Rule
@@ -20,8 +20,8 @@ class RuleLoader:
 
         Raises:
             FileNotFoundError: If the file does not exist.
-            KeyError: If required fields (name, trigger, effects) are missing.
-            ValueError: If the trigger string is not a valid EventType.
+            KeyError: If required fields (name, triggers/trigger, effects) are missing.
+            ValueError: If a trigger string is not a valid EventType.
         """
         with open(path, "r", encoding="utf-8") as f:
             data: Dict[str, Any] = json.load(f)
@@ -29,28 +29,39 @@ class RuleLoader:
         return RuleLoader.from_dict(data)
 
     @staticmethod
-    def from_dict(data: Dict[str, Any]) -> Rule:
-        """Build a Rule from a plain dict (e.g. already-parsed JSON).
-
-        Args:
-            data: Dict with keys: name, trigger, effects, and optionally
-                condition and enabled.
-
-        Returns:
-            A Rule instance.
-        """
-        trigger_str: str = data["trigger"]
+    def _parse_trigger(trigger_str: str) -> EventType:
+        """Convert a trigger string to an EventType enum value."""
         try:
-            trigger = EventType[trigger_str.upper()]
+            return EventType[trigger_str.upper()]
         except KeyError:
             valid = [e.name for e in EventType]
             raise ValueError(
                 f"Unknown trigger '{trigger_str}'. Valid values: {valid}"
             )
 
+    @staticmethod
+    def from_dict(data: Dict[str, Any]) -> Rule:
+        """Build a Rule from a plain dict (e.g. already-parsed JSON).
+
+        Accepts either ``"trigger"`` (single string) or ``"triggers"`` (list of
+        strings).  Both are normalized to a list of :class:`EventType` values.
+
+        Args:
+            data: Dict with keys: name, trigger/triggers, effects, and optionally
+                condition and enabled.
+
+        Returns:
+            A Rule instance.
+        """
+        triggers: List[EventType]
+        if "triggers" in data:
+            triggers = [RuleLoader._parse_trigger(t) for t in data["triggers"]]
+        else:
+            raise KeyError("Rule must have a 'triggers' field")
+
         return Rule(
             name=data["name"],
-            trigger=trigger,
+            triggers=triggers,
             effects=data["effects"],
             condition=data.get("condition"),
             enabled=data.get("enabled", True),

@@ -1,9 +1,0 @@
-{
-  "name": "stunned",
-  "trigger": "ATTACK_DECLARED",
-  "condition": "event.attacker == entity",
-  "effects": [
-    { "action": "Cancel" }
-  ],
-  "_note": "Stunned: incapacitated (cannot take actions/reactions), cannot move, can speak only falteringly. Automatically fails STR and DEX saving throws. Attack rolls against the stunned creature have advantage. Pending: save system hooks and advantage/disadvantage."
-}

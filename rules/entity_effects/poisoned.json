@@ -1,7 +1,0 @@
-{
-  "name": "poisoned",
-  "trigger": "ATTACK_DECLARED",
-  "condition": "event.attacker == entity",
-  "effects": [],
-  "_note": "Poisoned: disadvantage on attack rolls and ability checks. Pending: advantage/disadvantage system. For damage-over-time poison effects (e.g. spider bite), use spider_bite_poison.json or a similar custom rule."
-}

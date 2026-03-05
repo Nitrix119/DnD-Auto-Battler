@@ -34,6 +34,8 @@ Available names in every expression
 +=================+=========================================================+
 | ``event``       | ``SimpleNamespace`` wrapping ``event.data``             |
 +-----------------+---------------------------------------------------------+
+| ``event_type``  | The ``EventType`` enum value for the current event      |
++-----------------+---------------------------------------------------------+
 | ``max``         | built-in ``max``                                        |
 +-----------------+---------------------------------------------------------+
 | ``min``         | built-in ``min``                                        |
@@ -63,11 +65,25 @@ exceptions from condition evaluation and silently skips the rule for that
 event.  This is intentional: a rule such as
 ``"condition": "event.target.has_concentration"`` should simply not fire
 for ``ROUND_START``, not crash the combat.
+
+Per-effect event gating with ``"on"``
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+When a rule has multiple triggers, individual effects can specify which event
+type(s) they respond to via the ``"on"`` key::
+
+    {
+        "action": "ModifyDamage",
+        "multiplier": 0.5,
+        "on": "DAMAGE_INCOMING"
+    }
+
+``"on"`` accepts either a single event-type string or a list of strings.
+If ``"on"`` is absent, the effect fires for all triggers.
 """
 
 import logging
 from types import SimpleNamespace
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Dict, List, Optional, Set
 
 logger = logging.getLogger(__name__)
 
@@ -106,6 +122,8 @@ class RuleEngine:
         # Index for fast entity-effect dispatch: {EventType: [(entity, Rule), ...]}
         # Avoids iterating all entities on every event.
         self._entity_effects: Dict[EventType, list] = {}
+        # Track which triggers already have a subscription to avoid duplicates.
+        self._subscribed_triggers: Set[EventType] = set()
         if entities_getter is not None:
             for event_type in EventType:
                 event_bus.subscribe(event_type, self._handle_entity_effects)
@@ -130,12 +148,13 @@ class RuleEngine:
         Args:
             rule: A Rule instance (e.g. from RuleLoader).
         """
-        trigger = rule.trigger
-        if trigger not in self._rules:
-            self._rules[trigger] = []
-            # Subscribe one handler per trigger; it dispatches all rules for that event.
-            self.event_bus.subscribe(trigger, lambda e, t=trigger: self._dispatch_trigger(t, e))
-        self._rules[trigger].append(rule)
+        for trigger in rule.triggers:
+            if trigger not in self._rules:
+                self._rules[trigger] = []
+            if trigger not in self._subscribed_triggers:
+                self._subscribed_triggers.add(trigger)
+                self.event_bus.subscribe(trigger, lambda e, t=trigger: self._dispatch_trigger(t, e))
+            self._rules[trigger].append(rule)
 
     def load_from_file(self, path: str) -> Rule:
         """Load a JSON rule file and register it.
@@ -152,8 +171,9 @@ class RuleEngine:
 
     def apply_effect(self, entity, rule: Rule) -> None:
         """Attach a rule as an entity-scoped effect."""
-        entity.add_effect(rule.trigger.value, rule)
-        self._entity_effects.setdefault(rule.trigger, []).append((entity, rule))
+        for trigger in rule.triggers:
+            entity.add_effect(trigger.value, rule)
+            self._entity_effects.setdefault(trigger, []).append((entity, rule))
 
     def remove_effect(self, entity, name: str) -> None:
         """Remove a named effect from an entity."""
@@ -176,6 +196,9 @@ class RuleEngine:
           were passed to ``event_bus.emit()``.  E.g. for a ``DAMAGE_DEALT``
           event emitted with ``target=entity, total=20``, the namespace has
           ``event.target`` and ``event.total``.
+        - ``event_type``: the ``EventType`` enum value for the current event,
+          useful in per-effect ``"when"`` expressions when a rule has multiple
+          triggers.
         - ``_event``: the raw ``CombatEvent`` object (for handlers that need
           to mutate ``event.cancelled``; condition expressions should use
           ``event.*`` instead).
@@ -183,7 +206,12 @@ class RuleEngine:
           ``int``, ``round``, ``bool``, ``len``, ``hasattr``.
         """
         event_ns = SimpleNamespace(**event.data)
-        return {**SAFE_BUILTINS, "event": event_ns, "_event": event}
+        return {
+            **SAFE_BUILTINS,
+            "event": event_ns,
+            "event_type": event.event_type,
+            "_event": event,
+        }
 
     def _eval(self, expr: str, ctx: dict):
         return evaluate(expr, ctx)
@@ -214,7 +242,18 @@ class RuleEngine:
                              event.event_type.value)
                 return
 
+        current_event_type = event.event_type
+
         for effect in rule.effects:
+            # Per-effect event type gate (optional "on" key).
+            on_spec = effect.get("on")
+            if on_spec is not None:
+                if isinstance(on_spec, str):
+                    on_spec = [on_spec]
+                allowed = {EventType[t.upper()] for t in on_spec}
+                if current_event_type not in allowed:
+                    continue
+
             # Per-effect condition gate (optional "when" key)
             when_expr = effect.get("when")
             if when_expr is not None:
@@ -242,7 +281,12 @@ class RuleEngine:
 
     def _handle_entity_effects(self, event: CombatEvent) -> None:
         """Dispatch entity-scoped effects for this trigger using the pre-built index."""
+        seen = set()  # (id(entity), id(rule)) — avoid dispatching same rule twice for same event
         for entity, rule in list(self._entity_effects.get(event.event_type, [])):
+            key = (id(entity), id(rule))
+            if key in seen:
+                continue
+            seen.add(key)
             self._dispatch(rule, event, entity=entity)
         if event.event_type == EventType.TURN_END:
             self._tick_durations(event.data.get("entity"))
@@ -252,13 +296,20 @@ class RuleEngine:
         if entity is None:
             return
         expired_names: set = set()
+        ticked: set = set()  # track rules already ticked (by id) to avoid double-decrement
         for trigger_str, bucket in list(entity.active_effects.items()):
             surviving = []
             for rule in bucket:
-                if self._tick_one(rule):
-                    expired_names.add(rule.name)
-                else:
-                    surviving.append(rule)
+                rule_id = id(rule)
+                if rule_id not in ticked:
+                    ticked.add(rule_id)
+                    if self._tick_one(rule):
+                        expired_names.add(rule.name)
+                        continue
+                elif rule.name in expired_names:
+                    # Already expired from another trigger bucket
+                    continue
+                surviving.append(rule)
             bucket[:] = surviving
         if expired_names:
             for trigger in list(self._entity_effects):

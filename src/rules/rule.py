@@ -10,8 +10,12 @@ class Rule:
 
     Attributes:
         name: Human-readable identifier (used in logs / debugging).
-        trigger: The event type that activates this rule.
-        effects: Ordered list of effect configurations to execute.
+        triggers: The event types that activate this rule. A rule registered
+            with multiple triggers will fire on any of them.
+        effects: Ordered list of effect configurations to execute.  Each effect
+            may optionally contain an ``"on"`` key specifying which event type(s)
+            it responds to, allowing different effects within the same rule to
+            fire on different triggers.
         condition: Optional Python expression string. The rule fires only when
             this evaluates to a truthy value. The expression runs with ``event``
             in scope as a SimpleNamespace wrapping the event's data dict.
@@ -19,7 +23,7 @@ class Rule:
     """
 
     name: str
-    trigger: EventType
+    triggers: List[EventType]
     effects: List[Dict[str, Any]]
     condition: Optional[str] = None
     enabled: bool = True

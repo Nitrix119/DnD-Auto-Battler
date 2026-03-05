@@ -1,7 +1,0 @@
-{
-  "name": "frightened",
-  "trigger": "ATTACK_DECLARED",
-  "condition": "event.attacker == entity",
-  "effects": [],
-  "_note": "Frightened: disadvantage on ability checks and attack rolls while source of fear is in line of sight. Cannot willingly move closer to the source of its fear. Pending: advantage/disadvantage system and movement constraints."
-}
