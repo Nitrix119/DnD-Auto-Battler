@@ -25,7 +25,12 @@ class TestAbilityScores:
         with pytest.raises(ValueError):
             AbilityScores(0, 10, 10, 10, 10, 10)
         with pytest.raises(ValueError):
-            AbilityScores(21, 10, 10, 10, 10, 10)
+            AbilityScores(31, 10, 10, 10, 10, 10)
+
+    def test_high_ability_score_allowed(self):
+        """Scores above 20 (up to 30) are valid for monsters and magic items."""
+        abilities = AbilityScores(30, 10, 10, 10, 10, 10)
+        assert abilities.get_modifier("strength") == 10
 
 
 class TestStatBlock:

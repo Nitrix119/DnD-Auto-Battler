@@ -77,8 +77,8 @@ class TestBlindedAttackerDisadvantage:
         combat.event_bus = bus
 
         action = get_action(fighter, "Longsword")
-        with patch("src.combat.combat_system.roll_with_disadvantage", return_value=10) as mock_dis, \
-             patch("src.combat.combat_system.roll_d20") as mock_d20:
+        with patch("src.combat.attack_resolver.roll_with_disadvantage", return_value=10) as mock_dis, \
+             patch("src.combat.attack_resolver.roll_d20") as mock_d20:
             combat.resolve_attack(fighter, goblin, action)
             mock_dis.assert_called_once()
             mock_d20.assert_not_called()
@@ -114,8 +114,8 @@ class TestBlindedDefenderAdvantage:
         combat.event_bus = bus
 
         action = get_action(fighter, "Longsword")
-        with patch("src.combat.combat_system.roll_with_advantage", return_value=15) as mock_adv, \
-             patch("src.combat.combat_system.roll_d20") as mock_d20:
+        with patch("src.combat.attack_resolver.roll_with_advantage", return_value=15) as mock_adv, \
+             patch("src.combat.attack_resolver.roll_d20") as mock_d20:
             combat.resolve_attack(fighter, goblin, action)
             mock_adv.assert_called_once()
             mock_d20.assert_not_called()
@@ -154,9 +154,9 @@ class TestBlindedBothCancelOut:
         combat.event_bus = bus
 
         action = get_action(fighter, "Longsword")
-        with patch("src.combat.combat_system.roll_d20", return_value=12) as mock_d20, \
-             patch("src.combat.combat_system.roll_with_advantage") as mock_adv, \
-             patch("src.combat.combat_system.roll_with_disadvantage") as mock_dis:
+        with patch("src.combat.attack_resolver.roll_d20", return_value=12) as mock_d20, \
+             patch("src.combat.attack_resolver.roll_with_advantage") as mock_adv, \
+             patch("src.combat.attack_resolver.roll_with_disadvantage") as mock_dis:
             combat.resolve_attack(fighter, goblin, action)
             mock_d20.assert_called_once()
             mock_adv.assert_not_called()

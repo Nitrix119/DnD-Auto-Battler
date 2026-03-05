@@ -29,8 +29,8 @@ class AbilityScores:
         for ability_name in ["strength", "dexterity", "constitution", 
                              "intelligence", "wisdom", "charisma"]:
             score = getattr(self, ability_name)
-            if score < 1 or score > 20:
-                raise ValueError(f"{ability_name} must be between 1 and 20")
+            if score < 1 or score > 30:
+                raise ValueError(f"{ability_name} must be between 1 and 30")
     
     def get_modifier(self, ability: str) -> int:
         """Calculate the modifier for a given ability.

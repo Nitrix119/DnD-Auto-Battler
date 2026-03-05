@@ -6,19 +6,20 @@ from enum import Enum
 
 from src.models.entity import Entity
 from src.models.action import AttackAction, SpellAction
-from src.models.condition import Condition, ConditionType
-from src.models.damage import Damage
-from src.utils.dice import roll_d20, roll_dice, roll_formula, roll_with_advantage, roll_with_disadvantage
+from src.utils.dice import roll_d20
 from .enums import CombatState
 from .event_bus import EventBus
-from .events import EventType
 from .initiative import InitiativeTracker
+from .damage_processor import DamageProcessor
+from .attack_resolver import AttackResolver
+from .spell_resolver import SpellResolver
+from .turn_manager import TurnManager
 
 
 @dataclass
 class CombatLog:
     """A single entry in the combat log.
-    
+
     Attributes:
         round_num: The round this occurred
         turn_num: The turn within the round
@@ -33,77 +34,69 @@ class CombatLog:
 
 class CombatSystem:
     """Main combat simulator for D&D battles.
-    
+
     Manages turn order, action resolution, and damage calculation.
+    Delegates to focused collaborators for specific concerns.
     """
-    
+
     def __init__(self) -> None:
         """Initialize a new combat encounter."""
         self.state: CombatState = CombatState.SETUP
         self.initiative_tracker: InitiativeTracker = InitiativeTracker()
-        self.round: int = 0
-        self.turn: int = 0
         self.combatants: List[Entity] = []
         self.log: List[CombatLog] = []
+        self._turn_manager: Optional[TurnManager] = None
         self.event_bus: EventBus = EventBus()
-    
+
+    @property
+    def event_bus(self) -> EventBus:
+        """The event bus for this combat."""
+        return self._event_bus
+
+    @event_bus.setter
+    def event_bus(self, bus: EventBus) -> None:
+        self._event_bus = bus
+        self._damage_processor = DamageProcessor(bus)
+        self._attack_resolver = AttackResolver(bus, self._damage_processor)
+        self._spell_resolver = SpellResolver(bus, self._damage_processor, self._attack_resolver)
+
+    @property
+    def round(self) -> int:
+        """Current round number."""
+        return self._turn_manager.round if self._turn_manager else 0
+
+    @property
+    def turn(self) -> int:
+        """Current turn number within the round."""
+        return self._turn_manager.turn if self._turn_manager else 0
+
     def add_combatant(self, entity: Entity, initiative_modifier: int = 0) -> None:
         """Add an entity to combat.
-        
+
         Args:
             entity: The entity to add
             initiative_modifier: Optional modifier to initiative
         """
         if self.state != CombatState.SETUP:
             raise RuntimeError("Cannot add combatants after combat has started")
-        
+
         self.combatants.append(entity)
         self.initiative_tracker.add_entity(entity, initiative_modifier)
-    
+
     def start_combat(self) -> None:
         """Begin combat with all added entities."""
         if self.state != CombatState.SETUP:
             raise RuntimeError("Combat already started")
         if len(self.combatants) < 2:
             raise ValueError("Need at least 2 combatants")
-        
+
         self.state = CombatState.ACTIVE
-        self.round = 1
-        self.turn = 1
+        self._turn_manager = TurnManager(
+            self.event_bus, self.initiative_tracker, self.combatants,
+        )
         self._log_action(self.initiative_tracker.get_current_entity(),
                         "Combat started!")
-        self.event_bus.emit(EventType.ROUND_START, round_num=self.round)
-        self.event_bus.emit(EventType.TURN_START,
-                            entity=self.initiative_tracker.get_current_entity(),
-                            round_num=self.round, turn_num=self.turn)
-    
-    @staticmethod
-    def _roll_mode_label(declared) -> str:
-        """Return a log-friendly label like ' (advantage)' from event flags."""
-        has_adv = declared.data.get("advantage", False)
-        has_dis = declared.data.get("disadvantage", False)
-        if has_adv and not has_dis:
-            return " (advantage)"
-        if has_dis and not has_adv:
-            return " (disadvantage)"
-        return ""
-
-    def _resolve_attack_roll(self, declared) -> int:
-        """Roll d20 with advantage/disadvantage based on event flags.
-
-        Entity effects (e.g. Blinded) set ``advantage`` / ``disadvantage``
-        flags on the ATTACK_DECLARED event data.  Per D&D 5e, if both are
-        present they cancel out to a normal roll.
-        """
-        has_adv = declared.data.get("advantage", False)
-        has_dis = declared.data.get("disadvantage", False)
-        if has_adv and has_dis:
-            return roll_d20()
-        if has_adv:
-            return roll_with_advantage()
-        if has_dis:
-            return roll_with_disadvantage()
-        return roll_d20()
+        self._turn_manager.start()
 
     def resolve_attack(self, attacker: Entity, defender: Entity,
                        action: AttackAction) -> Tuple[bool, int]:
@@ -117,63 +110,16 @@ class CombatSystem:
         Returns:
             Tuple of (hit, total_damage)
         """
-        # Allow handlers to cancel before the roll (e.g. Shield spell)
-        declared = self.event_bus.emit(EventType.ATTACK_DECLARED,
-                                       attacker=attacker, defender=defender, action=action)
-        if declared.cancelled:
-            return False, 0
-
-        # Attack roll (respects advantage/disadvantage set by entity effects)
-        attack_roll = self._resolve_attack_roll(declared)
-        attack_total = attack_roll + action.bonus_to_hit
-        roll_mode = self._roll_mode_label(declared)
-
-        # Determine if hit
-        hit = attack_total >= defender.ac
-
-        # Roll and apply damage per type
-        total_damage = 0
-        if hit:
-            self.event_bus.emit(EventType.ATTACK_HIT,
-                                attacker=attacker, defender=defender,
-                                action=action, roll=attack_total)
-            was_alive = defender.is_alive()
-            rolled_damages = action.roll_damage()
-            incoming = self.event_bus.emit(EventType.DAMAGE_INCOMING,
-                                           defender=defender, damage_list=rolled_damages)
-            if not incoming.cancelled:
-                for d in rolled_damages:
-                    defender.take_damage(d)
-                    total_damage += d.amount
-            self.event_bus.emit(EventType.DAMAGE_DEALT,
-                                defender=defender, damage_list=rolled_damages, total=total_damage)
-            if was_alive and not defender.is_alive():
-                self.event_bus.emit(EventType.ENTITY_DIES, entity=defender, killer=attacker)
-            self._log_action(attacker,
-                             f"attacked {defender.name} with {action.name}. "
-                             f"Attack{roll_mode}: {attack_roll}+{action.bonus_to_hit}={attack_total} vs AC {defender.ac}. "
-                             f"Hit! Damage: {total_damage}")
-        else:
-            self.event_bus.emit(EventType.ATTACK_MISS,
-                                attacker=attacker, defender=defender,
-                                action=action, roll=attack_total)
-            self._log_action(attacker,
-                             f"attacked {defender.name} with {action.name}. "
-                             f"Attack{roll_mode}: {attack_roll}+{action.bonus_to_hit}={attack_total} vs AC {defender.ac}. "
-                             f"Miss!")
-
+        hit, total_damage, log_msg = self._attack_resolver.resolve(
+            attacker, defender, action,
+        )
+        if log_msg:
+            self._log_action(attacker, log_msg)
         return hit, total_damage
 
     def resolve_spell(self, caster: Entity, defenders: List[Entity],
                       action: SpellAction) -> List[Tuple[bool, int]]:
         """Resolve a spell action against one or more targets.
-
-        Damage is rolled once and applied to every target, matching D&D rules
-        (e.g. Fireball rolls 8d6 once and deals that total to each creature
-        in the area).
-
-        Spell attack rolls are made per-target when the spell uses them.
-        Saving throws are not yet implemented (see TODO below).
 
         Args:
             caster: Entity casting the spell
@@ -184,178 +130,86 @@ class CombatSystem:
             List of (hit, damage_dealt) per defender, in the same order as
             defenders.
         """
-        self.event_bus.emit(EventType.SPELL_CAST, caster=caster, defenders=defenders, action=action)
+        results = self._spell_resolver.resolve(caster, defenders, action)
+        for _, _, log_msg in results:
+            if log_msg:
+                self._log_action(caster, log_msg)
+        return [(hit, damage) for hit, damage, _ in results]
 
-        # Roll damage once — the same total applies to every target
-        rolled_damages = action.roll_damage()
-        total_damage = sum(d.amount for d in rolled_damages)
-
-        # TODO: Implement saving throws (action.save_dc > 0).  Currently all
-        #       targets with a save DC are treated as if they failed the save
-        #       and take full damage.
-
-        results: List[Tuple[bool, int]] = []
-        for defender in defenders:
-            if action.spell_attack_bonus != 0 and action.save_dc == 0:
-                # Spell requires an attack roll (e.g. Fire Bolt, Chromatic Orb)
-                spell_declared = self.event_bus.emit(
-                    EventType.ATTACK_DECLARED,
-                    attacker=caster, defender=defender, action=action)
-                if spell_declared.cancelled:
-                    results.append((False, 0))
-                    continue
-
-                attack_roll = self._resolve_attack_roll(spell_declared)
-                attack_total = attack_roll + action.spell_attack_bonus
-                hit = attack_total >= defender.ac
-                roll_mode = self._roll_mode_label(spell_declared)
-
-                damage_dealt = 0
-                if hit:
-                    self.event_bus.emit(EventType.SPELL_HIT,
-                                        caster=caster, defender=defender,
-                                        action=action, roll=attack_total)
-                    was_alive = defender.is_alive()
-                    target_damages = [Damage(d.damage_type, d.amount) for d in rolled_damages]
-                    incoming = self.event_bus.emit(EventType.DAMAGE_INCOMING,
-                                                   defender=defender, damage_list=target_damages)
-                    if not incoming.cancelled:
-                        for d in target_damages:
-                            defender.take_damage(d)
-                            damage_dealt += d.amount
-                    self.event_bus.emit(EventType.DAMAGE_DEALT,
-                                        defender=defender, damage_list=target_damages,
-                                        total=damage_dealt)
-                    if was_alive and not defender.is_alive():
-                        self.event_bus.emit(EventType.ENTITY_DIES, entity=defender, killer=caster)
-
-                hit_str = f"Hit! Damage: {damage_dealt}" if hit else "Miss!"
-                self._log_action(
-                    caster,
-                    f"cast {action.name} at {defender.name}. "
-                    f"Spell attack{roll_mode}: {attack_roll}+{action.spell_attack_bonus}"
-                    f"={attack_total} vs AC {defender.ac}. {hit_str}"
-                )
-            else:
-                # No attack roll — auto-hit (saving throws via TODO above)
-                hit = True
-                damage_dealt = 0
-                self.event_bus.emit(EventType.SPELL_HIT,
-                                    caster=caster, defender=defender, action=action, roll=None)
-                was_alive = defender.is_alive()
-                target_damages = [Damage(d.damage_type, d.amount) for d in rolled_damages]
-                incoming = self.event_bus.emit(EventType.DAMAGE_INCOMING,
-                                               defender=defender, damage_list=target_damages)
-                if not incoming.cancelled:
-                    for d in target_damages:
-                        defender.take_damage(d)
-                        damage_dealt += d.amount
-                self.event_bus.emit(EventType.DAMAGE_DEALT,
-                                    defender=defender, damage_list=target_damages, total=damage_dealt)
-                if was_alive and not defender.is_alive():
-                    self.event_bus.emit(EventType.ENTITY_DIES, entity=defender, killer=caster)
-
-                self._log_action(
-                    caster,
-                    f"cast {action.name} at {defender.name}. "
-                    f"Damage: {damage_dealt}"
-                )
-
-            results.append((hit, damage_dealt))
-
-        return results
-
-    def resolve_saving_throw(self, defender: Entity, ability: str, 
+    def resolve_saving_throw(self, defender: Entity, ability: str,
                             dc: int) -> Tuple[int, bool]:
         """Resolve a saving throw.
-        
+
         Args:
             defender: Entity making the save
             ability: The ability for the save
             dc: The DC of the save
-            
+
         Returns:
             Tuple of (save_roll_total, success)
         """
         roll = roll_d20()
         bonus = defender.stat_block.get_saving_throw_bonus(ability)
         total = roll + bonus
-        
+
         success = total >= dc
         return total, success
-    
+
     def end_turn(self) -> None:
         """End the current entity's turn and advance to the next."""
-        current_entity = self.initiative_tracker.get_current_entity()
-        self.event_bus.emit(EventType.TURN_END,
-                            entity=current_entity, round_num=self.round, turn_num=self.turn)
-
-        next_entity = self.initiative_tracker.next_turn()
-        self.turn += 1
-
-        # If we've gone through all entities, increment round
-        if self.initiative_tracker.current_turn_index == 0:
-            self.event_bus.emit(EventType.ROUND_END, round_num=self.round)
-            self.round += 1
-            self.turn = 1
-            self.event_bus.emit(EventType.ROUND_START, round_num=self.round)
-
-        # Check for alive combatants
-        alive_combatants = [c for c in self.combatants if c.is_alive()]
-        if len(alive_combatants) <= 1:
+        should_continue = self._turn_manager.end_turn()
+        if not should_continue:
             self.end_combat()
         else:
-            self.event_bus.emit(EventType.TURN_START,
-                                entity=next_entity, round_num=self.round, turn_num=self.turn)
-            self._log_action(next_entity, "takes turn")
-    
+            self._log_action(self._turn_manager.get_current_entity(), "takes turn")
+
     def end_combat(self) -> None:
         """End the combat encounter."""
         self.state = CombatState.ENDED
         alive = [c for c in self.combatants if c.is_alive()]
-        
+
         if len(alive) == 1:
             self._log_action(alive[0], f"wins the battle!")
         elif len(alive) == 0:
             self._log_action(None, "Combat ended with no survivors")
         else:
             self._log_action(None, "Combat ended")
-    
+
     def get_current_entity(self) -> Optional[Entity]:
         """Get the entity whose turn it is."""
         return self.initiative_tracker.get_current_entity()
-    
+
     def get_alive_entities(self) -> List[Entity]:
         """Get all entities still in the fight."""
         return [e for e in self.combatants if e.is_alive()]
-    
+
     def get_enemies(self, entity: Entity) -> List[Entity]:
         """Get all enemies of a given entity.
-        
+
         For now, this returns all other alive entities.
         Future versions could support teams.
-        
+
         Args:
             entity: The entity to find enemies for
-            
+
         Returns:
             List of enemies
         """
         return [e for e in self.get_alive_entities() if e != entity]
-    
+
     def _log_action(self, actor: Optional[Entity], action: str) -> None:
         """Log an action to the combat log.
-        
+
         Args:
             actor: The entity performing the action
             action: Description of the action
         """
         entry = CombatLog(self.round, self.turn, actor, action)
         self.log.append(entry)
-    
+
     def get_combat_log(self) -> List[str]:
         """Get a formatted combat log.
-        
+
         Returns:
             List of formatted log entries
         """

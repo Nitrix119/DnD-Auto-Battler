@@ -96,6 +96,7 @@ Matching JSON rule (``rules/thorns.json``)::
 """
 
 from src.combat.event_bus import CombatEvent, EventBus
+from src.combat.event_data import ConditionAddedData, ConditionRemovedData, DamageDealtData
 from src.combat.events import EventType
 from src.models.condition import Condition, ConditionType
 from src.models.damage import Damage, DamageType
@@ -120,7 +121,7 @@ def apply_condition(effect: dict, ctx: dict, event: CombatEvent, event_bus: Even
     source = effect.get("source", "")
     condition = Condition(condition_type=ctype, duration_rounds=duration, source=source)
     target.add_condition(condition)
-    event_bus.emit(EventType.CONDITION_ADDED, entity=target, condition=condition)
+    event_bus.emit(EventType.CONDITION_ADDED, ConditionAddedData(entity=target, condition=condition))
 
 
 def remove_condition_type(effect: dict, ctx: dict, event: CombatEvent, event_bus: EventBus) -> None:
@@ -136,7 +137,7 @@ def remove_condition_type(effect: dict, ctx: dict, event: CombatEvent, event_bus
     ]
     for i in reversed(indices):  # remove back-to-front to keep indices valid
         target.remove_condition(i)
-        event_bus.emit(EventType.CONDITION_REMOVED, entity=target, condition_type=ctype)
+        event_bus.emit(EventType.CONDITION_REMOVED, ConditionRemovedData(entity=target, condition_type=ctype))
 
 
 def force_concentration_check(effect: dict, ctx: dict, event: CombatEvent, event_bus: EventBus) -> None:
@@ -211,7 +212,7 @@ def deal_damage(effect: dict, ctx: dict, event: CombatEvent, event_bus: EventBus
     dmg = Damage(dtype, amount)
     target.take_damage(dmg)
     event_bus.emit(EventType.DAMAGE_DEALT,
-                   defender=target, damage_list=[dmg], total=amount)
+                   DamageDealtData(defender=target, damage_list=[dmg], total=amount))
 
 
 def grant_advantage(effect: dict, ctx: dict, event: CombatEvent, event_bus: EventBus) -> None:
@@ -234,12 +235,13 @@ def grant_disadvantage(effect: dict, ctx: dict, event: CombatEvent, event_bus: E
     event.data["disadvantage"] = True
 
 
-def add_damage(effect: dict, ctx: dict, event: CombatEvent, event_bus: EventBus) -> None:
+def add_damage_to_attack_hit(effect: dict, ctx: dict, event: CombatEvent, event_bus: EventBus) -> None:
     """Add a bonus damage die to the triggering attack's roll_damage() call.
 
-    The damage is appended to ``event.action.bonus_damage`` and consumed when
-    ``action.roll_damage()`` is called, so it is applied in the same instance
-    as the attack damage and does not fire a separate DAMAGE_DEALT event.
+    Meant for ATTACK_HIT handlers.  ``CombatSystem.resolve_attack`` emits
+    ATTACK_HIT *before* calling ``action.roll_damage()``, so bonus damage
+    appended here is included in the same roll.  Do not use this handler on
+    events that fire after ``roll_damage()`` (e.g. DAMAGE_DEALT).
 
     Required keys:  attack_action (expr → Action), formula (str), damage_type (str or expr)
     """
@@ -280,7 +282,7 @@ BUILTIN_EFFECTS = {
     "Cancel": cancel_event,
     "HealTarget": heal_target,
     "DealDamage": deal_damage,
-    "AddDamage": add_damage,
+    "AddDamageToAttackHit": add_damage_to_attack_hit,
     "GrantAdvantage": grant_advantage,
     "GrantDisadvantage": grant_disadvantage,
     "ModifyDamage": modify_damage,

@@ -65,8 +65,11 @@ event.  This is intentional: a rule such as
 for ``ROUND_START``, not crash the combat.
 """
 
+import logging
 from types import SimpleNamespace
 from typing import Callable, Dict, List, Optional
+
+logger = logging.getLogger(__name__)
 
 from src.combat.event_bus import CombatEvent, EventBus
 from src.combat.events import EventType
@@ -200,11 +203,15 @@ class RuleEngine:
 
         if rule._compiled_condition is not None:
             try:
-                if not self._eval(rule._compiled_condition, ctx):
+                result = self._eval(rule._compiled_condition, ctx)
+                logger.debug("Rule '%s' condition evaluated to %s for %s",
+                             rule.name, result, event.event_type.value)
+                if not result:
                     return
-            except Exception:
-                # Condition couldn't be evaluated (e.g. missing attribute on
-                # this event type) — silently skip rather than crashing.
+            except Exception as exc:
+                logger.debug("Rule '%s' condition skipped (%s: %s) for %s",
+                             rule.name, type(exc).__name__, exc,
+                             event.event_type.value)
                 return
 
         for effect in rule.effects:
@@ -214,7 +221,9 @@ class RuleEngine:
                 try:
                     if not self._eval(when_expr, ctx):
                         continue
-                except Exception:
+                except Exception as exc:
+                    logger.debug("Rule '%s' effect 'when' skipped (%s: %s)",
+                                 rule.name, type(exc).__name__, exc)
                     continue
 
             action = effect.get("action")
@@ -224,6 +233,8 @@ class RuleEngine:
                     f"Rule '{rule.name}': unknown effect action '{action}'. "
                     f"Registered actions: {list(self._effect_registry)}"
                 )
+            logger.info("Rule '%s' firing effect '%s' for %s",
+                        rule.name, action, event.event_type.value)
             handler(effect, ctx, event, self.event_bus)
             # Stop processing further effects if the event was cancelled.
             if event.cancelled:
