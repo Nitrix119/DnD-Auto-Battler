@@ -26,7 +26,6 @@ def make_entity(name="Tester", hp=30, ac=10, con=10):
     stat_block = StatBlock(
         name=name,
         ability_scores=AbilityScores(10, 10, con, 10, 10, 10),
-        hit_points=hp,
         hit_points_max=hp,
         armor_class=ac,
     )

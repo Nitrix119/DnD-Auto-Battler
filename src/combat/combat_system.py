@@ -7,6 +7,7 @@ from enum import Enum
 from src.models.entity import Entity
 from src.models.action import AttackAction, SpellAction
 from src.models.condition import Condition, ConditionType
+from src.models.damage import Damage
 from src.utils.dice import roll_d20, roll_dice, roll_formula, roll_with_advantage, roll_with_disadvantage
 from .enums import CombatState
 from .event_bus import EventBus
@@ -138,9 +139,12 @@ class CombatSystem:
                                 action=action, roll=attack_total)
             was_alive = defender.is_alive()
             rolled_damages = action.roll_damage()
-            for d in rolled_damages:
-                defender.take_damage(d)
-                total_damage += d.amount
+            incoming = self.event_bus.emit(EventType.DAMAGE_INCOMING,
+                                           defender=defender, damage_list=rolled_damages)
+            if not incoming.cancelled:
+                for d in rolled_damages:
+                    defender.take_damage(d)
+                    total_damage += d.amount
             self.event_bus.emit(EventType.DAMAGE_DEALT,
                                 defender=defender, damage_list=rolled_damages, total=total_damage)
             if was_alive and not defender.is_alive():
@@ -206,16 +210,21 @@ class CombatSystem:
                 hit = attack_total >= defender.ac
                 roll_mode = self._roll_mode_label(spell_declared)
 
-                damage_dealt = total_damage if hit else 0
+                damage_dealt = 0
                 if hit:
                     self.event_bus.emit(EventType.SPELL_HIT,
                                         caster=caster, defender=defender,
                                         action=action, roll=attack_total)
                     was_alive = defender.is_alive()
-                    for d in rolled_damages:
-                        defender.take_damage(d)
+                    target_damages = [Damage(d.damage_type, d.amount) for d in rolled_damages]
+                    incoming = self.event_bus.emit(EventType.DAMAGE_INCOMING,
+                                                   defender=defender, damage_list=target_damages)
+                    if not incoming.cancelled:
+                        for d in target_damages:
+                            defender.take_damage(d)
+                            damage_dealt += d.amount
                     self.event_bus.emit(EventType.DAMAGE_DEALT,
-                                        defender=defender, damage_list=rolled_damages,
+                                        defender=defender, damage_list=target_damages,
                                         total=damage_dealt)
                     if was_alive and not defender.is_alive():
                         self.event_bus.emit(EventType.ENTITY_DIES, entity=defender, killer=caster)
@@ -230,14 +239,19 @@ class CombatSystem:
             else:
                 # No attack roll — auto-hit (saving throws via TODO above)
                 hit = True
-                damage_dealt = total_damage
+                damage_dealt = 0
                 self.event_bus.emit(EventType.SPELL_HIT,
                                     caster=caster, defender=defender, action=action, roll=None)
                 was_alive = defender.is_alive()
-                for d in rolled_damages:
-                    defender.take_damage(d)
+                target_damages = [Damage(d.damage_type, d.amount) for d in rolled_damages]
+                incoming = self.event_bus.emit(EventType.DAMAGE_INCOMING,
+                                               defender=defender, damage_list=target_damages)
+                if not incoming.cancelled:
+                    for d in target_damages:
+                        defender.take_damage(d)
+                        damage_dealt += d.amount
                 self.event_bus.emit(EventType.DAMAGE_DEALT,
-                                    defender=defender, damage_list=rolled_damages, total=damage_dealt)
+                                    defender=defender, damage_list=target_damages, total=damage_dealt)
                 if was_alive and not defender.is_alive():
                     self.event_bus.emit(EventType.ENTITY_DIES, entity=defender, killer=caster)
 

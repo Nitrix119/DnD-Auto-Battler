@@ -38,16 +38,14 @@ class TestStatBlock:
         return StatBlock(
             name="Test Fighter",
             ability_scores=abilities,
-            hit_points=50,
             hit_points_max=50,
             armor_class=16,
         )
-    
+
     def test_skill_bonus_no_proficiency(self, basic_stat_block):
         """Test skill bonus without proficiency (just the ability modifier)."""
-        # Athletics uses STR (+2), character has no proficiency
         bonus = basic_stat_block.get_skill_bonus("athletics")
-        assert bonus == 2  # STR modifier (+2) only
+        assert bonus == 2
 
     def test_skill_bonus_proficiency(self):
         """Test skill bonus with proficiency adds the proficiency bonus once."""
@@ -55,12 +53,10 @@ class TestStatBlock:
         stat_block = StatBlock(
             name="Test Fighter",
             ability_scores=abilities,
-            hit_points=50,
             hit_points_max=50,
             armor_class=16,
             skills={"athletics": Skill("Athletics", "strength", ProficiencyLevel.PROFICIENT)},
         )
-        # STR modifier (+2) + proficiency bonus (+2) = 4
         bonus = stat_block.get_skill_bonus("athletics")
         assert bonus == 4
 
@@ -70,30 +66,31 @@ class TestStatBlock:
         stat_block = StatBlock(
             name="Test Rogue",
             ability_scores=abilities,
-            hit_points=50,
             hit_points_max=50,
             armor_class=16,
             skills={"athletics": Skill("Athletics", "strength", ProficiencyLevel.EXPERT)},
         )
-        # DEX modifier (+2) + expertise (2 × proficiency +2) = 6
         bonus = stat_block.get_skill_bonus("athletics")
         assert bonus == 6
-    
-    def test_damage(self, basic_stat_block):
-        """Test taking damage."""
-        basic_stat_block.take_damage(Damage(DamageType.BLUDGEONING, 10))
-        assert basic_stat_block.hit_points == 40
 
-    def test_healing(self, basic_stat_block):
-        """Test healing."""
-        basic_stat_block.take_damage(Damage(DamageType.BLUDGEONING, 20))
-        basic_stat_block.heal(10)
-        assert basic_stat_block.hit_points == 40
+    def test_damage_via_entity(self, basic_stat_block):
+        """Test taking damage (HP now lives on Entity)."""
+        entity = Entity(basic_stat_block)
+        entity.take_damage(Damage(DamageType.BLUDGEONING, 10))
+        assert entity.hp == 40
 
-    def test_death(self, basic_stat_block):
-        """Test death conditions."""
-        basic_stat_block.take_damage(Damage(DamageType.BLUDGEONING, 50))
-        assert not basic_stat_block.is_alive()
+    def test_healing_via_entity(self, basic_stat_block):
+        """Test healing (HP now lives on Entity)."""
+        entity = Entity(basic_stat_block)
+        entity.take_damage(Damage(DamageType.BLUDGEONING, 20))
+        entity.heal(10)
+        assert entity.hp == 40
+
+    def test_death_via_entity(self, basic_stat_block):
+        """Test death conditions (HP now lives on Entity)."""
+        entity = Entity(basic_stat_block)
+        entity.take_damage(Damage(DamageType.BLUDGEONING, 50))
+        assert not entity.is_alive()
 
 
 class TestEntity:
@@ -106,7 +103,6 @@ class TestEntity:
         stat_block = StatBlock(
             name="Goblin",
             ability_scores=abilities,
-            hit_points=7,
             hit_points_max=7,
             armor_class=15,
         )

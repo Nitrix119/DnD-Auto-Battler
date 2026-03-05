@@ -71,14 +71,9 @@ from typing import Callable, Dict, List, Optional
 from src.combat.event_bus import CombatEvent, EventBus
 from src.combat.events import EventType
 from .effects import BUILTIN_EFFECTS
+from .expressions import SAFE_BUILTINS, evaluate
 from .rule import Rule
 from .rule_loader import RuleLoader
-
-
-_SAFE_BUILTINS: Dict = {
-    "max": max, "min": min, "abs": abs, "int": int,
-    "round": round, "bool": bool, "len": len, "hasattr": hasattr,
-}
 
 EffectHandler = Callable[[dict, dict, CombatEvent, EventBus], None]
 
@@ -185,10 +180,10 @@ class RuleEngine:
           ``int``, ``round``, ``bool``, ``len``, ``hasattr``.
         """
         event_ns = SimpleNamespace(**event.data)
-        return {**_SAFE_BUILTINS, "event": event_ns, "_event": event}
+        return {**SAFE_BUILTINS, "event": event_ns, "_event": event}
 
     def _eval(self, expr: str, ctx: dict):
-        return eval(expr, {"__builtins__": {}}, ctx)
+        return evaluate(expr, ctx)
 
     def _dispatch_trigger(self, trigger: EventType, event: CombatEvent) -> None:
         """Dispatch all global rules registered for *trigger*."""

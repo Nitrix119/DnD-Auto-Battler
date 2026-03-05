@@ -22,7 +22,6 @@ def make_entity(name="Tester", hp=30, ac=10, con=10):
     stat_block = StatBlock(
         name=name,
         ability_scores=AbilityScores(10, 10, con, 10, 10, 10),
-        hit_points=hp,
         hit_points_max=hp,
         armor_class=ac,
     )
@@ -334,3 +333,96 @@ class TestEntityEffectJSONLoading:
         assert rule.trigger == EventType.ATTACK_HIT
         assert rule.duration_rounds is None
         assert rule.source == "Colossus Slayer"
+
+
+# ── DAMAGE_INCOMING and ModifyDamage ────────────────────────────────────────
+
+class TestDamageIncoming:
+
+    def test_damage_incoming_fires_before_hp_reduction(self):
+        """DAMAGE_INCOMING fires before take_damage, allowing modification."""
+        from src.combat import CombatSystem
+        from src.rules.effects import modify_damage
+
+        attacker = make_entity("Attacker", hp=30, ac=5)
+        defender = make_entity("Defender", hp=50, ac=5)
+
+        combat = CombatSystem()
+        combat.add_combatant(attacker)
+        combat.add_combatant(defender)
+        combat.start_combat()
+
+        engine = RuleEngine(combat.event_bus)
+        # Register a global resistance rule: halve all incoming damage
+        engine.load_rule(Rule(
+            name="fire_resistance",
+            trigger=EventType.DAMAGE_INCOMING,
+            effects=[{"action": "ModifyDamage", "multiplier": 0.5}],
+        ))
+
+        attack = AttackAction(
+            name="Sword", description="",
+            bonus_to_hit=99,
+            damage=[Damage(DamageType.SLASHING, 20)],
+        )
+
+        with patch("src.combat.combat_system.roll_d20", return_value=20):
+            hit, total = combat.resolve_attack(attacker, defender, attack)
+
+        assert hit is True
+        assert total == 10  # 20 halved to 10
+        assert defender.hp == 40  # 50 - 10
+
+    def test_damage_incoming_cancel_prevents_all_damage(self):
+        """Cancelling DAMAGE_INCOMING prevents any HP reduction."""
+        from src.combat import CombatSystem
+
+        attacker = make_entity("Attacker", hp=30, ac=5)
+        defender = make_entity("Defender", hp=50, ac=5)
+
+        combat = CombatSystem()
+        combat.add_combatant(attacker)
+        combat.add_combatant(defender)
+        combat.start_combat()
+
+        engine = RuleEngine(combat.event_bus)
+        engine.load_rule(Rule(
+            name="immunity",
+            trigger=EventType.DAMAGE_INCOMING,
+            effects=[{"action": "Cancel"}],
+        ))
+
+        attack = AttackAction(
+            name="Sword", description="",
+            bonus_to_hit=99,
+            damage=[Damage(DamageType.SLASHING, 20)],
+        )
+
+        with patch("src.combat.combat_system.roll_d20", return_value=20):
+            hit, total = combat.resolve_attack(attacker, defender, attack)
+
+        assert hit is True
+        assert total == 0
+        assert defender.hp == 50  # no damage taken
+
+    def test_modify_damage_with_type_filter(self):
+        """ModifyDamage can target specific damage types."""
+        target = make_entity(hp=50)
+        bus = EventBus()
+        ctx = {"entity": target, "event": target,
+               "max": max, "min": min, "abs": abs, "int": int,
+               "round": round, "bool": bool, "len": len, "hasattr": hasattr}
+
+        fire_dmg = Damage(DamageType.FIRE, 20)
+        slash_dmg = Damage(DamageType.SLASHING, 10)
+        event = CombatEvent(
+            event_type=EventType.DAMAGE_INCOMING,
+            data={"defender": target, "damage_list": [fire_dmg, slash_dmg]},
+        )
+
+        from src.rules.effects import modify_damage
+        effect = {"action": "ModifyDamage", "multiplier": 0, "damage_type": "FIRE"}
+        modify_damage(effect, ctx, event, bus)
+
+        assert fire_dmg.amount == 0  # fire immune
+        assert slash_dmg.amount == 10  # slashing untouched

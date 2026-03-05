@@ -13,7 +13,6 @@ fighter_abilities = AbilityScores(
 fighter_block = StatBlock(
     name="Fighter",
     ability_scores=fighter_abilities,
-    hit_points=30,
     hit_points_max=30,
     armor_class=16,
     proficiency_bonus=2

@@ -90,12 +90,12 @@ class StatBlockLoader:
             if action:
                 actions.append(action)
 
-        # Create stat block
+        # Create stat block (template — current HP lives on Entity)
+        hp_max = data.get("hit_points_max", data.get("hit_points", 1))
         stat_block = StatBlock(
             name=data.get("name", "Unnamed"),
             ability_scores=ability_scores,
-            hit_points=data.get("hit_points", 1),
-            hit_points_max=data.get("hit_points_max", 1),
+            hit_points_max=hp_max,
             armor_class=data.get("armor_class", 10),
             proficiency_bonus=data.get("proficiency_bonus", 2),
             actions=actions,
@@ -368,7 +368,7 @@ class StatBlockLoader:
                 "wisdom": stat_block.ability_scores.wisdom,
                 "charisma": stat_block.ability_scores.charisma,
             },
-            "hit_points": stat_block.hit_points,
+            "hit_points": stat_block.hit_points_max,
             "hit_points_max": stat_block.hit_points_max,
             "armor_class": stat_block.armor_class,
             "proficiency_bonus": stat_block.proficiency_bonus,

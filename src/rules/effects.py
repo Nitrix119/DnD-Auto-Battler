@@ -101,18 +101,7 @@ from src.models.condition import Condition, ConditionType
 from src.models.damage import Damage, DamageType
 from src.utils.dice import roll_d20, roll_formula
 
-
-_SAFE_BUILTINS = {
-    "max": max, "min": min, "abs": abs, "int": int,
-    "round": round, "bool": bool, "len": len, "hasattr": hasattr,
-}
-
-
-def _resolve(expr, ctx: dict):
-    """Evaluate an expression string in the rule context."""
-    if isinstance(expr, str):
-        return eval(expr, {"__builtins__": {}}, ctx)
-    return expr  # literal value (int, bool, …) — pass through unchanged
+from .expressions import resolve as _resolve
 
 
 # ---------------------------------------------------------------------------
@@ -259,6 +248,27 @@ def add_damage(effect: dict, ctx: dict, event: CombatEvent, event_bus: EventBus)
     action.bonus_damage.append(Damage(dtype, formula=effect["formula"]))
 
 
+def modify_damage(effect: dict, ctx: dict, event: CombatEvent, event_bus: EventBus) -> None:
+    """Modify incoming damage amounts (resistance, immunity, vulnerability).
+
+    Meaningful for DAMAGE_INCOMING events.  Iterates the damage_list on the
+    event and multiplies each matching entry's amount by *multiplier*.
+
+    Required keys:  multiplier (float — 0.5 for resistance, 0 for immunity,
+                    2.0 for vulnerability)
+    Optional keys:  damage_type (str — if given, only modify damages of that type)
+    """
+    multiplier = float(_resolve(effect["multiplier"], ctx))
+    filter_type = effect.get("damage_type")
+    if filter_type is not None:
+        filter_type = _resolve_damage_type(filter_type, ctx)
+
+    for dmg in event.data.get("damage_list", []):
+        if filter_type is not None and dmg.damage_type != filter_type:
+            continue
+        dmg.amount = int(dmg.amount * multiplier)
+
+
 # ---------------------------------------------------------------------------
 # Registry
 # ---------------------------------------------------------------------------
@@ -273,4 +283,5 @@ BUILTIN_EFFECTS = {
     "AddDamage": add_damage,
     "GrantAdvantage": grant_advantage,
     "GrantDisadvantage": grant_disadvantage,
+    "ModifyDamage": modify_damage,
 }

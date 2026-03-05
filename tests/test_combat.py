@@ -15,17 +15,15 @@ class TestCombatSystem:
         stat_block_1 = StatBlock(
             name="Fighter",
             ability_scores=abilities_1,
-            hit_points=30,
             hit_points_max=30,
             armor_class=16,
             proficiency_bonus=2
         )
-        
+
         abilities_2 = AbilityScores(10, 16, 12, 11, 12, 8)
         stat_block_2 = StatBlock(
             name="Rogue",
             ability_scores=abilities_2,
-            hit_points=20,
             hit_points_max=20,
             armor_class=15,
             proficiency_bonus=2

@@ -18,6 +18,7 @@ class EventType(Enum):
     SPELL_HIT = "spell_hit"
 
     # Damage flow
+    DAMAGE_INCOMING = "damage_incoming"  # before HP reduction; handlers can modify damage
     DAMAGE_DEALT = "damage_dealt"  # after damage is applied to the target
 
     # Entity lifecycle
