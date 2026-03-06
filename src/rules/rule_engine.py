@@ -56,15 +56,20 @@ Available names in every expression
 ``__builtins__`` is set to ``{}`` — imports, ``open``, ``exec``, and all other
 built-ins are unavailable.
 
-Missing fields and the silent-skip rule
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Missing fields and the error-handling strategy
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 If an event type does not carry the field a condition references (e.g.
 ``ROUND_START`` has ``round_num`` but no ``target``), accessing
-``event.target`` raises ``AttributeError``.  The engine catches *all*
-exceptions from condition evaluation and silently skips the rule for that
-event.  This is intentional: a rule such as
+``event.target`` raises ``AttributeError``.  The engine catches
+``AttributeError`` specifically and silently skips (DEBUG log).  This is
+intentional: a rule such as
 ``"condition": "event.target.has_concentration"`` should simply not fire
 for ``ROUND_START``, not crash the combat.
+
+All *other* exceptions (``NameError``, ``TypeError``, etc.) are logged at
+WARNING level, as they likely indicate a bug in the rule condition.  The
+rule is still skipped to avoid crashing combat, but the warning helps rule
+authors diagnose issues.
 
 Per-effect event gating with ``"on"``
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -245,10 +250,17 @@ class RuleEngine:
                              rule.name, result, event.event_type.value)
                 if not result:
                     return
+            except AttributeError as exc:
+                # Expected: event doesn't carry the fields this condition
+                # references (e.g. ROUND_START has no 'defender').
+                logger.debug("Rule '%s' condition skipped (missing field: %s) for %s",
+                             rule.name, exc, event.event_type.value)
+                return
             except Exception as exc:
-                logger.debug("Rule '%s' condition skipped (%s: %s) for %s",
-                             rule.name, type(exc).__name__, exc,
-                             event.event_type.value)
+                # Unexpected: likely a bug in the rule condition expression.
+                logger.warning("Rule '%s' condition error (%s: %s) for %s",
+                               rule.name, type(exc).__name__, exc,
+                               event.event_type.value)
                 return
 
         current_event_type = event.event_type
@@ -269,9 +281,13 @@ class RuleEngine:
                 try:
                     if not self._eval(when_expr, ctx):
                         continue
+                except AttributeError as exc:
+                    logger.debug("Rule '%s' effect 'when' skipped (missing field: %s)",
+                                 rule.name, exc)
+                    continue
                 except Exception as exc:
-                    logger.debug("Rule '%s' effect 'when' skipped (%s: %s)",
-                                 rule.name, type(exc).__name__, exc)
+                    logger.warning("Rule '%s' effect 'when' error (%s: %s)",
+                                   rule.name, type(exc).__name__, exc)
                     continue
 
             action = effect.get("action")

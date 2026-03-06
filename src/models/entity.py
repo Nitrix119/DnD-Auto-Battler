@@ -24,6 +24,7 @@ class Entity:
     is_player_controlled: bool = False
     current_hp: Optional[int] = None  # None → set to max in __post_init__
     conditions: List[Condition] = field(default_factory=list)
+    team: Optional[str] = None  # faction/team identifier; None = hostile to everyone
     concentrating_on: Optional[str] = None
     active_effects: dict = field(default_factory=dict)  # {trigger_str: [Rule, ...]}
 

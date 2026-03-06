@@ -197,18 +197,26 @@ class CombatSystem:
         return [e for e in self.combatants if e.is_alive()]
 
     def get_enemies(self, entity: Entity) -> List[Entity]:
-        """Get all enemies of a given entity.
+        """Get all alive enemies of a given entity.
 
-        For now, this returns all other alive entities.
-        Future versions could support teams.
-
-        Args:
-            entity: The entity to find enemies for
-
-        Returns:
-            List of enemies
+        When *entity.team* is set, enemies are entities on a different team
+        (or with no team).  When *entity.team* is ``None``, all other alive
+        entities are considered enemies.
         """
-        return [e for e in self.get_alive_entities() if e != entity]
+        if entity.team is None:
+            return [e for e in self.get_alive_entities() if e != entity]
+        return [e for e in self.get_alive_entities()
+                if e != entity and e.team != entity.team]
+
+    def get_allies(self, entity: Entity) -> List[Entity]:
+        """Get all alive allies of a given entity (same team, excluding self).
+
+        Returns an empty list if *entity.team* is ``None``.
+        """
+        if entity.team is None:
+            return []
+        return [e for e in self.get_alive_entities()
+                if e != entity and e.team == entity.team]
 
     def _log_action(self, actor: Optional[Entity], action: str) -> None:
         """Log an action to the combat log.
