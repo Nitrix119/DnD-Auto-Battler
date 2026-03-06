@@ -1,15 +1,22 @@
 """Spell resolution."""
 
-from typing import List, Tuple
+import logging
+from types import SimpleNamespace
+from typing import Any, Dict, List, Optional, Tuple
 
 from src.models.entity import Entity
 from src.models.action import SpellAction
 from src.models.damage import Damage
+from src.utils.dice import roll_d20
+from src.rules.expressions import SAFE_BUILTINS, evaluate, resolve
+from src.rules.rule_loader import RuleLoader
 from .event_bus import EventBus
 from .event_data import AttackDeclaredData, SpellCastData, SpellHitData
 from .events import EventType
 from .damage_processor import DamageProcessor
 from .attack_resolver import AttackResolver
+
+logger = logging.getLogger(__name__)
 
 
 class SpellResolver:
@@ -20,10 +27,13 @@ class SpellResolver:
         event_bus: EventBus,
         damage_processor: DamageProcessor,
         attack_resolver: AttackResolver,
+        rule_engine=None,
     ) -> None:
         self._event_bus = event_bus
         self._damage_processor = damage_processor
         self._attack_resolver = attack_resolver
+        self.rule_engine = rule_engine
+        self._rule_cache: Dict[str, Any] = {}
 
     def resolve(
         self,
@@ -38,7 +48,9 @@ class SpellResolver:
         in the area).
 
         Spell attack rolls are made per-target when the spell uses them.
-        Saving throws are not yet implemented (see TODO below).
+        Saving throws are resolved per-target when the spell has a ``save_dc``
+        and ``save_ability`` set; the result is available in spell effect
+        conditions as ``save_success`` and ``save_roll``.
 
         Returns:
             List of (hit, damage_dealt, log_message) per defender, in the same
@@ -51,10 +63,6 @@ class SpellResolver:
 
         # Roll damage once — the same total applies to every target
         rolled_damages = action.roll_damage()
-
-        # TODO: Implement saving throws (action.save_dc > 0).  Currently all
-        #       targets with a save DC are treated as if they failed the save
-        #       and take full damage.
 
         results: List[Tuple[bool, int, str]] = []
         for defender in defenders:
@@ -92,10 +100,19 @@ class SpellResolver:
 
         damage_dealt = 0
         if hit:
+            save_roll, save_success = self._roll_saving_throw(
+                defender, action.save_ability, action.save_dc,
+            ) if action.save_dc > 0 and action.save_ability else (None, True)
+
             self._event_bus.emit(
                 EventType.SPELL_HIT,
-                SpellHitData(caster=caster, defender=defender,
-                             action=action, roll=attack_total),
+                SpellHitData(
+                    caster=caster, defender=defender, action=action,
+                    roll=attack_total, save_success=save_success, save_roll=save_roll,
+                ),
+            )
+            self._apply_spell_effects(
+                caster, defender, action, attack_total, save_success, save_roll,
             )
             target_damages = [Damage(d.damage_type, d.amount) for d in rolled_damages]
             damage_dealt = self._damage_processor.apply_damage(
@@ -117,17 +134,119 @@ class SpellResolver:
         action: SpellAction,
         rolled_damages: List[Damage],
     ) -> Tuple[bool, int, str]:
-        """Spell with no attack roll — auto-hit (saving throws via TODO above)."""
+        """Spell with no attack roll — auto-hit, saving throw if applicable."""
+        save_roll, save_success = self._roll_saving_throw(
+            defender, action.save_ability, action.save_dc,
+        ) if action.save_dc > 0 and action.save_ability else (None, True)
+
         self._event_bus.emit(
             EventType.SPELL_HIT,
-            SpellHitData(caster=caster, defender=defender, action=action, roll=None),
+            SpellHitData(
+                caster=caster, defender=defender, action=action,
+                roll=None, save_success=save_success, save_roll=save_roll,
+            ),
+        )
+        self._apply_spell_effects(
+            caster, defender, action, None, save_success, save_roll,
         )
         target_damages = [Damage(d.damage_type, d.amount) for d in rolled_damages]
         damage_dealt = self._damage_processor.apply_damage(
             defender, target_damages, source=caster,
         )
+        save_str = ""
+        if save_roll is not None:
+            result_word = "success" if save_success else "failure"
+            save_str = f" (save {save_roll}: {result_word})"
         log_msg = (
             f"cast {action.name} at {defender.name}. "
-            f"Damage: {damage_dealt}"
+            f"Damage: {damage_dealt}{save_str}"
         )
         return True, damage_dealt, log_msg
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _roll_saving_throw(
+        defender: Entity, ability: str, dc: int,
+    ) -> Tuple[int, bool]:
+        """Roll a saving throw and return (roll_total, success)."""
+        roll = roll_d20()
+        bonus = defender.stat_block.get_saving_throw_bonus(ability)
+        total = roll + bonus
+        return total, total >= dc
+
+    def _apply_spell_effects(
+        self,
+        caster: Entity,
+        defender: Entity,
+        action: SpellAction,
+        attack_roll: Optional[int],
+        save_success: bool,
+        save_roll: Optional[int],
+    ) -> None:
+        """Apply entity effects declared in the spell's ``effects`` list.
+
+        Evaluates each entry's optional ``condition`` in a sandboxed context,
+        then evaluates each ``instance_fields`` expression and calls
+        ``rule_engine.apply_effect`` on the defender.
+
+        Context available in expressions:
+          ``event``         — SimpleNamespace with caster, defender, action,
+                             roll, save_success, save_roll.
+          ``save_success``  — bool shorthand.
+          ``save_roll``     — int | None shorthand.
+          plus SAFE_BUILTINS (max, min, abs, int, round, bool, len, hasattr).
+        """
+        if not action.spell_effects or self.rule_engine is None:
+            return
+
+        ctx = {
+            **SAFE_BUILTINS,
+            "event": SimpleNamespace(
+                caster=caster, defender=defender, action=action,
+                roll=attack_roll, save_success=save_success, save_roll=save_roll,
+            ),
+            "save_success": save_success,
+            "save_roll": save_roll,
+        }
+
+        for entry in action.spell_effects:
+            # Evaluate optional guard condition
+            condition_expr = entry.get("condition")
+            if condition_expr:
+                try:
+                    if not evaluate(condition_expr, ctx):
+                        continue
+                except Exception as exc:
+                    logger.debug(
+                        "Spell effect condition skipped (%s: %s)", type(exc).__name__, exc
+                    )
+                    continue
+
+            # Load the entity effect rule (cached by path)
+            rule_path = entry.get("rule")
+            if not rule_path:
+                logger.warning("Spell effect entry missing 'rule' key: %s", entry)
+                continue
+            if rule_path not in self._rule_cache:
+                self._rule_cache[rule_path] = RuleLoader.load(rule_path)
+            rule = self._rule_cache[rule_path]
+
+            # Evaluate instance_fields expressions
+            instance_fields: Dict[str, Any] = {}
+            for field_name, expr in entry.get("instance_fields", {}).items():
+                try:
+                    instance_fields[field_name] = resolve(expr, ctx)
+                except Exception as exc:
+                    logger.debug(
+                        "Spell effect instance_field '%s' evaluation failed (%s: %s)",
+                        field_name, type(exc).__name__, exc,
+                    )
+
+            self.rule_engine.apply_effect(defender, rule, instance_fields=instance_fields)
+            logger.info(
+                "Applied spell effect '%s' to %s (save_success=%s)",
+                rule.name, defender.name, save_success,
+            )

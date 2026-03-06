@@ -59,6 +59,19 @@ class CombatSystem:
         self._damage_processor = DamageProcessor(bus)
         self._attack_resolver = AttackResolver(bus, self._damage_processor)
         self._spell_resolver = SpellResolver(bus, self._damage_processor, self._attack_resolver)
+        # Preserve any previously set rule_engine across bus re-assignments
+        if hasattr(self, "_rule_engine") and self._rule_engine is not None:
+            self._spell_resolver.rule_engine = self._rule_engine
+
+    @property
+    def rule_engine(self):
+        """The rule engine used for spell effect application."""
+        return getattr(self, "_rule_engine", None)
+
+    @rule_engine.setter
+    def rule_engine(self, engine) -> None:
+        self._rule_engine = engine
+        self._spell_resolver.rule_engine = engine
 
     @property
     def round(self) -> int:

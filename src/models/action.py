@@ -1,7 +1,7 @@
 """Combat actions available to entities."""
 
 from dataclasses import dataclass, field
-from typing import Optional, List
+from typing import Any, Dict, List, Optional
 from enum import Enum
 
 from .damage import DamageType, Damage
@@ -104,6 +104,7 @@ class SpellAction(Action):
     action_type: ActionType = ActionType.SPELL
     spell_level: int = 0
     save_dc: int = 0
+    save_ability: str = ""  # ability used for saving throws (e.g. "wisdom", "charisma")
     spell_attack_bonus: int = 0
     spell_range: SpellRange = field(default_factory=lambda: SpellRange(RangeType.TOUCH))
     targeting_type: TargetingType = TargetingType.SINGLE_TARGET
@@ -112,6 +113,18 @@ class SpellAction(Action):
     duration: Duration = field(default_factory=lambda: Duration(DurationUnit.INSTANTANEOUS))
     components: SpellComponents = field(default_factory=lambda: SpellComponents(verbal=True, somatic=True))
     higher_level_scaling: Optional[str] = None  # TODO: structured scaling rules
+    spell_effects: List[Dict[str, Any]] = field(default_factory=list)
+    """Entity effects applied to the defender on spell hit.
+
+    Each entry is a dict with:
+      ``rule``           (str)  — path to the entity effect rule JSON
+      ``condition``      (str, optional) — expression evaluated at spell hit time;
+                         skipped if falsy.  Context includes ``event`` (SpellHitData
+                         fields), ``save_success`` (bool), ``save_roll`` (int | None).
+      ``instance_fields`` (dict, optional) — mapping of field name → expression
+                         string, each evaluated at spell hit time and passed to
+                         ``apply_effect`` as ``instance_fields``.
+    """
 
     def __post_init__(self) -> None:
         """Validate spell properties."""

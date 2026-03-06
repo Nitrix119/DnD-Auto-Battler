@@ -122,6 +122,8 @@ class SpellHitData(EventData):
     defender: Entity
     action: SpellAction
     roll: Optional[int]
+    save_success: bool = True   # True when no save required or defender succeeded
+    save_roll: Optional[int] = None  # d20 total for the saving throw, if one was made
 
 
 # ── Damage flow ───────────────────────────────────────────────────────────────

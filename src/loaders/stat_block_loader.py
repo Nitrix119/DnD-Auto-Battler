@@ -227,6 +227,7 @@ class StatBlockLoader:
                 description=description,
                 spell_level=action_data.get("spell_level", 0),
                 save_dc=action_data.get("save_dc", 0),
+                save_ability=action_data.get("save_ability", ""),
                 spell_attack_bonus=action_data.get("spell_attack_bonus", 0),
                 damage=damage,
                 recharge=recharge,
@@ -237,6 +238,7 @@ class StatBlockLoader:
                 duration=duration,
                 components=components,
                 higher_level_scaling=action_data.get("higher_level_scaling"),
+                spell_effects=action_data.get("effects", []),
             )
 
         # Fallback: generic ability action
