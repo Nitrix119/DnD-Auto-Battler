@@ -89,6 +89,7 @@ logger = logging.getLogger(__name__)
 
 from src.combat.event_bus import CombatEvent, EventBus
 from src.combat.events import EventType
+from .effect_instance import EffectInstance
 from .effects import BUILTIN_EFFECTS
 from .expressions import SAFE_BUILTINS, evaluate
 from .rule import Rule
@@ -169,19 +170,28 @@ class RuleEngine:
         self.load_rule(rule)
         return rule
 
-    def apply_effect(self, entity, rule: Rule) -> None:
-        """Attach a rule as an entity-scoped effect."""
+    def apply_effect(self, entity, rule: Rule, instance_fields: dict = None) -> None:
+        """Attach a rule as an entity-scoped effect.
+
+        Args:
+            entity: The entity to apply the effect to.
+            rule: The Rule template to attach.
+            instance_fields: Optional dict of per-application data available in
+                rule expressions as ``instance_fields.<key>``.  Typical keys:
+                ``charmer`` (entity that applied charm), ``caster``, etc.
+        """
+        instance = EffectInstance(rule=rule, instance_fields=instance_fields or {})
         for trigger in rule.triggers:
-            entity.add_effect(trigger.value, rule)
-            self._entity_effects.setdefault(trigger, []).append((entity, rule))
+            entity.add_effect(trigger.value, instance)
+            self._entity_effects.setdefault(trigger, []).append((entity, instance))
 
     def remove_effect(self, entity, name: str) -> None:
         """Remove a named effect from an entity."""
         entity.remove_effect(name)
         for trigger in list(self._entity_effects):
             self._entity_effects[trigger] = [
-                (e, r) for e, r in self._entity_effects[trigger]
-                if not (e is entity and r.name == name)
+                (e, inst) for e, inst in self._entity_effects[trigger]
+                if not (e is entity and inst.name == name)
             ]
 
     # ------------------------------------------------------------------
@@ -204,6 +214,9 @@ class RuleEngine:
           ``event.*`` instead).
         - All entries from ``_SAFE_BUILTINS``: ``max``, ``min``, ``abs``,
           ``int``, ``round``, ``bool``, ``len``, ``hasattr``.
+        - ``instance_fields``: a ``SimpleNamespace`` of per-application data
+          set when ``apply_effect`` was called (e.g. ``instance_fields.charmer``).
+          Populated by ``_dispatch``; defaults to an empty namespace.
         """
         event_ns = SimpleNamespace(**event.data)
         return {
@@ -221,13 +234,15 @@ class RuleEngine:
         for rule in list(self._rules.get(trigger, [])):
             self._dispatch(rule, event)
 
-    def _dispatch(self, rule: Rule, event: CombatEvent, entity=None) -> None:
+    def _dispatch(self, rule: Rule, event: CombatEvent, entity=None,
+                  instance_fields: dict = None) -> None:
         if not rule.enabled:
             return
 
         ctx = self._make_context(event)
         if entity is not None:
             ctx["entity"] = entity
+        ctx["instance_fields"] = SimpleNamespace(**(instance_fields or {}))
 
         if rule._compiled_condition is not None:
             try:
@@ -281,47 +296,49 @@ class RuleEngine:
 
     def _handle_entity_effects(self, event: CombatEvent) -> None:
         """Dispatch entity-scoped effects for this trigger using the pre-built index."""
-        seen = set()  # (id(entity), id(rule)) — avoid dispatching same rule twice for same event
-        for entity, rule in list(self._entity_effects.get(event.event_type, [])):
-            key = (id(entity), id(rule))
+        seen = set()  # (id(entity), id(instance)) — avoid dispatching same instance twice
+        for entity, instance in list(self._entity_effects.get(event.event_type, [])):
+            key = (id(entity), id(instance))
             if key in seen:
                 continue
             seen.add(key)
-            self._dispatch(rule, event, entity=entity)
+            self._dispatch(instance.rule, event, entity=entity,
+                           instance_fields=instance.instance_fields)
         if event.event_type == EventType.TURN_END:
             self._tick_durations(event.data.get("entity"))
 
     def _tick_durations(self, entity) -> None:
-        """Decrement duration_rounds for entity's effects; remove expired ones."""
+        """Decrement duration_remaining for entity's effect instances; remove expired ones."""
         if entity is None:
             return
-        expired_names: set = set()
-        ticked: set = set()  # track rules already ticked (by id) to avoid double-decrement
+        expired_instances: set = set()  # id(instance) of instances that expired this tick
+        ticked: set = set()             # id(instance) already ticked (avoid double-decrement
+                                        # when the same instance appears in multiple trigger buckets)
         for trigger_str, bucket in list(entity.active_effects.items()):
             surviving = []
-            for rule in bucket:
-                rule_id = id(rule)
-                if rule_id not in ticked:
-                    ticked.add(rule_id)
-                    if self._tick_one(rule):
-                        expired_names.add(rule.name)
+            for instance in bucket:
+                inst_id = id(instance)
+                if inst_id not in ticked:
+                    ticked.add(inst_id)
+                    if self._tick_one(instance):
+                        expired_instances.add(inst_id)
                         continue
-                elif rule.name in expired_names:
+                elif inst_id in expired_instances:
                     # Already expired from another trigger bucket
                     continue
-                surviving.append(rule)
+                surviving.append(instance)
             bucket[:] = surviving
-        if expired_names:
+        if expired_instances:
             for trigger in list(self._entity_effects):
                 self._entity_effects[trigger] = [
-                    (e, r) for e, r in self._entity_effects[trigger]
-                    if not (e is entity and r.name in expired_names)
+                    (e, inst) for e, inst in self._entity_effects[trigger]
+                    if not (e is entity and id(inst) in expired_instances)
                 ]
 
     @staticmethod
-    def _tick_one(rule: Rule) -> bool:
-        """Decrement and return True if expired."""
-        if rule.duration_rounds is None:
+    def _tick_one(instance: EffectInstance) -> bool:
+        """Decrement duration_remaining and return True if the instance has expired."""
+        if instance.duration_remaining is None:
             return False
-        rule.duration_rounds -= 1
-        return rule.duration_rounds <= 0
+        instance.duration_remaining -= 1
+        return instance.duration_remaining <= 0

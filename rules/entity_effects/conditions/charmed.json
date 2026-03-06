@@ -2,6 +2,11 @@
   "name": "charmed",
   "triggers": ["ATTACK_DECLARED"],
   "condition": "event.attacker == entity",
-  "effects": [],
-  "_note": "TODO: Cannot attack the charmer or target it with harmful abilities/spells — requires storing a charmer entity reference on the effect and checking event.defender == charmer (pending effect parameter system). Charmer has advantage on social ability checks against the charmed creature (pending ability check system)."
+  "effects": [
+    {
+      "action": "Cancel",
+      "when": "event.defender == instance_fields.charmer"
+    }
+  ],
+  "_note": "Apply via engine.apply_effect(target, rule, instance_fields={'charmer': caster_entity}). Charmer has advantage on social ability checks against the charmed creature (pending ability check system)."
 }

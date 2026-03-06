@@ -98,7 +98,8 @@ class TestRuleEngineEntityAPI:
         entity = make_entity()
         rule = load_poison_rule()
         engine.apply_effect(entity, rule)
-        assert entity.get_effects_for_trigger("turn_start") == [rule]
+        assert len(entity.get_effects_for_trigger("turn_start")) == 1
+        assert entity.get_effects_for_trigger("turn_start")[0].rule == rule
 
     def test_remove_effect_removes_from_entity(self):
         bus = EventBus()
@@ -238,7 +239,8 @@ class TestDurationTicking:
         for i in range(5):
             bus.emit(EventType.TURN_END, entity=ranger, round_num=i)
 
-        assert ranger.get_effects_for_trigger("attack_hit") == [rule]
+        assert len(ranger.get_effects_for_trigger("attack_hit")) == 1
+        assert ranger.get_effects_for_trigger("attack_hit")[0].rule == rule
 
 
 # ── DealDamage effect handler ────────────────────────────────────────────────

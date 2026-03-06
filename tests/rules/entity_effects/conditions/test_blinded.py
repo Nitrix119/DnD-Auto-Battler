@@ -12,8 +12,8 @@ from src.combat import EventBus, EventType
 from src.loaders import StatBlockLoader
 from src.rules import RuleEngine, RuleLoader
 
-EXAMPLES_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "..", "examples")
-CONDITIONS_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "..", "rules", "entity_effects", "conditions")
+EXAMPLES_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "examples")
+CONDITIONS_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "rules", "entity_effects", "conditions")
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
