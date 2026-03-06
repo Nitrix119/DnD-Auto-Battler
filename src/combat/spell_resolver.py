@@ -1,14 +1,13 @@
 """Spell resolution."""
 
 import logging
-from types import SimpleNamespace
 from typing import Any, Dict, List, Optional, Tuple
 
 from src.models.entity import Entity
 from src.models.action import SpellAction
 from src.models.damage import Damage
 from src.utils.dice import roll_d20
-from src.rules.expressions import SAFE_BUILTINS, evaluate, resolve
+from src.rules.expressions import build_context, evaluate, resolve
 from src.rules.rule_loader import RuleLoader
 from .event_bus import EventBus
 from .event_data import AttackDeclaredData, SpellCastData, SpellHitData
@@ -202,15 +201,12 @@ class SpellResolver:
         if not action.spell_effects or self.rule_engine is None:
             return
 
-        ctx = {
-            **SAFE_BUILTINS,
-            "event": SimpleNamespace(
-                caster=caster, defender=defender, action=action,
-                roll=attack_roll, save_success=save_success, save_roll=save_roll,
-            ),
-            "save_success": save_success,
-            "save_roll": save_roll,
-        }
+        ctx = build_context(
+            dict(caster=caster, defender=defender, action=action,
+                 roll=attack_roll, save_success=save_success, save_roll=save_roll),
+            save_success=save_success,
+            save_roll=save_roll,
+        )
 
         for entry in action.spell_effects:
             # Evaluate optional guard condition

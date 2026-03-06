@@ -43,8 +43,8 @@ def setup_engine_and_resolver(*entities):
     """Return (bus, rule_engine, spell_resolver) wired together."""
     entity_list = list(entities)
     bus = EventBus()
-    engine = RuleEngine(bus, entities_getter=lambda: entity_list)
     damage_proc = DamageProcessor(bus)
+    engine = RuleEngine(bus, entities_getter=lambda: entity_list, damage_processor=damage_proc)
     attack_res = AttackResolver(bus, damage_proc)
     resolver = SpellResolver(bus, damage_proc, attack_res, rule_engine=engine)
     return bus, engine, resolver

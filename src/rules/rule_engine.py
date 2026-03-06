@@ -91,7 +91,7 @@ from src.combat.event_bus import CombatEvent, EventBus
 from src.combat.events import EventType
 from .effect_instance import EffectInstance
 from .effects import BUILTIN_EFFECTS
-from .expressions import SAFE_BUILTINS, evaluate
+from .expressions import SAFE_BUILTINS, build_context, evaluate
 from .rule import Rule
 from .rule_loader import RuleLoader
 
@@ -115,14 +115,13 @@ class RuleEngine:
     """
 
     def __init__(self, event_bus: EventBus,
-                 entities_getter: Optional[Callable[[], list]] = None) -> None:
+                 entities_getter: Optional[Callable[[], list]] = None,
+                 damage_processor=None) -> None:
         self.event_bus = event_bus
         self._entities_getter = entities_getter
+        self._damage_processor = damage_processor
         self._rules: Dict[EventType, List[Rule]] = {}  # {trigger: [Rule, ...]}
         self._effect_registry: Dict[str, EffectHandler] = dict(BUILTIN_EFFECTS)
-        # Index for fast entity-effect dispatch: {EventType: [(entity, Rule), ...]}
-        # Avoids iterating all entities on every event.
-        self._entity_effects: Dict[EventType, list] = {}
         # Track which triggers already have a subscription to avoid duplicates.
         self._subscribed_triggers: Set[EventType] = set()
         if entities_getter is not None:
@@ -183,16 +182,10 @@ class RuleEngine:
         instance = EffectInstance(rule=rule, instance_fields=instance_fields or {})
         for trigger in rule.triggers:
             entity.add_effect(trigger.value, instance)
-            self._entity_effects.setdefault(trigger, []).append((entity, instance))
 
     def remove_effect(self, entity, name: str) -> None:
         """Remove a named effect from an entity."""
         entity.remove_effect(name)
-        for trigger in list(self._entity_effects):
-            self._entity_effects[trigger] = [
-                (e, inst) for e, inst in self._entity_effects[trigger]
-                if not (e is entity and inst.name == name)
-            ]
 
     # ------------------------------------------------------------------
     # Internal
@@ -218,13 +211,14 @@ class RuleEngine:
           set when ``apply_effect`` was called (e.g. ``instance_fields.charmer``).
           Populated by ``_dispatch``; defaults to an empty namespace.
         """
-        event_ns = SimpleNamespace(**event.data)
-        return {
-            **SAFE_BUILTINS,
-            "event": event_ns,
+        extras = {
             "event_type": event.event_type,
             "_event": event,
         }
+        if self._damage_processor is not None:
+            extras["_damage_processor"] = self._damage_processor
+        ctx = build_context(dict(event.data), **extras)
+        return ctx
 
     def _eval(self, expr: str, ctx: dict):
         return evaluate(expr, ctx)
@@ -295,15 +289,14 @@ class RuleEngine:
                 break
 
     def _handle_entity_effects(self, event: CombatEvent) -> None:
-        """Dispatch entity-scoped effects for this trigger using the pre-built index."""
-        seen = set()  # (id(entity), id(instance)) — avoid dispatching same instance twice
-        for entity, instance in list(self._entity_effects.get(event.event_type, [])):
-            key = (id(entity), id(instance))
-            if key in seen:
-                continue
-            seen.add(key)
-            self._dispatch(instance.rule, event, entity=entity,
-                           instance_fields=instance.instance_fields)
+        """Dispatch entity-scoped effects by querying each entity directly."""
+        if not self._entities_getter:
+            return
+        trigger_str = event.event_type.value
+        for entity in self._entities_getter():
+            for instance in list(entity.get_effects_for_trigger(trigger_str)):
+                self._dispatch(instance.rule, event, entity=entity,
+                               instance_fields=instance.instance_fields)
         if event.event_type == EventType.TURN_END:
             self._tick_durations(event.data.get("entity"))
 
@@ -328,12 +321,6 @@ class RuleEngine:
                     continue
                 surviving.append(instance)
             bucket[:] = surviving
-        if expired_instances:
-            for trigger in list(self._entity_effects):
-                self._entity_effects[trigger] = [
-                    (e, inst) for e, inst in self._entity_effects[trigger]
-                    if not (e is entity and id(inst) in expired_instances)
-                ]
 
     @staticmethod
     def _tick_one(instance: EffectInstance) -> bool:

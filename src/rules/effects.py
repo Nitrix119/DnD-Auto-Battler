@@ -205,14 +205,23 @@ def deal_damage(effect: dict, ctx: dict, event: CombatEvent, event_bus: EventBus
     """Deal damage to a target by dice formula.
 
     Required keys:  target (expr), formula (str), damage_type (str)
+
+    When a ``_damage_processor`` is available in *ctx* (injected by the
+    RuleEngine), damage is routed through :class:`DamageProcessor` so that
+    ``DAMAGE_INCOMING`` handlers (resistance, immunity, vulnerability) apply.
     """
     target = _resolve(effect["target"], ctx)
     amount = roll_formula(effect["formula"])
     dtype = _resolve_damage_type(effect["damage_type"], ctx)
     dmg = Damage(dtype, amount)
-    target.take_damage(dmg)
-    event_bus.emit(EventType.DAMAGE_DEALT,
-                   DamageDealtData(defender=target, damage_list=[dmg], total=amount))
+
+    processor = ctx.get("_damage_processor")
+    if processor is not None:
+        processor.apply_damage(target, [dmg])
+    else:
+        target.take_damage(dmg)
+        event_bus.emit(EventType.DAMAGE_DEALT,
+                       DamageDealtData(defender=target, damage_list=[dmg], total=amount))
 
 
 def grant_advantage(effect: dict, ctx: dict, event: CombatEvent, event_bus: EventBus) -> None:
