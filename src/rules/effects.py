@@ -281,6 +281,32 @@ def modify_damage(effect: dict, ctx: dict, event: CombatEvent, event_bus: EventB
 
 
 # ---------------------------------------------------------------------------
+# Action economy effects
+# ---------------------------------------------------------------------------
+
+def refill_resources(effect: dict, ctx: dict, event: CombatEvent, event_bus: EventBus) -> None:
+    """Reset an entity's action resources to its stat block defaults.
+
+    Required keys:  target (expr)
+    """
+    target = _resolve(effect["target"], ctx)
+    target.refill_resources()
+
+
+def add_resource(effect: dict, ctx: dict, event: CombatEvent, event_bus: EventBus) -> None:
+    """Add bonus resources to an entity (can exceed defaults).
+
+    Required keys:  target (expr), resource (str), amount (int or expr)
+
+    ``resource`` must be one of: "actions", "bonus_actions", "reactions", "movement".
+    """
+    target = _resolve(effect["target"], ctx)
+    resource = effect["resource"]
+    amount = int(_resolve(effect.get("amount", 1), ctx))
+    target.add_resource(resource, amount)
+
+
+# ---------------------------------------------------------------------------
 # Registry
 # ---------------------------------------------------------------------------
 
@@ -295,4 +321,6 @@ BUILTIN_EFFECTS = {
     "GrantAdvantage": grant_advantage,
     "GrantDisadvantage": grant_disadvantage,
     "ModifyDamage": modify_damage,
+    "RefillResources": refill_resources,
+    "AddResource": add_resource,
 }

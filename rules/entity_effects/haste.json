@@ -1,0 +1,15 @@
+{
+  "name": "haste",
+  "triggers": ["TURN_START"],
+  "condition": "event.entity == entity",
+  "effects": [
+    {
+      "action": "AddResource",
+      "target": "entity",
+      "resource": "actions",
+      "amount": 1
+    }
+  ],
+  "duration_rounds": 10,
+  "source": "Haste"
+}

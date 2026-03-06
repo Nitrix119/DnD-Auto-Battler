@@ -131,7 +131,10 @@ class RuleEngine:
         self._subscribed_triggers: Set[EventType] = set()
         if entities_getter is not None:
             for event_type in EventType:
-                event_bus.subscribe(event_type, self._handle_entity_effects)
+                # Priority -10 so entity-scoped effects fire after global rules
+                # (e.g. bonus resource effects fire after the refill rule).
+                event_bus.subscribe(event_type, self._handle_entity_effects,
+                                    priority=-10)
 
     # ------------------------------------------------------------------
     # Public API

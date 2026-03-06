@@ -6,7 +6,7 @@ from typing import Dict, Any, Optional
 
 from src.models import (
     AbilityScores, StatBlock, AttackAction, SpellAction, Damage, DamageType,
-    Action, ActionType,
+    Action, ActionType, ActionCost,
     RangeType, SpellRange,
     TargetingType,
     AOEShape, AOEProperties,
@@ -14,6 +14,7 @@ from src.models import (
     DurationUnit, Duration,
     SpellComponents,
 )
+from src.models.stat_block import DEFAULT_RESOURCE_DEFAULTS
 
 
 class StatBlockLoader:
@@ -90,6 +91,11 @@ class StatBlockLoader:
             if action:
                 actions.append(action)
 
+        # Parse resource defaults (action economy)
+        resource_defaults = dict(DEFAULT_RESOURCE_DEFAULTS)
+        if "resource_defaults" in data:
+            resource_defaults.update(data["resource_defaults"])
+
         # Create stat block (template — current HP lives on Entity)
         hp_max = data.get("hit_points_max", data.get("hit_points", 1))
         stat_block = StatBlock(
@@ -99,6 +105,7 @@ class StatBlockLoader:
             armor_class=data.get("armor_class", 10),
             proficiency_bonus=data.get("proficiency_bonus", 2),
             actions=actions,
+            resource_defaults=resource_defaults,
         )
 
         # Add saving throws if provided
@@ -158,6 +165,19 @@ class StatBlockLoader:
         )
 
     @staticmethod
+    def _parse_cost(data: Dict[str, Any]) -> Optional[ActionCost]:
+        """Parse an optional cost dict into an ActionCost, or None if absent."""
+        cost_data = data.get("cost")
+        if cost_data is None:
+            return None
+        return ActionCost(
+            actions=cost_data.get("actions", 0),
+            bonus_actions=cost_data.get("bonus_actions", 0),
+            reactions=cost_data.get("reactions", 0),
+            movement=cost_data.get("movement", 0),
+        )
+
+    @staticmethod
     def _parse_action(action_data: Dict[str, Any]) -> Optional[Action]:
         """Parse an action from dictionary data.
 
@@ -171,8 +191,13 @@ class StatBlockLoader:
         name = action_data.get("name", "Unknown")
         description = action_data.get("description", "")
         recharge = action_data.get("recharge")
+        cost = StatBlockLoader._parse_cost(action_data)
 
         damage = StatBlockLoader._parse_damage(action_data)
+
+        cost_kwargs: Dict[str, Any] = {}
+        if cost is not None:
+            cost_kwargs["cost"] = cost
 
         if action_type == "attack":
             return AttackAction(
@@ -181,6 +206,7 @@ class StatBlockLoader:
                 bonus_to_hit=action_data.get("bonus_to_hit", 0),
                 damage=damage,
                 recharge=recharge,
+                **cost_kwargs,
             )
 
         if action_type == "spell":
@@ -239,6 +265,7 @@ class StatBlockLoader:
                 components=components,
                 higher_level_scaling=action_data.get("higher_level_scaling"),
                 spell_effects=action_data.get("effects", []),
+                **cost_kwargs,
             )
 
         # Fallback: generic ability action
@@ -247,6 +274,7 @@ class StatBlockLoader:
             description=description,
             action_type=ActionType.ABILITY,
             recharge=recharge,
+            **cost_kwargs,
         )
 
     @staticmethod
@@ -271,6 +299,21 @@ class StatBlockLoader:
         }
         if action.recharge:
             base["recharge"] = action.recharge
+
+        # Serialize cost (omit if all zeros — the default is derived by the Action class)
+        from src.models.action_resources import NO_COST
+        if action.cost != NO_COST:
+            cost_dict: Dict[str, Any] = {}
+            if action.cost.actions:
+                cost_dict["actions"] = action.cost.actions
+            if action.cost.bonus_actions:
+                cost_dict["bonus_actions"] = action.cost.bonus_actions
+            if action.cost.reactions:
+                cost_dict["reactions"] = action.cost.reactions
+            if action.cost.movement:
+                cost_dict["movement"] = action.cost.movement
+            if cost_dict:
+                base["cost"] = cost_dict
 
         if isinstance(action, AttackAction):
             base["bonus_to_hit"] = action.bonus_to_hit
@@ -375,6 +418,7 @@ class StatBlockLoader:
             "armor_class": stat_block.armor_class,
             "proficiency_bonus": stat_block.proficiency_bonus,
             "saving_throws": list(stat_block.saving_throws.keys()),
+            "resource_defaults": stat_block.resource_defaults,
             "actions": [
                 StatBlockLoader._serialize_action(action)
                 for action in stat_block.actions

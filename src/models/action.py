@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 from enum import Enum
 
+from .action_resources import ActionCost, ACTION_COST, BONUS_ACTION_COST, REACTION_COST
 from .damage import DamageType, Damage
 from src.utils.dice import roll_formula
 from .spell_properties import (
@@ -41,6 +42,7 @@ class Action:
     recharge: Optional[str] = None
     damage: List[Damage] = field(default_factory=list)
     bonus_damage: List[Damage] = field(default_factory=list)
+    cost: ActionCost = field(default_factory=lambda: ACTION_COST)
 
     def __hash__(self) -> int:
         """Make action hashable for use in sets/dicts."""
@@ -126,9 +128,20 @@ class SpellAction(Action):
                          ``apply_effect`` as ``instance_fields``.
     """
 
+    _CASTING_TIME_COST_MAP = {
+        CastingTimeType.ACTION: ACTION_COST,
+        CastingTimeType.BONUS_ACTION: BONUS_ACTION_COST,
+        CastingTimeType.REACTION: REACTION_COST,
+    }
+
     def __post_init__(self) -> None:
-        """Validate spell properties."""
+        """Validate spell properties and derive cost from casting time."""
         if self.spell_level < 0 or self.spell_level > 9:
             raise ValueError("Spell level must be between 0 and 9")
         if self.targeting_type == TargetingType.AOE and self.aoe is None:
             raise ValueError("AOE spells must have aoe (AOEProperties) specified")
+        # Auto-derive cost from casting_time when using the default (1 action)
+        if self.cost == ACTION_COST:
+            self.cost = self._CASTING_TIME_COST_MAP.get(
+                self.casting_time.time_type, ACTION_COST
+            )

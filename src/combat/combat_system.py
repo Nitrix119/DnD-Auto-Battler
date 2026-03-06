@@ -5,7 +5,7 @@ from typing import List, Optional, Tuple
 from enum import Enum
 
 from src.models.entity import Entity
-from src.models.action import AttackAction, SpellAction
+from src.models.action import Action, AttackAction, SpellAction
 from src.utils.dice import roll_d20
 from .enums import CombatState
 from .event_bus import EventBus
@@ -122,7 +122,17 @@ class CombatSystem:
 
         Returns:
             Tuple of (hit, total_damage)
+
+        Raises:
+            ValueError: If the attacker cannot afford the action's cost.
         """
+        if not attacker.can_afford(action.cost):
+            raise ValueError(
+                f"{attacker.name} cannot afford {action.name}: "
+                f"have {attacker.resources}, need {action.cost}"
+            )
+        attacker.spend_resources(action.cost)
+
         hit, total_damage, log_msg = self._attack_resolver.resolve(
             attacker, defender, action,
         )
@@ -142,7 +152,17 @@ class CombatSystem:
         Returns:
             List of (hit, damage_dealt) per defender, in the same order as
             defenders.
+
+        Raises:
+            ValueError: If the caster cannot afford the spell's cost.
         """
+        if not caster.can_afford(action.cost):
+            raise ValueError(
+                f"{caster.name} cannot afford {action.name}: "
+                f"have {caster.resources}, need {action.cost}"
+            )
+        caster.spend_resources(action.cost)
+
         results = self._spell_resolver.resolve(caster, defenders, action)
         for _, _, log_msg in results:
             if log_msg:
@@ -195,6 +215,10 @@ class CombatSystem:
     def get_alive_entities(self) -> List[Entity]:
         """Get all entities still in the fight."""
         return [e for e in self.combatants if e.is_alive()]
+
+    def get_affordable_actions(self, entity: Entity) -> List[Action]:
+        """Return actions the entity can currently afford."""
+        return [a for a in entity.stat_block.actions if entity.can_afford(a.cost)]
 
     def get_enemies(self, entity: Entity) -> List[Entity]:
         """Get all alive enemies of a given entity.

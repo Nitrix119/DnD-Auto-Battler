@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from typing import Optional, List
 import uuid
 
+from .action_resources import ActionCost, ActionResources
 from .stat_block import StatBlock
 from .condition import Condition, ConditionType
 from .damage import Damage
@@ -27,6 +28,7 @@ class Entity:
     team: Optional[str] = None  # faction/team identifier; None = hostile to everyone
     concentrating_on: Optional[str] = None
     active_effects: dict = field(default_factory=dict)  # {trigger_str: [Rule, ...]}
+    resources: Optional[ActionResources] = None
 
     def __post_init__(self) -> None:
         """Validate entity and initialize mutable state."""
@@ -34,6 +36,14 @@ class Entity:
             raise ValueError("Entity must have a stat block")
         if self.current_hp is None:
             self.current_hp = self.stat_block.hit_points_max
+        if self.resources is None:
+            defaults = self.stat_block.resource_defaults
+            self.resources = ActionResources(
+                actions=defaults.get("actions", 1),
+                bonus_actions=defaults.get("bonus_actions", 1),
+                reactions=defaults.get("reactions", 1),
+                movement=defaults.get("speed", 30),
+            )
 
     def __hash__(self) -> int:
         return hash(self.entity_id)
@@ -97,6 +107,31 @@ class Entity:
     def get_effects_for_trigger(self, trigger: str) -> list:
         """Get all effects for a given trigger string."""
         return self.active_effects.get(trigger, [])
+
+    # ------------------------------------------------------------------
+    # Resource management (action economy)
+    # ------------------------------------------------------------------
+
+    def can_afford(self, cost: ActionCost) -> bool:
+        """Check whether the entity can pay *cost*."""
+        return self.resources.can_afford(cost)
+
+    def spend_resources(self, cost: ActionCost) -> None:
+        """Deduct *cost* from current resources."""
+        self.resources.spend(cost)
+
+    def refill_resources(self) -> None:
+        """Reset resources to stat block defaults."""
+        defaults = self.stat_block.resource_defaults
+        self.resources.actions = defaults.get("actions", 1)
+        self.resources.bonus_actions = defaults.get("bonus_actions", 1)
+        self.resources.reactions = defaults.get("reactions", 1)
+        self.resources.movement = defaults.get("speed", 30)
+
+    def add_resource(self, resource_name: str, amount: int) -> None:
+        """Add bonus resources (can exceed defaults)."""
+        current = getattr(self.resources, resource_name)
+        setattr(self.resources, resource_name, current + amount)
 
     # ------------------------------------------------------------------
     # Properties

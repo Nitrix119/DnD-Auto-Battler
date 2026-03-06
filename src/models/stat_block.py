@@ -12,6 +12,13 @@ from .ability import AbilityScores
 from .skill import Skill, STANDARD_SKILLS
 from .action import Action
 
+DEFAULT_RESOURCE_DEFAULTS: Dict[str, int] = {
+    "actions": 1,
+    "bonus_actions": 1,
+    "reactions": 1,
+    "speed": 30,
+}
+
 
 @dataclass
 class StatBlock:
@@ -26,6 +33,7 @@ class StatBlock:
         skills: Dictionary of skills with proficiency
         actions: List of available combat actions
         saving_throws: Ability scores with saving throw proficiency
+        resource_defaults: Per-turn action economy defaults (actions, bonus_actions, reactions, speed)
     """
 
     name: str
@@ -36,6 +44,7 @@ class StatBlock:
     skills: Dict[str, Skill] = field(default_factory=dict)
     actions: List[Action] = field(default_factory=list)
     saving_throws: Dict[str, int] = field(default_factory=dict)
+    resource_defaults: Dict[str, int] = field(default_factory=lambda: dict(DEFAULT_RESOURCE_DEFAULTS))
 
     def __post_init__(self) -> None:
         """Initialize default skills and validate stats."""
