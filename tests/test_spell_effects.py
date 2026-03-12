@@ -14,6 +14,7 @@ import pytest
 from src.models import Entity, SpellAction, DamageType
 from src.models.damage import Damage
 from src.combat import EventBus, EventType
+from src.combat.event_data import TurnEventData
 from src.combat.spell_resolver import SpellResolver
 from src.combat.damage_processor import DamageProcessor
 from src.combat.attack_resolver import AttackResolver
@@ -302,3 +303,84 @@ class TestCombatSystemIntegration:
         instance = goblin.active_effects["attack_declared"][0]
         assert instance.name == "charmed"
         assert instance.instance_fields.get("charmer") is wizard
+
+
+# ── Longstrider spell integration ────────────────────────────────────────────
+
+def longstrider_spell() -> SpellAction:
+    """Load Longstrider from the example spell file."""
+    return StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "longstrider.json"))
+
+
+class TestLongstriderSpellEffects:
+
+    def test_longstrider_loads_effects(self):
+        """longstrider.json should parse its effects list into spell_effects."""
+        spell = longstrider_spell()
+        assert len(spell.spell_effects) == 1
+        entry = spell.spell_effects[0]
+        assert entry["rule"] == "rules/entity_effects/longstrider.json"
+
+    def test_longstrider_no_save(self):
+        """Longstrider has no saving throw."""
+        spell = longstrider_spell()
+        assert spell.save_dc == 0
+        assert spell.save_ability == ""
+
+    def test_longstrider_applies_effect_on_cast(self):
+        """Casting Longstrider should apply the longstrider movement effect."""
+        wizard = load_wizard()
+        goblin = load_goblin()
+        bus, engine, resolver = setup_engine_and_resolver(wizard, goblin)
+
+        spell = longstrider_spell()
+        resolver.resolve(wizard, [goblin], spell)
+
+        # The goblin should have the longstrider effect on turn_start
+        assert "turn_start" in goblin.active_effects
+        instances = goblin.active_effects["turn_start"]
+        assert len(instances) == 1
+        assert instances[0].name == "longstrider"
+
+    def test_longstrider_grants_movement_on_turn(self):
+        """After casting, the affected entity gets +10 movement on TURN_START."""
+        wizard = load_wizard()
+        goblin = load_goblin()
+        bus, engine, resolver = setup_engine_and_resolver(wizard, goblin)
+        engine.load_from_file("rules/action_economy_refill.json")
+
+        spell = longstrider_spell()
+        resolver.resolve(wizard, [goblin], spell)
+
+        # Emit TURN_START for the goblin
+        bus.emit(EventType.TURN_START, TurnEventData(
+            entity=goblin, round_num=2, turn_num=1,
+        ))
+
+        # Base speed (30) + longstrider (+10) = 40
+        assert goblin.resources.movement == 40
+
+    def test_longstrider_on_multiple_targets(self):
+        """Longstrider can be applied to multiple targets (for future upcast)."""
+        wizard = load_wizard()
+        goblin_a = load_goblin()
+        goblin_b = load_goblin()
+        bus, engine, resolver = setup_engine_and_resolver(wizard, goblin_a, goblin_b)
+        engine.load_from_file("rules/action_economy_refill.json")
+
+        spell = longstrider_spell()
+        resolver.resolve(wizard, [goblin_a, goblin_b], spell)
+
+        # Both goblins should have the effect
+        assert "turn_start" in goblin_a.active_effects
+        assert "turn_start" in goblin_b.active_effects
+
+        bus.emit(EventType.TURN_START, TurnEventData(
+            entity=goblin_a, round_num=2, turn_num=1,
+        ))
+        assert goblin_a.resources.movement == 40
+
+        bus.emit(EventType.TURN_START, TurnEventData(
+            entity=goblin_b, round_num=2, turn_num=2,
+        ))
+        assert goblin_b.resources.movement == 40

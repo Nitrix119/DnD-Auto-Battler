@@ -1,0 +1,26 @@
+{
+  "name": "Armor of Agathys",
+  "description": "A protective magical force surrounds you, manifesting as a spectral frost that covers you and your gear. You gain 5 temporary hit points for the duration. If a creature hits you with a melee attack while you have these hit points, the creature takes 5 cold damage.",
+  "type": "spell",
+  "spell_level": 1,
+  "save_dc": 0,
+  "save_ability": "",
+  "damage": [],
+  "spell_range": { "type": "self" },
+  "targeting_type": "single_target",
+  "casting_time": { "type": "action", "count": 1 },
+  "duration": { "unit": "hour", "count": 1, "concentration": false },
+  "components": { "verbal": true, "somatic": true, "material": [] },
+  "effects": [
+    {
+      "rule": "rules/entity_effects/armor_of_agathys.json",
+      "on_apply": [
+        {
+          "action": "GrantTemporaryHP",
+          "target": "event.defender",
+          "amount": 5
+        }
+      ]
+    }
+  ]
+}

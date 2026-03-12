@@ -1,0 +1,14 @@
+{
+  "name": "longstrider",
+  "triggers": ["TURN_START"],
+  "condition": "event.entity == entity",
+  "effects": [
+    {
+      "action": "AddResource",
+      "target": "entity",
+      "resource": "movement",
+      "amount": 10
+    }
+  ],
+  "source": "Longstrider"
+}

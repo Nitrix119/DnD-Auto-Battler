@@ -9,7 +9,7 @@ from src.models.damage import Damage
 from src.utils.dice import roll_d20
 from src.rules.expressions import build_context, evaluate, resolve
 from src.rules.rule_loader import RuleLoader
-from .event_bus import EventBus
+from .event_bus import CombatEvent, EventBus
 from .event_data import AttackDeclaredData, SpellCastData, SpellHitData
 from .events import EventType
 from .damage_processor import DamageProcessor
@@ -246,3 +246,20 @@ class SpellResolver:
                 "Applied spell effect '%s' to %s (save_success=%s)",
                 rule.name, defender.name, save_success,
             )
+
+            # Execute immediate on-apply effects (e.g. granting temp HP at cast time)
+            for on_apply_effect in entry.get("on_apply", []):
+                action_name = on_apply_effect.get("action")
+                handler = self.rule_engine._effect_registry.get(action_name)
+                if handler is None:
+                    logger.warning("on_apply: unknown action '%s'", action_name)
+                    continue
+                stub_event = CombatEvent(
+                    event_type=EventType.SPELL_HIT,
+                    data=SpellHitData(
+                        caster=caster, defender=defender, action=action,
+                        roll=attack_roll, save_success=save_success,
+                        save_roll=save_roll,
+                    ),
+                )
+                handler(on_apply_effect, ctx, stub_event, self._event_bus)

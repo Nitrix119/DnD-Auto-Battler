@@ -293,6 +293,26 @@ def refill_resources(effect: dict, ctx: dict, event: CombatEvent, event_bus: Eve
     target.refill_resources()
 
 
+def grant_temporary_hp(effect: dict, ctx: dict, event: CombatEvent, event_bus: EventBus) -> None:
+    """Grant temporary hit points to a target entity.
+
+    Required keys:  target (expr), amount (int or expr)
+    """
+    target = _resolve(effect["target"], ctx)
+    amount = int(_resolve(effect["amount"], ctx))
+    target.add_temporary_hp(amount)
+
+
+def remove_effect(effect: dict, ctx: dict, event: CombatEvent, event_bus: EventBus) -> None:
+    """Remove a named entity effect from the target.
+
+    Required keys:  target (expr), effect_name (str)
+    """
+    target = _resolve(effect["target"], ctx)
+    effect_name = effect["effect_name"]
+    target.remove_effect(effect_name)
+
+
 def add_resource(effect: dict, ctx: dict, event: CombatEvent, event_bus: EventBus) -> None:
     """Add bonus resources to an entity (can exceed defaults).
 
@@ -321,6 +341,8 @@ BUILTIN_EFFECTS = {
     "GrantAdvantage": grant_advantage,
     "GrantDisadvantage": grant_disadvantage,
     "ModifyDamage": modify_damage,
+    "GrantTemporaryHP": grant_temporary_hp,
+    "RemoveEffect": remove_effect,
     "RefillResources": refill_resources,
     "AddResource": add_resource,
 }

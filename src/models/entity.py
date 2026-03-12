@@ -24,6 +24,7 @@ class Entity:
     initiative_roll: Optional[int] = None
     is_player_controlled: bool = False
     current_hp: Optional[int] = None  # None → set to max in __post_init__
+    temporary_hp: int = 0
     conditions: List[Condition] = field(default_factory=list)
     team: Optional[str] = None  # faction/team identifier; None = hostile to everyone
     concentrating_on: Optional[str] = None
@@ -58,14 +59,36 @@ class Entity:
     # ------------------------------------------------------------------
 
     def take_damage(self, damage: Damage) -> int:
-        """Reduce hit points and return remaining HP."""
-        self.current_hp = max(0, self.current_hp - damage.amount)
+        """Reduce hit points and return remaining HP.
+
+        Temporary hit points absorb damage first.  Any excess carries
+        over to regular hit points (PHB temp-HP rules).
+        """
+        remaining = damage.amount
+        if self.temporary_hp > 0:
+            absorbed = min(self.temporary_hp, remaining)
+            self.temporary_hp -= absorbed
+            remaining -= absorbed
+        self.current_hp = max(0, self.current_hp - remaining)
         return self.current_hp
 
     def heal(self, amount: int) -> int:
         """Increase hit points, capped at maximum."""
         self.current_hp = min(self.stat_block.hit_points_max, self.current_hp + amount)
         return self.current_hp
+
+    def add_temporary_hp(self, amount: int) -> None:
+        """Grant temporary hit points.
+
+        Per D&D rules, temp HP don't stack — the entity keeps whichever
+        value is higher (current temp HP or the new amount).
+        """
+        if amount > 0:
+            self.temporary_hp = max(self.temporary_hp, amount)
+
+    def clear_temporary_hp(self) -> None:
+        """Remove all temporary hit points."""
+        self.temporary_hp = 0
 
     def is_alive(self) -> bool:
         """Check if entity is conscious and able to act."""

@@ -131,6 +131,92 @@ class TestEntity:
         assert len(basic_entity.get_active_conditions()) == 1
 
 
+class TestTemporaryHP:
+    """Test temporary hit point mechanics (D&D 5e rules)."""
+
+    @pytest.fixture
+    def entity(self):
+        abilities = AbilityScores(10, 10, 10, 10, 10, 10)
+        stat_block = StatBlock(
+            name="Fighter",
+            ability_scores=abilities,
+            hit_points_max=30,
+            armor_class=15,
+        )
+        return Entity(stat_block)
+
+    def test_default_temp_hp_is_zero(self, entity):
+        assert entity.temporary_hp == 0
+
+    def test_add_temporary_hp(self, entity):
+        entity.add_temporary_hp(10)
+        assert entity.temporary_hp == 10
+
+    def test_temp_hp_dont_stack_keeps_higher(self, entity):
+        """Temp HP don't stack — keep the higher value."""
+        entity.add_temporary_hp(10)
+        entity.add_temporary_hp(5)
+        assert entity.temporary_hp == 10
+
+    def test_temp_hp_replaced_by_higher(self, entity):
+        entity.add_temporary_hp(5)
+        entity.add_temporary_hp(10)
+        assert entity.temporary_hp == 10
+
+    def test_damage_absorbed_by_temp_hp(self, entity):
+        entity.add_temporary_hp(10)
+        entity.take_damage(Damage(DamageType.BLUDGEONING, 6))
+        assert entity.temporary_hp == 4
+        assert entity.hp == 30  # real HP untouched
+
+    def test_damage_overflows_to_real_hp(self, entity):
+        entity.add_temporary_hp(5)
+        entity.take_damage(Damage(DamageType.BLUDGEONING, 12))
+        assert entity.temporary_hp == 0
+        assert entity.hp == 23  # 30 - (12-5)
+
+    def test_damage_exactly_depletes_temp_hp(self, entity):
+        entity.add_temporary_hp(8)
+        entity.take_damage(Damage(DamageType.BLUDGEONING, 8))
+        assert entity.temporary_hp == 0
+        assert entity.hp == 30
+
+    def test_healing_does_not_restore_temp_hp(self, entity):
+        entity.add_temporary_hp(10)
+        entity.take_damage(Damage(DamageType.BLUDGEONING, 15))
+        # temp HP gone, real HP at 25
+        assert entity.temporary_hp == 0
+        assert entity.hp == 25
+        entity.heal(5)
+        assert entity.hp == 30
+        assert entity.temporary_hp == 0  # healing doesn't bring back temp HP
+
+    def test_healing_does_not_add_temp_hp(self, entity):
+        entity.take_damage(Damage(DamageType.BLUDGEONING, 10))
+        entity.heal(5)
+        assert entity.temporary_hp == 0
+
+    def test_clear_temporary_hp(self, entity):
+        entity.add_temporary_hp(15)
+        entity.clear_temporary_hp()
+        assert entity.temporary_hp == 0
+
+    def test_add_zero_or_negative_temp_hp_ignored(self, entity):
+        entity.add_temporary_hp(5)
+        entity.add_temporary_hp(0)
+        assert entity.temporary_hp == 5
+        entity.add_temporary_hp(-3)
+        assert entity.temporary_hp == 5
+
+    def test_temp_hp_with_lethal_damage(self, entity):
+        """Temp HP can't prevent death if overflow kills."""
+        entity.add_temporary_hp(5)
+        entity.take_damage(Damage(DamageType.NECROTIC, 50))
+        assert entity.temporary_hp == 0
+        assert entity.hp == 0
+        assert not entity.is_alive()
+
+
 class TestAttackAction:
     """Test attack actions."""
     

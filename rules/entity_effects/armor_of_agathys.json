@@ -1,0 +1,24 @@
+{
+  "name": "armor_of_agathys",
+  "triggers": ["ATTACK_HIT", "DAMAGE_DEALT"],
+  "condition": "event.defender == entity",
+  "effects": [
+    {
+      "action": "DealDamage",
+      "on": "ATTACK_HIT",
+      "when": "entity.temporary_hp > 0",
+      "target": "event.attacker",
+      "formula": "5",
+      "damage_type": "COLD"
+    },
+    {
+      "action": "RemoveEffect",
+      "on": "DAMAGE_DEALT",
+      "when": "entity.temporary_hp <= 0",
+      "target": "entity",
+      "effect_name": "armor_of_agathys"
+    }
+  ],
+  "duration_rounds": null,
+  "source": "Armor of Agathys"
+}
