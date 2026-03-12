@@ -16,7 +16,7 @@
   "components": { "verbal": true, "somatic": true, "material": [] },
   "effects": [
     {
-      "rule": "rules/entity_effects/conditions/charmed.json",
+      "effect": "charmed",
       "condition": "not save_success",
       "instance_fields": {
         "charmer": "event.caster"

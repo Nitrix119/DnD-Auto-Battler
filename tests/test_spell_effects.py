@@ -19,7 +19,7 @@ from src.combat.spell_resolver import SpellResolver
 from src.combat.damage_processor import DamageProcessor
 from src.combat.attack_resolver import AttackResolver
 from src.loaders.stat_block_loader import StatBlockLoader
-from src.rules import RuleEngine, RuleLoader
+from src.rules import EffectRegistry, RuleEngine, RuleLoader
 
 EXAMPLES_DIR = Path(__file__).parent.parent / "examples"
 SPELLS_DIR = EXAMPLES_DIR / "spells"
@@ -45,7 +45,10 @@ def setup_engine_and_resolver(*entities):
     entity_list = list(entities)
     bus = EventBus()
     damage_proc = DamageProcessor(bus)
-    engine = RuleEngine(bus, entities_getter=lambda: entity_list, damage_processor=damage_proc)
+    registry = EffectRegistry()
+    registry.scan_directory("rules/entity_effects")
+    engine = RuleEngine(bus, entities_getter=lambda: entity_list,
+                        damage_processor=damage_proc, effect_registry=registry)
     attack_res = AttackResolver(bus, damage_proc)
     resolver = SpellResolver(bus, damage_proc, attack_res, rule_engine=engine)
     return bus, engine, resolver
@@ -67,7 +70,7 @@ class TestSpellEffectLoading:
         spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "charm_person.json"))
         assert len(spell.spell_effects) == 1
         entry = spell.spell_effects[0]
-        assert "rule" in entry
+        assert "effect" in entry
         assert "condition" in entry
         assert "instance_fields" in entry
         assert entry["instance_fields"].get("charmer") == "event.caster"
@@ -236,7 +239,7 @@ class TestSpellEffectsWithoutRuleEngine:
 
 class TestRuleCaching:
 
-    def test_rule_is_cached_after_first_apply(self):
+    def test_registry_returns_same_rule_object(self):
         """The same Rule object should be reused across multiple spell resolutions."""
         wizard = load_wizard()
         goblin_a = load_goblin()
@@ -248,9 +251,6 @@ class TestRuleCaching:
         with patch("src.combat.spell_resolver.roll_d20", return_value=1):
             resolver.resolve(wizard, [goblin_a], spell)
             resolver.resolve(wizard, [goblin_b], spell)
-
-        rule_path = spell.spell_effects[0]["rule"]
-        assert rule_path in resolver._rule_cache
 
         # Both goblins should share the same Rule template object
         instance_a = goblin_a.active_effects["attack_declared"][0]
@@ -288,7 +288,10 @@ class TestCombatSystemIntegration:
         goblin = load_goblin()
 
         bus = EventBus()
-        engine = RuleEngine(bus, entities_getter=lambda: [wizard, goblin])
+        registry = EffectRegistry()
+        registry.scan_directory("rules/entity_effects")
+        engine = RuleEngine(bus, entities_getter=lambda: [wizard, goblin],
+                            effect_registry=registry)
 
         cs = CombatSystem()
         cs.event_bus = bus
@@ -319,7 +322,7 @@ class TestLongstriderSpellEffects:
         spell = longstrider_spell()
         assert len(spell.spell_effects) == 1
         entry = spell.spell_effects[0]
-        assert entry["rule"] == "rules/entity_effects/longstrider.json"
+        assert entry["effect"] == "longstrider"
 
     def test_longstrider_no_save(self):
         """Longstrider has no saving throw."""

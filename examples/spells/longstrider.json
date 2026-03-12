@@ -15,7 +15,7 @@
   "components": { "verbal": true, "somatic": true, "material": ["a pinch of dirt"] },
   "effects": [
     {
-      "rule": "rules/entity_effects/longstrider.json"
+      "effect": "longstrider"
     }
   ]
 }

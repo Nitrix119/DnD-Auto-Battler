@@ -8,7 +8,6 @@ from src.models.action import SpellAction
 from src.models.damage import Damage
 from src.utils.dice import roll_d20
 from src.rules.expressions import build_context, evaluate, resolve
-from src.rules.rule_loader import RuleLoader
 from .event_bus import CombatEvent, EventBus
 from .event_data import AttackDeclaredData, SpellCastData, SpellHitData
 from .events import EventType
@@ -32,7 +31,6 @@ class SpellResolver:
         self._damage_processor = damage_processor
         self._attack_resolver = attack_resolver
         self.rule_engine = rule_engine
-        self._rule_cache: Dict[str, Any] = {}
 
     def resolve(
         self,
@@ -221,14 +219,12 @@ class SpellResolver:
                     )
                     continue
 
-            # Load the entity effect rule (cached by path)
-            rule_path = entry.get("rule")
-            if not rule_path:
-                logger.warning("Spell effect entry missing 'rule' key: %s", entry)
+            # Look up the entity effect rule by name
+            effect_name = entry.get("effect")
+            if not effect_name:
+                logger.warning("Spell effect entry missing 'effect' key: %s", entry)
                 continue
-            if rule_path not in self._rule_cache:
-                self._rule_cache[rule_path] = RuleLoader.load(rule_path)
-            rule = self._rule_cache[rule_path]
+            rule = self.rule_engine.effect_registry.get(effect_name)
 
             # Evaluate instance_fields expressions
             instance_fields: Dict[str, Any] = {}

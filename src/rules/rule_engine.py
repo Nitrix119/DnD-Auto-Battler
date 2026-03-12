@@ -121,10 +121,12 @@ class RuleEngine:
 
     def __init__(self, event_bus: EventBus,
                  entities_getter: Optional[Callable[[], list]] = None,
-                 damage_processor=None) -> None:
+                 damage_processor=None,
+                 effect_registry=None) -> None:
         self.event_bus = event_bus
         self._entities_getter = entities_getter
         self._damage_processor = damage_processor
+        self.effect_registry = effect_registry
         self._rules: Dict[EventType, List[Rule]] = {}  # {trigger: [Rule, ...]}
         self._effect_registry: Dict[str, EffectHandler] = dict(BUILTIN_EFFECTS)
         # Track which triggers already have a subscription to avoid duplicates.

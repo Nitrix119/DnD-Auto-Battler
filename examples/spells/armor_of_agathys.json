@@ -13,7 +13,7 @@
   "components": { "verbal": true, "somatic": true, "material": [] },
   "effects": [
     {
-      "rule": "rules/entity_effects/armor_of_agathys.json",
+      "effect": "armor_of_agathys",
       "on_apply": [
         {
           "action": "GrantTemporaryHP",

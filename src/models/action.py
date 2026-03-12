@@ -119,7 +119,7 @@ class SpellAction(Action):
     """Entity effects applied to the defender on spell hit.
 
     Each entry is a dict with:
-      ``rule``           (str)  — path to the entity effect rule JSON
+      ``effect``         (str)  — name of the entity effect (looked up via EffectRegistry)
       ``condition``      (str, optional) — expression evaluated at spell hit time;
                          skipped if falsy.  Context includes ``event`` (SpellHitData
                          fields), ``save_success`` (bool), ``save_roll`` (int | None).

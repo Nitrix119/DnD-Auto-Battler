@@ -18,11 +18,10 @@ from src.combat.attack_resolver import AttackResolver
 from src.combat.spell_resolver import SpellResolver
 from src.loaders.stat_block_loader import StatBlockLoader
 from src.rules.rule_engine import RuleEngine
-from src.rules.rule_loader import RuleLoader
+from src.rules.effect_registry import EffectRegistry
 from pathlib import Path
 
 SPELLS_DIR = Path(__file__).parent.parent.parent.parent / "examples" / "spells"
-EFFECT_RULE_PATH = "rules/entity_effects/armor_of_agathys.json"
 
 
 # -- Helpers ------------------------------------------------------------------
@@ -63,10 +62,13 @@ def _setup(*entities):
     entity_list = list(entities)
     bus = EventBus()
     damage_proc = DamageProcessor(bus)
+    registry = EffectRegistry()
+    registry.scan_directory("rules/entity_effects")
     engine = RuleEngine(
         bus,
         entities_getter=lambda: entity_list,
         damage_processor=damage_proc,
+        effect_registry=registry,
     )
     attack_res = AttackResolver(bus, damage_proc)
     spell_res = SpellResolver(bus, damage_proc, attack_res, rule_engine=engine)
@@ -85,7 +87,7 @@ class TestArmorOfAgathysLoading:
         spell = _load_spell()
         assert len(spell.spell_effects) == 1
         entry = spell.spell_effects[0]
-        assert entry["rule"] == EFFECT_RULE_PATH
+        assert entry["effect"] == "armor_of_agathys"
         assert len(entry["on_apply"]) == 1
         assert entry["on_apply"][0]["action"] == "GrantTemporaryHP"
 
