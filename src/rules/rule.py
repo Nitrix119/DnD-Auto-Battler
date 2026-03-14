@@ -31,6 +31,12 @@ class Rule:
     source: str = ""                       # what applied this effect (spell name, item, etc.)
 
     def __post_init__(self):
+        # Validate the condition string against the AST whitelist at load time.
+        # This must happen before compile() so that rule conditions — which are
+        # later passed to evaluate() as code objects — are still validated.
+        if self.condition:
+            from src.rules.expressions import _validate_ast  # local import avoids circular
+            _validate_ast(self.condition)
         # Pre-compile the condition expression once so eval() uses bytecode on
         # every subsequent trigger rather than re-parsing the string each time.
         self._compiled_condition = (
