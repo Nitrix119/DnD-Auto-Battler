@@ -30,6 +30,9 @@ class Entity:
     concentrating_on: Optional[str] = None
     active_effects: dict = field(default_factory=dict)  # {trigger_str: [Rule, ...]}
     resources: Optional[ActionResources] = None
+    x: float = 0.0
+    y: float = 0.0
+    z: float = 0.0
 
     def __post_init__(self) -> None:
         """Validate entity and initialize mutable state."""
@@ -179,3 +182,21 @@ class Entity:
     @property
     def ac(self) -> int:
         return self.stat_block.armor_class
+
+    @property
+    def bounding_box(self):
+        """Axis-aligned bounding box for this entity based on position and size.
+
+        The entity's (x, y, z) position is the *minimum corner* of the box.
+        The box extends by ``size_ft`` in each positive axis direction, giving
+        each creature a cubic volume equal to its footprint size.
+
+        Returns:
+            BoundingBox: The AABB representing this entity's occupied space.
+        """
+        from src.spatial.geometry import BoundingBox, Point3D
+        s = self.stat_block.size.size_ft
+        return BoundingBox(
+            min_corner=Point3D(self.x, self.y, self.z),
+            max_corner=Point3D(self.x + s, self.y + s, self.z + s),
+        )

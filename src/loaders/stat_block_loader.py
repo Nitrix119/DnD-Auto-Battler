@@ -14,6 +14,7 @@ from src.models import (
     DurationUnit, Duration,
     SpellComponents,
 )
+from src.models.creature_size import CreatureSize
 from src.models.stat_block import DEFAULT_RESOURCE_DEFAULTS
 
 
@@ -96,6 +97,13 @@ class StatBlockLoader:
         if "resource_defaults" in data:
             resource_defaults.update(data["resource_defaults"])
 
+        # Parse creature size (default MEDIUM)
+        size_str = data.get("size", "medium").lower()
+        try:
+            creature_size = CreatureSize[size_str.upper()]
+        except KeyError:
+            creature_size = CreatureSize.MEDIUM
+
         # Create stat block (template — current HP lives on Entity)
         hp_max = data.get("hit_points_max", data.get("hit_points", 1))
         stat_block = StatBlock(
@@ -106,6 +114,7 @@ class StatBlockLoader:
             proficiency_bonus=data.get("proficiency_bonus", 2),
             actions=actions,
             resource_defaults=resource_defaults,
+            size=creature_size,
         )
 
         # Add saving throws if provided
@@ -419,6 +428,7 @@ class StatBlockLoader:
             "proficiency_bonus": stat_block.proficiency_bonus,
             "saving_throws": list(stat_block.saving_throws.keys()),
             "resource_defaults": stat_block.resource_defaults,
+            "size": stat_block.size.value,
             "actions": [
                 StatBlockLoader._serialize_action(action)
                 for action in stat_block.actions

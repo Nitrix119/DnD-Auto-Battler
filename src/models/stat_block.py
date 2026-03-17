@@ -11,6 +11,7 @@ from typing import Dict, List
 from .ability import AbilityScores
 from .skill import Skill, STANDARD_SKILLS
 from .action import Action
+from .creature_size import CreatureSize
 
 DEFAULT_RESOURCE_DEFAULTS: Dict[str, int] = {
     "actions": 1,
@@ -45,6 +46,7 @@ class StatBlock:
     actions: List[Action] = field(default_factory=list)
     saving_throws: Dict[str, int] = field(default_factory=dict)
     resource_defaults: Dict[str, int] = field(default_factory=lambda: dict(DEFAULT_RESOURCE_DEFAULTS))
+    size: CreatureSize = field(default=CreatureSize.MEDIUM)
 
     def __post_init__(self) -> None:
         """Initialize default skills and validate stats."""

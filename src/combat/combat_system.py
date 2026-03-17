@@ -1,12 +1,19 @@
 """Main combat simulation system."""
 
+import math
 from dataclasses import dataclass, field
 from typing import List, Optional, Tuple
 from enum import Enum
 
 from src.models.entity import Entity
 from src.models.action import Action, AttackAction, SpellAction
+from src.models.action_resources import ActionCost
+from src.models.spell_properties import AOEProperties, AOEShape
 from src.utils.dice import roll_d20
+from src.spatial.geometry import BoundingBox, Point3D, Vector3D
+from src.spatial.aoe import (
+    AOEVolume, SphereVolume, CylinderVolume, ConeVolume, CubeVolume, LineVolume,
+)
 from .enums import CombatState
 from .event_bus import EventBus
 from .initiative import InitiativeTracker
@@ -241,6 +248,184 @@ class CombatSystem:
             return []
         return [e for e in self.get_alive_entities()
                 if e != entity and e.team == entity.team]
+
+    # ------------------------------------------------------------------
+    # Spatial movement
+    # ------------------------------------------------------------------
+
+    def move_entity(
+        self,
+        entity: Entity,
+        new_x: float,
+        new_y: float,
+        new_z: float = 0.0,
+    ) -> None:
+        """Move *entity* to a new position, consuming movement resources.
+
+        The movement cost is the ceiling of the straight-line Euclidean
+        distance to the destination (in feet).
+
+        Args:
+            entity: The entity to move.
+            new_x: Destination x coordinate.
+            new_y: Destination y coordinate.
+            new_z: Destination z coordinate (default 0.0).
+
+        Raises:
+            ValueError: If the entity lacks sufficient movement resources.
+            ValueError: If the destination overlaps an alive entity.
+        """
+        distance = math.sqrt(
+            (new_x - entity.x) ** 2
+            + (new_y - entity.y) ** 2
+            + (new_z - entity.z) ** 2
+        )
+        cost_ft = math.ceil(distance)
+        movement_cost = ActionCost(movement=cost_ft)
+
+        if not entity.can_afford(movement_cost):
+            raise ValueError(
+                f"{entity.name} cannot afford to move {cost_ft} ft "
+                f"(has {entity.resources.movement} ft remaining)"
+            )
+
+        self._check_movement_overlap(entity, new_x, new_y, new_z)
+
+        entity.spend_resources(movement_cost)
+        entity.x = new_x
+        entity.y = new_y
+        entity.z = new_z
+
+    def push_entity(
+        self,
+        entity: Entity,
+        new_x: float,
+        new_y: float,
+        new_z: float = 0.0,
+    ) -> None:
+        """Forcibly move *entity* without spending movement resources.
+
+        Use this for knockback, spell-driven displacement, or any other
+        involuntary movement that does *not* consume the entity's speed.
+
+        Args:
+            entity: The entity being pushed.
+            new_x: Destination x coordinate.
+            new_y: Destination y coordinate.
+            new_z: Destination z coordinate (default 0.0).
+
+        Raises:
+            ValueError: If the destination overlaps an alive entity.
+        """
+        self._check_movement_overlap(entity, new_x, new_y, new_z)
+        entity.x = new_x
+        entity.y = new_y
+        entity.z = new_z
+
+    def _check_movement_overlap(
+        self,
+        moving: Entity,
+        new_x: float,
+        new_y: float,
+        new_z: float,
+    ) -> None:
+        """Raise ValueError if placing *moving* at the new position overlaps any alive entity.
+
+        Dead entities (corpses) do not block movement and are skipped.
+        """
+        s = moving.stat_block.size.size_ft
+        new_bbox = BoundingBox(
+            min_corner=Point3D(new_x, new_y, new_z),
+            max_corner=Point3D(new_x + s, new_y + s, new_z + s),
+        )
+        for other in self.get_alive_entities():
+            if other is moving:
+                continue
+            if new_bbox.overlaps(other.bounding_box):
+                raise ValueError(
+                    f"{moving.name} cannot move to ({new_x}, {new_y}, {new_z}): "
+                    f"destination overlaps {other.name}"
+                )
+
+    # ------------------------------------------------------------------
+    # AoE targeting
+    # ------------------------------------------------------------------
+
+    def get_targets_in_aoe(
+        self,
+        origin: Point3D,
+        aoe: AOEProperties,
+        direction: Optional[Vector3D] = None,
+    ) -> List[Entity]:
+        """Return all alive entities whose AABB overlaps the described AoE volume.
+
+        Args:
+            origin: Point of origin for the AoE.
+                    SPHERE/CYLINDER: centre point.
+                    CONE: apex.
+                    CUBE: centre of the caster-facing face.
+                    LINE: start point.
+            aoe: Shape and size of the area.
+            direction: Required for CONE, CUBE, and LINE.  Ignored for
+                       SPHERE and CYLINDER.
+
+        Returns:
+            List of alive :class:`Entity` objects whose bounding boxes
+            overlap the volume.
+
+        Raises:
+            ValueError: If *direction* is required but not provided.
+            ValueError: If *aoe.shape* is SPECIAL (not spatially modelled).
+        """
+        volume = self._build_aoe_volume(origin, aoe, direction)
+        return [e for e in self.get_alive_entities() if volume.contains_entity(e)]
+
+    def _build_aoe_volume(
+        self,
+        origin: Point3D,
+        aoe: AOEProperties,
+        direction: Optional[Vector3D],
+    ) -> AOEVolume:
+        """Instantiate the :class:`AOEVolume` matching *aoe*."""
+        shape = aoe.shape
+
+        if shape == AOEShape.SPHERE:
+            return SphereVolume(center=origin, radius=float(aoe.size_ft))
+
+        if shape == AOEShape.CYLINDER:
+            height = float(aoe.height_ft if aoe.height_ft is not None else aoe.size_ft)
+            return CylinderVolume(
+                center_x=origin.x,
+                center_z=origin.z,
+                base_y=origin.y,
+                radius=float(aoe.size_ft),
+                height=height,
+            )
+
+        if shape == AOEShape.SPECIAL:
+            raise ValueError(f"AoE shape {shape.value!r} is not spatially modelled")
+
+        if direction is None:
+            raise ValueError(
+                f"AoE shape {shape.value!r} requires a direction vector"
+            )
+
+        if shape == AOEShape.CONE:
+            return ConeVolume(apex=origin, direction=direction, length=float(aoe.size_ft))
+
+        if shape == AOEShape.CUBE:
+            return CubeVolume(origin=origin, direction=direction, size_ft=float(aoe.size_ft))
+
+        if shape == AOEShape.LINE:
+            width = float(aoe.width_ft if aoe.width_ft is not None else 5)
+            return LineVolume(
+                origin=origin,
+                direction=direction,
+                length=float(aoe.size_ft),
+                width=width,
+            )
+
+        raise ValueError(f"AoE shape {shape.value!r} is not supported")
 
     def _log_action(self, actor: Optional[Entity], action: str) -> None:
         """Log an action to the combat log.

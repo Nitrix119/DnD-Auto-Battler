@@ -17,6 +17,7 @@ from .action_resources import (
     ACTION_COST, BONUS_ACTION_COST, REACTION_COST, NO_COST,
 )
 from .action import ActionType, Action, AttackAction, SpellAction
+from .creature_size import CreatureSize
 from .stat_block import StatBlock
 from .entity import Entity
 
@@ -48,6 +49,7 @@ __all__ = [
     "Action",
     "AttackAction",
     "SpellAction",
+    "CreatureSize",
     "StatBlock",
     "Entity",
 ]

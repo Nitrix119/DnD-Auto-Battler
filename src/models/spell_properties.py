@@ -70,13 +70,23 @@ class AOEProperties:
         shape: Geometric shape of the area
         size_ft: Radius for sphere/cylinder, side length for cube,
                  length for cone/line (in feet)
+        height_ft: Height of the volume in feet.  Used by CYLINDER; when
+                   ``None`` the height defaults to ``size_ft`` at runtime.
+        width_ft: Width of the line cross-section in feet.  Used by LINE;
+                  when ``None`` the D&D default of 5 ft is used at runtime.
     """
     shape: AOEShape
     size_ft: int
+    height_ft: Optional[int] = None
+    width_ft: Optional[int] = None
 
     def __post_init__(self) -> None:
         if self.size_ft <= 0:
             raise ValueError("AOE size_ft must be positive")
+        if self.height_ft is not None and self.height_ft <= 0:
+            raise ValueError("AOE height_ft must be positive when specified")
+        if self.width_ft is not None and self.width_ft <= 0:
+            raise ValueError("AOE width_ft must be positive when specified")
 
     def __str__(self) -> str:
         label = "radius" if self.shape in (AOEShape.SPHERE, AOEShape.CYLINDER) else "length"
