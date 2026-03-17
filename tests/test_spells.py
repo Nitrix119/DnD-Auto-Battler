@@ -11,6 +11,7 @@ from src.models import (
 )
 from src.loaders.stat_block_loader import StatBlockLoader
 from src.combat import CombatSystem, CombatState
+from src.spatial.geometry import Point3D
 from src.utils.dice import roll_d20, roll_formula
 
 EXAMPLES_DIR = Path(__file__).parent.parent / "examples"
@@ -112,6 +113,13 @@ class TestSpellCombat:
 
     @pytest.fixture
     def combat(self, wizard, goblins) -> CombatSystem:
+        # Wizard at origin; goblins spaced 10 ft apart along the X axis
+        # so that a fireball centred at (30, 0, 0) catches all three
+        # (20 ft radius sphere — each goblin's nearest corner is within 20 ft).
+        wizard.x, wizard.y, wizard.z = 0.0, 0.0, 0.0
+        for i, goblin in enumerate(goblins):
+            goblin.x = float(10 + i * 10)  # 10, 20, 30 ft along X
+            goblin.y, goblin.z = 0.0, 0.0
         cs = CombatSystem()
         cs.add_combatant(wizard)
         for goblin in goblins:
@@ -151,26 +159,22 @@ class TestSpellCombat:
     # ------------------------------------------------------------------
 
     def test_fireball_damages_all_targets(self, wizard, goblins, fireball, combat):
-        """Fireball's AOE must damage every goblin in the blast.
+        """Fireball auto-targets every goblin whose bounding box overlaps the blast.
 
-        8d6 minimum is 8.  Even on a successful Dexterity save (half damage),
-        each goblin takes at least 4 damage — enough to reduce a 7 HP goblin's
-        HP without the save-result causing zero damage.
+        Goblins are placed at x=10, 20, 30 ft (see combat fixture).  The blast
+        is aimed at (30, 0, 0), giving a 20 ft radius sphere centred there.
+        All three goblins' bounding boxes overlap that sphere.
+
+        8d6 minimum is 8.  Even on a successful Dex save (half damage) every
+        goblin takes ≥ 4 damage — enough to hurt a 7 HP goblin.
         """
-        assert fireball.targeting_type == TargetingType.AOE, (
-            "Fireball must be an AOE spell so the combat system applies it "
-            "to all targets in the area, not just one."
-        )
+        assert fireball.targeting_type == TargetingType.AOE
 
         initial_hps = [g.hp for g in goblins]
 
-        # Roll damage once; all targets in the AOE share the same damage roll
-        raw_damage = roll_formula(fireball.damage[0].formula)  # 8d6, min 8
-
-        for goblin in goblins:
-            _, saved = combat.resolve_saving_throw(goblin, "dexterity", fireball.save_dc)
-            actual_damage = raw_damage // 2 if saved else raw_damage
-            goblin.take_damage(Damage(fireball.damage[0].damage_type, actual_damage))
+        # Aim at x=30; the system finds targets and applies damage automatically.
+        blast_target = Point3D(30.0, 0.0, 0.0)
+        combat.resolve_spell(wizard, [], fireball, target=blast_target)
 
         # Every goblin must have taken damage regardless of save outcome
         for goblin, initial_hp in zip(goblins, initial_hps):

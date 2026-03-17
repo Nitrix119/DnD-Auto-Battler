@@ -37,6 +37,8 @@ class SpellResolver:
         caster: Entity,
         defenders: List[Entity],
         action: SpellAction,
+        *,
+        origin=None,
     ) -> List[Tuple[bool, int, str]]:
         """Resolve a spell action against one or more targets.
 
@@ -49,13 +51,20 @@ class SpellResolver:
         and ``save_ability`` set; the result is available in spell effect
         conditions as ``save_success`` and ``save_roll``.
 
+        Args:
+            caster: The entity casting the spell.
+            defenders: Entities the spell targets.
+            action: The spell being cast.
+            origin: Optional Point3D of the AoE centre/apex, forwarded to the
+                SPELL_CAST event so listeners can know where the area was placed.
+
         Returns:
             List of (hit, damage_dealt, log_message) per defender, in the same
             order as defenders.
         """
         self._event_bus.emit(
             EventType.SPELL_CAST,
-            SpellCastData(caster=caster, defenders=defenders, action=action),
+            SpellCastData(caster=caster, defenders=defenders, action=action, origin=origin),
         )
 
         # Roll damage once — the same total applies to every target

@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from src.models.condition import Condition, ConditionType
     from src.models.damage import Damage
     from src.models.entity import Entity
+    from src.spatial.geometry import Point3D
 
 
 class EventData:
@@ -113,6 +114,7 @@ class SpellCastData(EventData):
     caster: Entity
     defenders: List[Entity]
     action: SpellAction
+    origin: Optional[Point3D] = None  # AoE centre/apex; None for single-target spells
 
 
 @dataclass

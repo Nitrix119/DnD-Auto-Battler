@@ -8,7 +8,7 @@ from enum import Enum
 from src.models.entity import Entity
 from src.models.action import Action, AttackAction, SpellAction
 from src.models.action_resources import ActionCost
-from src.models.spell_properties import AOEProperties, AOEShape
+from src.models.spell_properties import AOEProperties, AOEShape, RangeType, TargetingType
 from src.utils.dice import roll_d20
 from src.spatial.geometry import BoundingBox, Point3D, Vector3D
 from src.spatial.aoe import (
@@ -147,21 +147,40 @@ class CombatSystem:
             self._log_action(attacker, log_msg)
         return hit, total_damage
 
-    def resolve_spell(self, caster: Entity, defenders: List[Entity],
-                      action: SpellAction) -> List[Tuple[bool, int]]:
+    def resolve_spell(
+        self,
+        caster: Entity,
+        defenders: List[Entity],
+        action: SpellAction,
+        *,
+        target: Optional[Point3D] = None,
+    ) -> List[Tuple[bool, int]]:
         """Resolve a spell action against one or more targets.
 
+        For **AOE spells**, *target* (the point the caster aimed at) is
+        required.  The system derives the AoE origin and direction from that
+        point, clamps the origin to the spell's range when it is too far away,
+        then automatically determines every alive entity whose bounding box
+        overlaps the area.  The provided *defenders* list is ignored for AOE
+        spells when *target* is supplied.
+
+        For **single-target spells**, *defenders* is used as-is but every
+        defender is range-checked against the caster.
+
         Args:
-            caster: Entity casting the spell
-            defenders: Entities the spell is targeting
-            action: The spell action being resolved
+            caster: Entity casting the spell.
+            defenders: Entities to target.  Ignored for AOE when *target* is
+                given; required for single-target spells.
+            action: The spell action being resolved.
+            target: Point the caster aimed at.  Required for AOE spells.
 
         Returns:
-            List of (hit, damage_dealt) per defender, in the same order as
-            defenders.
+            List of (hit, damage_dealt) per defender.
 
         Raises:
             ValueError: If the caster cannot afford the spell's cost.
+            ValueError: If an AOE spell is cast without a *target*.
+            ValueError: If a single-target defender is out of range.
         """
         if not caster.can_afford(action.cost):
             raise ValueError(
@@ -170,7 +189,22 @@ class CombatSystem:
             )
         caster.spend_resources(action.cost)
 
-        results = self._spell_resolver.resolve(caster, defenders, action)
+        origin: Optional[Point3D] = None
+
+        if action.targeting_type == TargetingType.AOE:
+            if target is None:
+                raise ValueError(
+                    f"{action.name} is an AOE spell and requires a target point"
+                )
+            origin, direction = self._derive_aoe_origin(caster, action, target)
+            defenders = self.get_targets_in_aoe(origin, action.aoe, direction)
+        else:
+            # Single-target (or SPECIAL): range-check each defender if target given
+            if target is not None:
+                for defender in defenders:
+                    self._check_single_target_range(caster, defender, action)
+
+        results = self._spell_resolver.resolve(caster, defenders, action, origin=origin)
         for _, _, log_msg in results:
             if log_msg:
                 self._log_action(caster, log_msg)
@@ -248,6 +282,119 @@ class CombatSystem:
             return []
         return [e for e in self.get_alive_entities()
                 if e != entity and e.team == entity.team]
+
+    # ------------------------------------------------------------------
+    # Spell range and AoE helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _caster_center(entity: Entity) -> Point3D:
+        """Return the centre of the entity's bounding box."""
+        return entity.bounding_box.center()
+
+    @staticmethod
+    def _effective_range_ft(action: SpellAction) -> Optional[float]:
+        """Return the numeric spell range in feet, or None when unlimited.
+
+        SELF and directed shapes (CONE/LINE) return None so no clamping is
+        applied.  TOUCH uses the standard 5 ft melee reach.
+        """
+        rt = action.spell_range.range_type
+        if rt == RangeType.FEET:
+            return float(action.spell_range.distance_ft)
+        if rt == RangeType.TOUCH:
+            return 5.0
+        return None  # SELF, SIGHT, UNLIMITED, SPECIAL → no clamping
+
+    @staticmethod
+    def _clamp_to_range(
+        caster_center: Point3D,
+        target: Point3D,
+        range_ft: float,
+    ) -> Point3D:
+        """Return *target* clamped so it is at most *range_ft* from *caster_center*.
+
+        If the target is already within range it is returned unchanged.
+        If the target coincides with the caster centre (zero-length vector)
+        the caster centre itself is returned.
+        """
+        dist = caster_center.distance_to(target)
+        if dist <= range_ft:
+            return target
+        if dist == 0.0:
+            return caster_center
+        v = target - caster_center  # Vector3D
+        return caster_center + v.scale(range_ft / dist)
+
+    def _derive_aoe_origin(
+        self,
+        caster: Entity,
+        action: SpellAction,
+        target: Point3D,
+    ) -> Tuple[Point3D, Optional[Vector3D]]:
+        """Derive the AoE volume origin and direction from the target point.
+
+        For CONE and LINE the origin is always the caster's centre; the target
+        merely supplies the direction the volume faces.
+
+        For SPHERE, CYLINDER, and CUBE the target IS the origin (after
+        clamping to range when needed).
+
+        Returns:
+            (origin, direction) — direction is None for SPHERE/CYLINDER since
+            those volumes are symmetric and need no orientation.
+        """
+        caster_center = self._caster_center(caster)
+        shape = action.aoe.shape
+
+        # Compute direction from caster toward target
+        diff = target - caster_center
+        try:
+            direction: Optional[Vector3D] = diff.normalized()
+        except ValueError:
+            # target == caster_center: choose an arbitrary forward direction
+            direction = Vector3D(1.0, 0.0, 0.0)
+
+        if shape in (AOEShape.CONE, AOEShape.LINE):
+            # These always start at the caster; clamping is not meaningful
+            return caster_center, direction
+
+        # SPHERE, CYLINDER, CUBE: origin is the (possibly clamped) target
+        range_ft = self._effective_range_ft(action)
+        if range_ft is not None:
+            origin = self._clamp_to_range(caster_center, target, range_ft)
+        else:
+            origin = target
+
+        # SPHERE and CYLINDER are rotationally symmetric — no direction needed
+        if shape in (AOEShape.SPHERE, AOEShape.CYLINDER):
+            return origin, None
+
+        # CUBE needs direction so the face faces toward the caster
+        return origin, direction
+
+    def _check_single_target_range(
+        self,
+        caster: Entity,
+        defender: Entity,
+        action: SpellAction,
+    ) -> None:
+        """Raise ValueError when *defender* is out of the spell's range.
+
+        Uses the nearest point on the defender's bounding box for the distance
+        measurement, which is the most generous (and D&D-compliant) approach.
+        """
+        range_ft = self._effective_range_ft(action)
+        if range_ft is None:
+            return  # unlimited range
+        caster_center = self._caster_center(caster)
+        nearest = defender.bounding_box.nearest_point(caster_center)
+        dist = caster_center.distance_to(nearest)
+        if dist > range_ft:
+            raise ValueError(
+                f"{action.name}: {defender.name} is out of range "
+                f"({dist:.1f} ft, max {range_ft:.0f} ft)"
+            )
 
     # ------------------------------------------------------------------
     # Spatial movement
