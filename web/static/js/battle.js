@@ -23,35 +23,49 @@ const ZOOM_SPEED = 0.001;
 const COLOR_GRID  = "rgba(255, 255, 255, 0.07)";
 const COLOR_LABEL = "rgba(255, 255, 255, 0.25)";
 
+// Custom cursor for the info tool — magnifying glass built from an inline SVG
+const CURSOR_INFO = (() => {
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20">'
+              + '<circle cx="8" cy="8" r="5" fill="none" stroke="white" stroke-width="1.5"/>'
+              + '<line x1="12" y1="12" x2="17" y2="17" stroke="white" stroke-width="1.8" stroke-linecap="round"/>'
+              + '</svg>';
+    return `url('data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}') 8 8, zoom-in`;
+})();
+
 // ── Token registry ────────────────────────────────────────────────────────────
 //
 // Each token is a plain object representing a battlefield entity.
-// `x` and `y` are the canonical world-space position in cell units — these are
-// the values the move tool modifies and that will eventually sync with the
-// backend Entity.position when the API layer is wired up.
-//
-// Future fields to add per token: name, hp, maxHp, ac, conditions, entityId, …
+// `x` and `y` are the canonical world-space position in cell units.
+// `team`: 1 = ally (blue), 2 = enemy (red), 0 = neutral.
+// Creature tokens are pre-populated from JSON; manual tokens have null fields.
 
 const tokens = [];
 
-function createToken(x = 0.5, y = 0.5) {
+function createToken(x = 0.5, y = 0.5, creatureData = null, team = 0) {
     return {
-        id:     crypto.randomUUID(),
-        x,              // cell units — centre of token
-        y,              // cell units — centre of token
-        radius: 0.5,    // cell units — 0.5 cells = 5 ft diameter (standard creature)
+        id:        crypto.randomUUID(),
+        x,
+        y,
+        radius:    0.5,    // cell units — 0.5 cells = 5 ft diameter
+        team,
+        name:      creatureData?.name           ?? "Token",
+        hp:        creatureData?.hit_points     ?? null,
+        maxHp:     creatureData?.hit_points_max ?? null,
+        ac:        creatureData?.armor_class    ?? null,
+        abilities: creatureData?.abilities      ?? null,
     };
 }
 
 // ── Tool state ────────────────────────────────────────────────────────────────
 
-let activeTool    = null;   // 'move' | 'measure' | null
-let measuring     = false;
-let measureStart  = null;   // { x, y } in cell units
-let measureEnd    = null;   // { x, y } in cell units
-let draggingToken = null;   // the token currently being dragged
-let dragOffset    = { x: 0, y: 0 };  // cursor-to-centre offset at drag start
-let hoveringToken = false;  // whether the cursor is over a draggable token
+let activeTool       = null;   // 'move' | 'measure' | 'info' | null
+let measuring        = false;
+let measureStart     = null;   // { x, y } in cell units
+let measureEnd       = null;   // { x, y } in cell units
+let draggingToken    = null;   // the token currently being dragged
+let dragOffset       = { x: 0, y: 0 };  // cursor-to-centre offset at drag start
+let hoveringToken    = false;  // whether the cursor is over a draggable token
+let infoHoveredToken = null;   // token currently inspected by the info tool
 
 // ── Resize ────────────────────────────────────────────────────────────────────
 
@@ -76,16 +90,43 @@ function drawTokens() {
     for (const token of tokens) {
         const { x: sx, y: sy } = worldToScreen(token.x, token.y);
         const sr = token.radius * CELL_PX * camera.zoom;
-        const dragging = token === draggingToken;
+        const dragging  = token === draggingToken;
+        const infoHover = token === infoHoveredToken;
+        const red = token.team === 2;
+
+        // Outer highlight ring when inspected by the info tool
+        if (infoHover) {
+            ctx.beginPath();
+            ctx.arc(sx, sy, sr + 5, 0, Math.PI * 2);
+            ctx.strokeStyle = "rgba(255, 240, 150, 0.50)";
+            ctx.lineWidth   = 1.5;
+            ctx.stroke();
+        }
 
         ctx.beginPath();
         ctx.arc(sx, sy, sr, 0, Math.PI * 2);
-        ctx.fillStyle   = dragging ? "rgba(100, 180, 255, 0.70)" : "rgba(80, 140, 255, 0.50)";
+        if (red) {
+            ctx.fillStyle   = dragging ? "rgba(220, 90, 90, 0.70)" : "rgba(180, 60, 60, 0.50)";
+        } else {
+            ctx.fillStyle   = dragging ? "rgba(100, 180, 255, 0.70)" : "rgba(80, 140, 255, 0.50)";
+        }
         ctx.fill();
         ctx.strokeStyle = dragging ? "rgba(255, 255, 255, 1.00)" : "rgba(255, 255, 255, 0.80)";
         ctx.lineWidth   = dragging ? 2.0 : 1.5;
         ctx.stroke();
+
+        // Name label inside the token (capped at available space)
+        if (sr >= 14) {
+            const label = token.name.slice(0, Math.max(1, Math.floor(sr / 7)));
+            ctx.font = `${Math.min(12, sr * 0.45)}px sans-serif`;
+            ctx.textAlign    = "center";
+            ctx.textBaseline = "middle";
+            ctx.fillStyle    = "rgba(255, 255, 255, 0.85)";
+            ctx.fillText(label, sx, sy);
+        }
     }
+    ctx.textAlign    = "left";
+    ctx.textBaseline = "top";
 }
 
 function draw() {
@@ -191,6 +232,8 @@ function updateCursor() {
         else                canvas.style.cursor = "default";
     } else if (activeTool === "measure") {
         canvas.style.cursor = "crosshair";
+    } else if (activeTool === "info") {
+        canvas.style.cursor = CURSOR_INFO;
     } else {
         canvas.style.cursor = "";  // falls back to CSS `grab`
     }
@@ -268,6 +311,23 @@ window.addEventListener("mousemove", (e) => {
         updateCursor();
     }
 
+    // Info tool — find topmost token under cursor and update the panel
+    if (activeTool === "info") {
+        const found = [...tokens].reverse().find(t => {
+            const dx = cursorWorld.x - t.x;
+            const dy = cursorWorld.y - t.y;
+            return Math.sqrt(dx * dx + dy * dy) <= t.radius;
+        }) ?? null;
+
+        if (found !== infoHoveredToken) {
+            infoHoveredToken = found;
+            updateInfoPanel(found);
+        } else if (found) {
+            // Position changes even without token swap — refresh the pos line
+            infoPosEl.textContent = `${(found.x * CELL_FEET).toFixed(1)} ft, ${(found.y * CELL_FEET).toFixed(1)} ft`;
+        }
+    }
+
     draw();
 });
 
@@ -320,14 +380,46 @@ canvas.addEventListener("wheel", (e) => {
 
 const btnMove        = document.getElementById("tool-move");
 const btnMeasure     = document.getElementById("tool-measure");
+const btnInfo        = document.getElementById("tool-info");
 const btnAddToken    = document.getElementById("tool-add-token");
 const measureReadout = document.getElementById("measure-readout");
+const infoPanel      = document.getElementById("info-panel");
+const infoNameEl     = document.getElementById("info-name");
+const infoHpEl       = document.getElementById("info-hp");
+const infoAcEl       = document.getElementById("info-ac");
+const infoPosEl      = document.getElementById("info-pos");
+const infoStrEl      = document.getElementById("info-str");
+const infoDexEl      = document.getElementById("info-dex");
+const infoConEl      = document.getElementById("info-con");
+const infoIntEl      = document.getElementById("info-int");
+const infoWisEl      = document.getElementById("info-wis");
+const infoChaEl      = document.getElementById("info-cha");
+
+function updateInfoPanel(token) {
+    if (!token) {
+        infoPanel.classList.remove("visible");
+        return;
+    }
+    const abs = token.abilities;
+    infoNameEl.textContent = token.name;
+    infoHpEl.textContent   = token.hp !== null ? `${token.hp} / ${token.maxHp}` : "—";
+    infoAcEl.textContent   = token.ac !== null ? token.ac : "—";
+    infoPosEl.textContent  = `${(token.x * CELL_FEET).toFixed(1)} ft, ${(token.y * CELL_FEET).toFixed(1)} ft`;
+    infoStrEl.textContent  = abs ? abs.strength     : "—";
+    infoDexEl.textContent  = abs ? abs.dexterity    : "—";
+    infoConEl.textContent  = abs ? abs.constitution : "—";
+    infoIntEl.textContent  = abs ? abs.intelligence : "—";
+    infoWisEl.textContent  = abs ? abs.wisdom       : "—";
+    infoChaEl.textContent  = abs ? abs.charisma     : "—";
+    infoPanel.classList.add("visible");
+}
 
 function setActiveTool(tool) {
     activeTool = (activeTool === tool) ? null : tool;
 
     btnMove.classList.toggle("active",    activeTool === "move");
     btnMeasure.classList.toggle("active", activeTool === "measure");
+    btnInfo.classList.toggle("active",    activeTool === "info");
 
     measureReadout.classList.toggle("visible", activeTool === "measure");
 
@@ -341,6 +433,10 @@ function setActiveTool(tool) {
         draggingToken = null;
         hoveringToken = false;
     }
+    if (activeTool !== "info") {
+        infoHoveredToken = null;
+        updateInfoPanel(null);
+    }
 
     draw();
     updateCursor();
@@ -348,6 +444,7 @@ function setActiveTool(tool) {
 
 btnMove.addEventListener("click",    () => setActiveTool("move"));
 btnMeasure.addEventListener("click", () => setActiveTool("measure"));
+btnInfo.addEventListener("click",    () => setActiveTool("info"));
 
 btnAddToken.addEventListener("click", () => {
     tokens.push(createToken());
@@ -386,10 +483,33 @@ ws.onerror = () => {
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 
-window.addEventListener("DOMContentLoaded", () => {
+window.addEventListener("DOMContentLoaded", async () => {
     canvas.width  = window.innerWidth;
     canvas.height = window.innerHeight;
     camera.x = Math.floor(canvas.width  / 2);
     camera.y = Math.floor(canvas.height / 2);
+
+    // Fetch creature data for the two combatants chosen on the setup page
+    const c1Path = sessionStorage.getItem("creature_1");
+    const c2Path = sessionStorage.getItem("creature_2");
+    sessionStorage.removeItem("creature_1");
+    sessionStorage.removeItem("creature_2");
+
+    const fetchCreature = async (path) => {
+        if (!path) return null;
+        try {
+            const r = await fetch(`/api/creatures/${path}`);
+            return r.ok ? r.json() : null;
+        } catch { return null; }
+    };
+
+    const [data1, data2] = await Promise.all([
+        fetchCreature(c1Path),
+        fetchCreature(c2Path),
+    ]);
+
+    if (data1) tokens.push(createToken(-3, 0, data1, 1));
+    if (data2) tokens.push(createToken( 3, 0, data2, 2));
+
     draw();
 });

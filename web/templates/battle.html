@@ -13,6 +13,55 @@
 
     <div id="measure-readout">0.00 ft</div>
 
+    <div id="info-panel">
+        <div class="info-title" id="info-name">Token</div>
+
+        <div class="info-stat">
+            <span class="info-label">HP</span>
+            <span class="info-value" id="info-hp">—</span>
+        </div>
+        <div class="info-stat">
+            <span class="info-label">AC</span>
+            <span class="info-value" id="info-ac">—</span>
+        </div>
+
+        <div class="info-sep"></div>
+
+        <div class="info-stat">
+            <span class="info-label">Position</span>
+            <span class="info-value" id="info-pos">—</span>
+        </div>
+
+        <div class="info-sep"></div>
+
+        <div class="info-abilities">
+            <div class="info-ability">
+                <span class="info-label">STR</span>
+                <span class="info-value" id="info-str">—</span>
+            </div>
+            <div class="info-ability">
+                <span class="info-label">DEX</span>
+                <span class="info-value" id="info-dex">—</span>
+            </div>
+            <div class="info-ability">
+                <span class="info-label">CON</span>
+                <span class="info-value" id="info-con">—</span>
+            </div>
+            <div class="info-ability">
+                <span class="info-label">INT</span>
+                <span class="info-value" id="info-int">—</span>
+            </div>
+            <div class="info-ability">
+                <span class="info-label">WIS</span>
+                <span class="info-value" id="info-wis">—</span>
+            </div>
+            <div class="info-ability">
+                <span class="info-label">CHA</span>
+                <span class="info-value" id="info-cha">—</span>
+            </div>
+        </div>
+    </div>
+
     <div id="toolbar">
         <button id="tool-move" class="tool-btn" title="move tool">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="white">
@@ -27,6 +76,12 @@
                 <line x1="10" y1="7" x2="10" y2="10"/>
                 <line x1="13" y1="7" x2="13" y2="9"/>
                 <line x1="16" y1="7" x2="16" y2="10"/>
+            </svg>
+        </button>
+        <button id="tool-info" class="tool-btn" title="info">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none" stroke="white" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="8.5" cy="8.5" r="5.5"/>
+                <line x1="13" y1="13" x2="18.5" y2="18.5" stroke-width="2"/>
             </svg>
         </button>
         <div class="toolbar-sep"></div>

@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 
 from src.combat.combat_system import CombatSystem
 
@@ -22,6 +22,19 @@ async def list_creatures() -> list[dict]:
             "path": path.relative_to(_CREATURES_DIR).as_posix(),
         })
     return creatures
+
+
+@router.get("/api/creatures/{path:path}")
+async def get_creature(path: str) -> dict:
+    """Return the full JSON for a single creature by relative path."""
+    creature_path = (_CREATURES_DIR / path).resolve()
+    # Guard against path traversal
+    if not str(creature_path).startswith(str(_CREATURES_DIR.resolve())):
+        raise HTTPException(status_code=403, detail="Forbidden")
+    if not creature_path.exists():
+        raise HTTPException(status_code=404, detail="Creature not found")
+    with creature_path.open() as f:
+        return json.load(f)
 
 
 @router.websocket("/ws/combat")

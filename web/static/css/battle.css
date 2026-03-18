@@ -111,3 +111,75 @@ canvas.panning {
 #measure-readout.visible {
     display: block;
 }
+
+/* ── Info panel ───────────────────────────────────────────────────────────── */
+
+#info-panel {
+    position: fixed;
+    top: 50%;
+    right: 20px;
+    transform: translateY(-50%);
+    min-width: 195px;
+    background: rgba(0, 0, 0, 0.60);
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    border-radius: 12px;
+    padding: 1rem 1.25rem;
+    backdrop-filter: blur(6px);
+    z-index: 10;
+    pointer-events: none;
+    display: none;
+}
+
+#info-panel.visible {
+    display: block;
+}
+
+.info-title {
+    font-size: 0.80rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    color: rgba(255, 255, 255, 0.90);
+    margin-bottom: 0.75rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.10);
+}
+
+.info-stat {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    margin-bottom: 0.50rem;
+}
+
+.info-stat:last-child { margin-bottom: 0; }
+
+.info-sep {
+    height: 1px;
+    background: rgba(255, 255, 255, 0.08);
+    margin: 0.45rem 0 0.55rem;
+}
+
+.info-label {
+    font-size: 0.66rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: rgba(255, 255, 255, 0.30);
+}
+
+.info-value {
+    font-size: 0.88rem;
+    font-family: monospace;
+    color: rgba(255, 255, 255, 0.85);
+}
+
+.info-abilities {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.4rem 0.5rem;
+}
+
+.info-ability {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+}
