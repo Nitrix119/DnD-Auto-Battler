@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Battle — D&D Auto Battler</title>
+    <link rel="stylesheet" href="/static/css/battle.css">
+</head>
+<body>
+    <canvas id="grid"></canvas>
+
+    <div id="measure-readout">0.00 ft</div>
+
+    <div id="toolbar">
+        <button id="tool-move" class="tool-btn" title="move tool">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="white">
+                <path d="M10 1L13 6H11V9H14V7L19 10L14 13V11H11V14H13L10 19L7 14H9V11H6V13L1 10L6 7V9H9V6H7L10 1Z"/>
+            </svg>
+        </button>
+        <button id="tool-measure" class="tool-btn" title="measure">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none" stroke="white" stroke-width="1.5" stroke-linecap="round">
+                <rect x="1" y="7" width="18" height="6" rx="1"/>
+                <line x1="4"  y1="7" x2="4"  y2="10"/>
+                <line x1="7"  y1="7" x2="7"  y2="9"/>
+                <line x1="10" y1="7" x2="10" y2="10"/>
+                <line x1="13" y1="7" x2="13" y2="9"/>
+                <line x1="16" y1="7" x2="16" y2="10"/>
+            </svg>
+        </button>
+        <div class="toolbar-sep"></div>
+        <button id="tool-add-token" class="tool-btn" title="add token">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round">
+                <line x1="10" y1="3" x2="10" y2="17"/>
+                <line x1="3"  y1="10" x2="17" y2="10"/>
+            </svg>
+        </button>
+    </div>
+
+    <script src="/static/js/battle.js"></script>
+</body>
+</html>

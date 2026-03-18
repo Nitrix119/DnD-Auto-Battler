@@ -1,0 +1,91 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    background: #1a1a2e;
+    overflow: hidden;
+}
+
+canvas {
+    display: block;
+    cursor: grab;
+}
+
+canvas.panning {
+    cursor: grabbing;
+}
+
+/* ── Toolbar ─────────────────────────────────────────────────────────────── */
+
+#toolbar {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0, 0, 0, 0.60);
+    border-radius: 14px;
+    padding: 8px 10px;
+    display: flex;
+    gap: 4px;
+    backdrop-filter: blur(6px);
+    z-index: 10;
+}
+
+.tool-btn {
+    width: 40px;
+    height: 40px;
+    background: transparent;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    transition: background 0.15s;
+}
+
+.tool-btn svg {
+    width: 22px;
+    height: 22px;
+}
+
+.tool-btn:hover {
+    background: rgba(255, 255, 255, 0.10);
+}
+
+.tool-btn.active {
+    background: rgba(255, 255, 255, 0.18);
+}
+
+.toolbar-sep {
+    width: 1px;
+    background: rgba(255, 255, 255, 0.15);
+    margin: 4px 2px;
+}
+
+/* ── Measure readout ─────────────────────────────────────────────────────── */
+
+#measure-readout {
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0, 0, 0, 0.60);
+    border-radius: 20px;
+    padding: 6px 20px;
+    color: rgba(255, 255, 255, 0.85);
+    font: 13px/1 monospace;
+    backdrop-filter: blur(6px);
+    pointer-events: none;
+    white-space: nowrap;
+    z-index: 10;
+    display: none;
+}
+
+#measure-readout.visible {
+    display: block;
+}

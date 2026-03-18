@@ -1,4 +1,17 @@
-"""3D geometric primitives: Point3D, Vector3D, BoundingBox (AABB)."""
+"""3D geometric primitives: Point3D, Vector3D, BoundingBox (AABB).
+
+Coordinate convention (backend)
+--------------------------------
+  +X  →  east  (grid column increases right)
+  +Y  ↑  up    (elevation above ground; Y=0 is the ground plane)
+  +Z  ↓  south (grid row increases toward viewer / "down" the map)
+
+The canvas frontend uses Y-down (positive Y = down the screen), which is the
+**opposite** sign from the backend's +Y.  For purely 2D play this is harmless
+because all distance/overlap maths are sign-symmetric.  If 3D elevation is
+ever added, negate the Y coordinate at the API boundary when converting
+between canvas space and world space.
+"""
 
 import math
 from dataclasses import dataclass
