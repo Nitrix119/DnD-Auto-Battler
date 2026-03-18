@@ -1,3 +1,12 @@
+// ── Session guard ─────────────────────────────────────────────────────────────
+// The battle page is only valid when navigated to from the setup page.
+// If the flag is absent (direct load, reload, back-button), redirect home.
+if (!sessionStorage.getItem("combat_ready")) {
+    location.replace("/");
+    throw new Error("No active combat session — redirecting to setup.");
+}
+sessionStorage.removeItem("combat_ready");
+
 const canvas = document.getElementById("grid");
 const ctx = canvas.getContext("2d");
 
@@ -344,6 +353,36 @@ btnAddToken.addEventListener("click", () => {
     tokens.push(createToken());
     draw();
 });
+
+// ── WebSocket — combat session ─────────────────────────────────────────────
+//
+// One WebSocket per page load → one CombatSystem on the server.
+// `ws` is module-level so future actions (move token, cast spell, end turn)
+// can call ws.send(JSON.stringify({ type: "...", ... })) from anywhere.
+
+const wsStatusEl = document.getElementById("ws-status");
+const ws = new WebSocket(`ws://${location.host}/ws/combat`);
+
+ws.onopen = () => {
+    wsStatusEl.className = "ws-connected";
+    wsStatusEl.title = "Connected";
+};
+
+ws.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+    // Dispatch on msg.type — future server-push handling goes here.
+    console.log("[combat ws]", msg);
+};
+
+ws.onclose = () => {
+    wsStatusEl.className = "ws-disconnected";
+    wsStatusEl.title = "Disconnected";
+};
+
+ws.onerror = () => {
+    wsStatusEl.className = "ws-disconnected";
+    wsStatusEl.title = "Connection error";
+};
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 

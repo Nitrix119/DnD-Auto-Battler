@@ -1,0 +1,111 @@
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+    background: #1a1a2e;
+    color: #e0e0e0;
+    font-family: system-ui, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2rem;
+}
+
+header h1 {
+    font-size: 2rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    color: #ffffff;
+    text-align: center;
+}
+
+.setup-card {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    border-radius: 12px;
+    padding: 2rem 2.5rem;
+    width: min(460px, 90vw);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1.5rem;
+}
+
+.setup-card h2 {
+    font-size: 1.1rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    color: rgba(255, 255, 255, 0.85);
+    align-self: flex-start;
+}
+
+/* ── Combatant selectors ─────────────────────────────────────────────────── */
+
+.combatant-row {
+    display: flex;
+    align-items: flex-end;
+    gap: 0.75rem;
+    width: 100%;
+}
+
+.combatant-slot {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    min-width: 0;
+}
+
+.combatant-slot label {
+    font-size: 0.72rem;
+    color: rgba(255, 255, 255, 0.40);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+
+.vs {
+    font-size: 0.8rem;
+    color: rgba(255, 255, 255, 0.25);
+    padding-bottom: 0.6rem;
+    flex-shrink: 0;
+}
+
+select {
+    width: 100%;
+    padding: 0.5rem 0.6rem;
+    background: rgba(0, 0, 0, 0.35);
+    border: 1px solid rgba(255, 255, 255, 0.13);
+    border-radius: 6px;
+    color: #e0e0e0;
+    font-size: 0.88rem;
+    cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
+}
+
+select:focus {
+    outline: none;
+    border-color: rgba(255, 255, 255, 0.35);
+}
+
+/* ── Start button ────────────────────────────────────────────────────────── */
+
+.btn-start {
+    display: inline-block;
+    padding: 0.65rem 1.75rem;
+    background: rgba(255, 255, 255, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.20);
+    border-radius: 8px;
+    color: #ffffff;
+    font-size: 0.95rem;
+    font-weight: 500;
+    text-decoration: none;
+    letter-spacing: 0.03em;
+    transition: background 0.15s, border-color 0.15s;
+}
+
+.btn-start:hover {
+    background: rgba(255, 255, 255, 0.20);
+    border-color: rgba(255, 255, 255, 0.35);
+}

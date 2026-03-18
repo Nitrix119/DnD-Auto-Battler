@@ -67,6 +67,28 @@ canvas.panning {
     margin: 4px 2px;
 }
 
+/* ── WebSocket status dot ────────────────────────────────────────────────── */
+
+#ws-status {
+    position: fixed;
+    top: 14px;
+    right: 16px;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    z-index: 20;
+    pointer-events: none;
+}
+
+.ws-connecting   { background: #f5a623; animation: ws-pulse 1.2s ease-in-out infinite; }
+.ws-connected    { background: #4caf50; }
+.ws-disconnected { background: #e53935; }
+
+@keyframes ws-pulse {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.35; }
+}
+
 /* ── Measure readout ─────────────────────────────────────────────────────── */
 
 #measure-readout {

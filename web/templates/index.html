@@ -7,7 +7,30 @@
     <link rel="stylesheet" href="/static/css/main.css">
 </head>
 <body>
-    <h1>D&D Auto Battler</h1>
+    <header>
+        <h1>D&amp;D Auto Battler</h1>
+    </header>
+
+    <main>
+        <div class="setup-card">
+            <h2>Combat Setup</h2>
+
+            <div class="combatant-row">
+                <div class="combatant-slot">
+                    <label for="creature-1">Combatant 1</label>
+                    <select id="creature-1"><option value="">Loading…</option></select>
+                </div>
+                <span class="vs">vs</span>
+                <div class="combatant-slot">
+                    <label for="creature-2">Combatant 2</label>
+                    <select id="creature-2"><option value="">Loading…</option></select>
+                </div>
+            </div>
+
+            <a href="/battle" class="btn-start" onclick="startCombat(event)">Start Combat →</a>
+        </div>
+    </main>
+
     <script src="/static/js/main.js"></script>
 </body>
 </html>
