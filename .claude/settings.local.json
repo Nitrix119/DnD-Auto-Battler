@@ -3,7 +3,13 @@
     "allow": [
       "Bash(python -m pytest tests/ -v)",
       "Bash(python -m pytest tests/ -q)",
-      "Bash(xargs grep:*)"
+      "Bash(xargs grep:*)",
+      "Bash(python -m pytest tests/test_spell_registry.py -v)",
+      "Bash(python -m pytest --tb=short -q)",
+      "Bash(python -m pytest tests/ -x -q)",
+      "Bash(python -m pytest tests/test_action_economy.py -v -q)",
+      "Bash(python -m pytest tests/test_combat.py -v)",
+      "Bash(python -m pytest -q)"
     ]
   }
 }

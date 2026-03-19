@@ -1,0 +1,28 @@
+{
+  "name": "Haste",
+  "description": "Choose a willing creature that you can see within range. Until the spell ends, the target's speed is doubled, it gains a +2 bonus to AC, it has advantage on Dexterity saving throws, and it gains an additional action on each of its turns.",
+  "type": "spell",
+  "spell_level": 3,
+  "spell_attack_bonus": 0,
+  "save_dc": 0,
+  "damage": [],
+  "spell_range": {
+    "type": "feet",
+    "distance_ft": 30
+  },
+  "targeting_type": "single_target",
+  "casting_time": {
+    "type": "action",
+    "count": 1
+  },
+  "duration": {
+    "unit": "minute",
+    "count": 1,
+    "concentration": true
+  },
+  "components": {
+    "verbal": true,
+    "somatic": true,
+    "material": ["a shaving of licorice root"]
+  }
+}

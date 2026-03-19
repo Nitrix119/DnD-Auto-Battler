@@ -7,6 +7,7 @@ from enum import Enum
 
 from src.models.entity import Entity
 from src.models.action import Action, AttackAction, SpellAction
+from .spell_registry import SpellRegistry
 from src.models.action_resources import ActionCost
 from src.models.spell_properties import AOEProperties, AOEShape, RangeType, TargetingType
 from src.utils.dice import roll_d20
@@ -53,6 +54,7 @@ class CombatSystem:
         self.combatants: List[Entity] = []
         self.log: List[CombatLog] = []
         self._turn_manager: Optional[TurnManager] = None
+        self._spell_registry = None
         self.event_bus: EventBus = EventBus()
 
     @property
@@ -69,6 +71,41 @@ class CombatSystem:
         # Preserve any previously set rule_engine across bus re-assignments
         if hasattr(self, "_rule_engine") and self._rule_engine is not None:
             self._spell_resolver.rule_engine = self._rule_engine
+
+    @property
+    def spell_registry(self):
+        """The spell registry used to look up spells by name."""
+        return self._spell_registry
+
+    @spell_registry.setter
+    def spell_registry(self, registry) -> None:
+        self._spell_registry = registry
+
+    def get_spell_for_entity(self, entity: Entity, spell_name: str) -> SpellAction:
+        """Return the SpellAction for *spell_name* if *entity* knows it.
+
+        Args:
+            entity: The entity attempting to cast the spell.
+            spell_name: The name of the spell to look up.
+
+        Returns:
+            The SpellAction from the registry.
+
+        Raises:
+            RuntimeError: If no spell registry has been configured.
+            ValueError: If *entity* does not know the spell.
+            KeyError: If the spell is not found in the registry.
+        """
+        if self._spell_registry is None:
+            raise RuntimeError(
+                "No spell registry configured on CombatSystem; "
+                "set combat.spell_registry before looking up spells"
+            )
+        if spell_name not in entity.stat_block.known_spells:
+            raise ValueError(
+                f"{entity.name} does not know the spell {spell_name!r}"
+            )
+        return self._spell_registry.get(spell_name)
 
     @property
     def rule_engine(self):
@@ -132,7 +169,10 @@ class CombatSystem:
 
         Raises:
             ValueError: If the attacker cannot afford the action's cost.
+            ValueError: If the defender is out of the attack's range.
         """
+        self._check_attack_range(attacker, defender, action)
+
         if not attacker.can_afford(action.cost):
             raise ValueError(
                 f"{attacker.name} cannot afford {action.name}: "
@@ -373,6 +413,32 @@ class CombatSystem:
         # CUBE needs direction so the face faces toward the caster
         return origin, direction
 
+    def _check_attack_range(
+        self,
+        attacker: Entity,
+        defender: Entity,
+        action: AttackAction,
+    ) -> None:
+        """Raise ValueError when *defender* is beyond the attack's range.
+
+        Range is measured edge-to-edge between the two bounding boxes, so a
+        creature's own footprint does not eat into its reach.  The gap on each
+        axis is ``max(0, a_min - b_max, b_min - a_max)``; the 3-D distance is
+        the Euclidean length of the per-axis gaps.
+        """
+        a = attacker.bounding_box
+        d = defender.bounding_box
+        gap_x = max(0.0, a.min_corner.x - d.max_corner.x, d.min_corner.x - a.max_corner.x)
+        gap_y = max(0.0, a.min_corner.y - d.max_corner.y, d.min_corner.y - a.max_corner.y)
+        gap_z = max(0.0, a.min_corner.z - d.max_corner.z, d.min_corner.z - a.max_corner.z)
+        dist = math.sqrt(gap_x ** 2 + gap_y ** 2 + gap_z ** 2)
+        if dist > action.range_ft:
+            raise ValueError(
+                f"{attacker.name} cannot use {action.name}: "
+                f"{defender.name} is out of range "
+                f"({dist:.1f} ft, max {action.range_ft:.0f} ft)"
+            )
+
     def _check_single_target_range(
         self,
         caster: Entity,
@@ -481,9 +547,10 @@ class CombatSystem:
         Dead entities (corpses) do not block movement and are skipped.
         """
         s = moving.stat_block.size.size_ft
+        half = s / 2.0
         new_bbox = BoundingBox(
-            min_corner=Point3D(new_x, new_y, new_z),
-            max_corner=Point3D(new_x + s, new_y + s, new_z + s),
+            min_corner=Point3D(new_x - half, new_y, new_z - half),
+            max_corner=Point3D(new_x + half, new_y + s, new_z + half),
         )
         for other in self.get_alive_entities():
             if other is moving:

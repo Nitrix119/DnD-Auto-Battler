@@ -3,6 +3,7 @@
 from .enums import CombatState, ActionCategory
 from .initiative import InitiativeTracker, InitiativeEntry
 from .combat_system import CombatSystem, CombatLog
+from .spell_registry import SpellRegistry
 from .event_bus import EventBus, CombatEvent
 from .events import EventType
 from .damage_processor import DamageProcessor
@@ -32,6 +33,7 @@ __all__ = [
     "InitiativeEntry",
     "CombatSystem",
     "CombatLog",
+    "SpellRegistry",
     "EventBus",
     "CombatEvent",
     "EventType",

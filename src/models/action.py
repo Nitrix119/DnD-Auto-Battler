@@ -82,6 +82,7 @@ class AttackAction(Action):
     action_type: ActionType = ActionType.ATTACK
     bonus_to_hit: int = 0
     damage_half_on_save: Optional[tuple] = None  # (ability, dc)
+    range_ft: float = 5.0
 
 
 @dataclass

@@ -115,6 +115,7 @@ class StatBlockLoader:
             actions=actions,
             resource_defaults=resource_defaults,
             size=creature_size,
+            known_spells=list(data.get("known_spells", [])),
         )
 
         # Add saving throws if provided
@@ -215,6 +216,7 @@ class StatBlockLoader:
                 bonus_to_hit=action_data.get("bonus_to_hit", 0),
                 damage=damage,
                 recharge=recharge,
+                range_ft=float(action_data.get("range_ft", 5.0)),
                 **cost_kwargs,
             )
 
@@ -326,6 +328,7 @@ class StatBlockLoader:
 
         if isinstance(action, AttackAction):
             base["bonus_to_hit"] = action.bonus_to_hit
+            base["range_ft"] = action.range_ft
             if action.damage:
                 base["damage"] = [
                     {
@@ -429,6 +432,7 @@ class StatBlockLoader:
             "saving_throws": list(stat_block.saving_throws.keys()),
             "resource_defaults": stat_block.resource_defaults,
             "size": stat_block.size.value,
+            "known_spells": list(stat_block.known_spells),
             "actions": [
                 StatBlockLoader._serialize_action(action)
                 for action in stat_block.actions

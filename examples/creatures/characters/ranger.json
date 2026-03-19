@@ -8,6 +8,7 @@
     "wisdom": 14,
     "charisma": 8
   },
+  "size": "medium",
   "hit_points": 38,
   "hit_points_max": 38,
   "armor_class": 15,
@@ -18,6 +19,8 @@
       "name": "Club",
       "description": "A melee weapon attack",
       "type": "attack",
+      "cost": {"actions": 1},
+      "range_ft": 5,
       "bonus_to_hit": 2,
       "damage": [
         {
@@ -31,6 +34,8 @@
       "name": "Shortsword",
       "description": "A light finesse melee weapon attack. Note: assigned SLASHING here to cover all three mundane types in tests; RAW a shortsword deals piercing.",
       "type": "attack",
+      "cost": {"actions": 1},
+      "range_ft": 5,
       "bonus_to_hit": 5,
       "damage": [
         {
@@ -44,6 +49,8 @@
       "name": "Shortbow",
       "description": "A ranged weapon attack",
       "type": "attack",
+      "cost": {"actions": 1},
+      "range_ft": 80,
       "bonus_to_hit": 5,
       "damage": [
         {

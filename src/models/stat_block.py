@@ -47,6 +47,7 @@ class StatBlock:
     saving_throws: Dict[str, int] = field(default_factory=dict)
     resource_defaults: Dict[str, int] = field(default_factory=lambda: dict(DEFAULT_RESOURCE_DEFAULTS))
     size: CreatureSize = field(default=CreatureSize.MEDIUM)
+    known_spells: List[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         """Initialize default skills and validate stats."""

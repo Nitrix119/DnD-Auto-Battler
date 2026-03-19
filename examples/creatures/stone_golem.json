@@ -8,6 +8,7 @@
     "wisdom": 11,
     "charisma": 1
   },
+  "size": "large",
   "hit_points": 178,
   "hit_points_max": 178,
   "armor_class": 17,
@@ -18,6 +19,8 @@
       "name": "Slam",
       "description": "Melee weapon attack",
       "type": "attack",
+      "cost": {"actions": 1},
+      "range_ft": 5,
       "bonus_to_hit": 10,
       "damage": [
         {

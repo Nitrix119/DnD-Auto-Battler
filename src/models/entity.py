@@ -187,16 +187,20 @@ class Entity:
     def bounding_box(self):
         """Axis-aligned bounding box for this entity based on position and size.
 
-        The entity's (x, y, z) position is the *minimum corner* of the box.
-        The box extends by ``size_ft`` in each positive axis direction, giving
-        each creature a cubic volume equal to its footprint size.
+        The entity's (x, y, z) position is the *centre* of its footprint on
+        the ground plane.  X and Z are centred on the position; Y is the
+        ground elevation (the box extends upward by ``size_ft`` from ``y``).
+
+        This matches the frontend convention where a token's coordinate is
+        its visual centre.
 
         Returns:
             BoundingBox: The AABB representing this entity's occupied space.
         """
         from src.spatial.geometry import BoundingBox, Point3D
         s = self.stat_block.size.size_ft
+        half = s / 2.0
         return BoundingBox(
-            min_corner=Point3D(self.x, self.y, self.z),
-            max_corner=Point3D(self.x + s, self.y + s, self.z + s),
+            min_corner=Point3D(self.x - half, self.y, self.z - half),
+            max_corner=Point3D(self.x + half, self.y + s, self.z + half),
         )

@@ -39,14 +39,27 @@ const CURSOR_INFO = (() => {
 // `team`: 1 = ally (blue), 2 = enemy (red), 0 = neutral.
 // Creature tokens are pre-populated from JSON; manual tokens have null fields.
 
+// D&D 5e size → token radius in cell units (1 cell = 5 ft).
+// Radius = half the creature's space, so the circle fills its occupied squares.
+const SIZE_RADIUS = {
+    tiny:        0.25,   //  2.5 ft radius —  5 ft space (shares squares)
+    small:       0.5,    //  2.5 ft radius —  5 ft space
+    medium:      0.5,    //  2.5 ft radius —  5 ft space
+    large:       1.0,    //  5 ft radius   — 10 ft space
+    huge:        1.5,    //  7.5 ft radius — 15 ft space
+    gargantuan:  2.0,    // 10 ft radius   — 20 ft space
+};
+
 const tokens = [];
 
 function createToken(x = 0.5, y = 0.5, creatureData = null, team = 0) {
+    const size   = creatureData?.size?.toLowerCase() ?? "medium";
+    const radius = SIZE_RADIUS[size] ?? SIZE_RADIUS.medium;
     return {
         id:        crypto.randomUUID(),
         x,
         y,
-        radius:    0.5,    // cell units — 0.5 cells = 5 ft diameter
+        radius,    // cell units — derived from creature size
         team,
         name:      creatureData?.name           ?? "Token",
         hp:        creatureData?.hit_points     ?? null,

@@ -122,13 +122,13 @@ class TestMoveEntity:
         assert mover.x == 10.0
 
     def test_large_entity_blocks_more_space(self):
-        # Large entity occupies [20, 30] × [0, 10] × [0, 10]
+        # Large entity centred at x=20: box [15,25]×[0,10]×[-5,5]
         mover = _make_entity("Mover", size=CreatureSize.MEDIUM)
         large = _make_entity("Dragon", size=CreatureSize.LARGE, x=20.0)
         combat = _make_combat(mover, large)
 
-        # Try to move mover to (15, 0, 0): mover box [15,20]×[0,5]×[0,5]
-        # large box [20,30]×[0,10]×[0,10] — touching at x=20 → overlap
+        # Try to move mover to (15, 0, 0): mover box [12.5,17.5]×[0,5]×[-2.5,2.5]
+        # large box [15,25]×[0,10]×[-5,5] — overlap at x=[15,17.5] → raises
         with pytest.raises(ValueError, match="overlaps"):
             combat.move_entity(mover, 15.0, 0.0, 0.0)
 
@@ -184,9 +184,9 @@ class TestPushEntity:
 class TestGetTargetsInAoe:
     def test_fireball_hits_entities_in_radius(self):
         caster = _make_entity("Wizard", x=0.0, team="heroes")
-        # Goblin A at x=5: bbox [5,10]x[0,5]x[0,5], nearest pt to (10,0,0) is (10,0,0), dist=0 < 20 → hit
+        # Goblin A centred at x=5: bbox [2.5,7.5], nearest pt to (10,0,0) is (7.5,0,0), dist=2.5 < 20 → hit
         target_a = _make_entity("Goblin A", x=5.0, team="monsters")
-        # Goblin B at x=35: bbox [35,40]x[0,5]x[0,5], nearest pt to (10,0,0) is (35,0,0), dist=25 > 20 → miss
+        # Goblin B centred at x=35: bbox [32.5,37.5], nearest pt to (10,0,0) is (32.5,0,0), dist=22.5 > 20 → miss
         target_b = _make_entity("Goblin B", x=35.0, team="monsters")
         combat = _make_combat(caster, target_a, target_b)
 

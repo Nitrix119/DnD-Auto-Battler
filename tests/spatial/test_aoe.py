@@ -60,8 +60,9 @@ class TestSphereVolume:
         assert sphere.contains_entity(entity)
 
     def test_entity_just_outside(self):
+        # Entity centre at x=23: nearest edge at x=20.5 > radius 20 → miss
         sphere = SphereVolume(center=Point3D(0, 0, 0), radius=20)
-        entity = _make_entity(21, 0, 0)
+        entity = _make_entity(23, 0, 0)
         assert not sphere.contains_entity(entity)
 
     def test_entity_partially_inside(self):
@@ -101,8 +102,8 @@ class TestCylinderVolume:
 
     def test_entity_outside_radius_miss(self):
         cyl = CylinderVolume(center_x=0, center_z=0, base_y=0, radius=5, height=20)
-        entity = _make_entity(6, 0, 6)   # nearest XZ point = (5,_,5), dist=sqrt(2)>1 from axis? No
-        # entity at x=6, z=6, nearest = (6,_,6), dist to (0,0)=sqrt(72) > 5
+        # Entity centre at (7,0,7): nearest XZ edge at (4.5,4.5), dist=sqrt(40.5)≈6.36 > 5 → miss
+        entity = _make_entity(7, 0, 7)
         assert not cyl.contains_entity(entity)
 
     def test_entity_touching_cylinder_edge_hit(self):
@@ -140,7 +141,8 @@ class TestConeVolume:
             direction=Vector3D(1, 0, 0),
             length=10,
         )
-        entity = _make_entity(12, 0, 0)  # starts at 12, past length 10
+        # Entity centre at x=13: nearest edge at x=10.5 > cone length 10 → miss
+        entity = _make_entity(13, 0, 0)
         assert not cone.contains_entity(entity)
 
     def test_entity_at_edge_of_half_angle_hit(self):
@@ -256,8 +258,8 @@ class TestLineVolume:
             length=60,
             width=5,
         )
-        # Line half-width=2.5; entity at z=4 (all corners have z >= 4 > 2.5)
-        entity = _make_entity(20, 0, 4)
+        # Line half-width=2.5; entity centre at z=6 → nearest edge at z=3.5 > 2.5 → miss
+        entity = _make_entity(20, 0, 6)
         assert not line.contains_entity(entity)
 
     def test_entity_beyond_length_miss(self):
@@ -267,7 +269,8 @@ class TestLineVolume:
             length=30,
             width=5,
         )
-        entity = _make_entity(32, 0, 0)
+        # Entity centre at x=33: nearest edge at x=30.5 > line length 30 → miss
+        entity = _make_entity(33, 0, 0)
         assert not line.contains_entity(entity)
 
     def test_default_width_5ft(self):

@@ -8,6 +8,7 @@
     "wisdom": 12,
     "charisma": 8
   },
+  "size": "medium",
   "hit_points": 52,
   "hit_points_max": 52,
   "armor_class": 18,
@@ -18,6 +19,8 @@
       "name": "Longsword",
       "description": "A melee weapon attack",
       "type": "attack",
+      "cost": {"actions": 1},
+      "range_ft": 5,
       "bonus_to_hit": 7,
       "damage": [
         {
@@ -31,6 +34,8 @@
       "name": "Handaxe",
       "description": "A thrown melee weapon attack",
       "type": "attack",
+      "cost": {"actions": 1},
+      "range_ft": 20,
       "bonus_to_hit": 7,
       "damage": [
         {

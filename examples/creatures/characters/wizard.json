@@ -8,6 +8,8 @@
     "wisdom": 12,
     "charisma": 10
   },
+  "size": "medium",
+  "known_spells": ["Fire Bolt", "Fireball", "Haste"],
   "hit_points": 28,
   "hit_points_max": 28,
   "armor_class": 12,

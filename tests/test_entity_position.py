@@ -67,39 +67,44 @@ class TestEntityPosition:
 
 class TestEntityBoundingBox:
     def test_medium_bbox_at_origin(self):
+        # Position is the XZ centre; box spans ±2.5 in X/Z, 0→5 in Y
         sb = _make_stat_block(CreatureSize.MEDIUM)
         entity = Entity(sb)
         bbox = entity.bounding_box
-        assert bbox.min_corner == Point3D(0.0, 0.0, 0.0)
-        assert bbox.max_corner == Point3D(5.0, 5.0, 5.0)
+        assert bbox.min_corner == Point3D(-2.5, 0.0, -2.5)
+        assert bbox.max_corner == Point3D(2.5, 5.0, 2.5)
 
     def test_large_bbox(self):
         sb = _make_stat_block(CreatureSize.LARGE)
         entity = Entity(sb)
         bbox = entity.bounding_box
-        assert bbox.max_corner == Point3D(10.0, 10.0, 10.0)
+        assert bbox.min_corner == Point3D(-5.0, 0.0, -5.0)
+        assert bbox.max_corner == Point3D(5.0, 10.0, 5.0)
 
     def test_huge_bbox(self):
         sb = _make_stat_block(CreatureSize.HUGE)
         entity = Entity(sb)
         bbox = entity.bounding_box
-        assert bbox.max_corner == Point3D(15.0, 15.0, 15.0)
+        assert bbox.min_corner == Point3D(-7.5, 0.0, -7.5)
+        assert bbox.max_corner == Point3D(7.5, 15.0, 7.5)
 
     def test_gargantuan_bbox(self):
         sb = _make_stat_block(CreatureSize.GARGANTUAN)
         entity = Entity(sb)
         bbox = entity.bounding_box
-        assert bbox.max_corner == Point3D(20.0, 20.0, 20.0)
+        assert bbox.min_corner == Point3D(-10.0, 0.0, -10.0)
+        assert bbox.max_corner == Point3D(10.0, 20.0, 10.0)
 
     def test_bbox_moves_with_entity(self):
+        # Entity centred at (10, 20, 5): box spans ±2.5 in X/Z from centre
         sb = _make_stat_block()
         entity = Entity(sb)
         entity.x = 10.0
         entity.y = 20.0
         entity.z = 5.0
         bbox = entity.bounding_box
-        assert bbox.min_corner == Point3D(10.0, 20.0, 5.0)
-        assert bbox.max_corner == Point3D(15.0, 25.0, 10.0)
+        assert bbox.min_corner == Point3D(7.5, 20.0, 2.5)
+        assert bbox.max_corner == Point3D(12.5, 25.0, 7.5)
 
     def test_stat_block_defaults_to_medium(self):
         sb = StatBlock(

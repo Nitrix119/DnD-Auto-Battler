@@ -207,7 +207,7 @@ class TestAoEAutoTargeting:
         initial_inside = inside.hp
         initial_outside = outside.hp
 
-        # Blast centred at (25, 0, 0); inside's bbox [10,15] is within 20ft, outside is not
+        # Blast centred at (25, 0, 0); inside's bbox [7.5,12.5] is within 20ft, outside is not
         combat.resolve_spell(caster, [], spell, target=Point3D(25.0, 0.0, 0.0))
 
         assert inside.hp < initial_inside, "Entity inside radius should take damage"
@@ -234,7 +234,7 @@ class TestAoEAutoTargeting:
         assert results == []
 
     def test_dead_entities_not_targeted(self):
-        # Caster at x=-30 so its bbox [-30,-25] is well outside the 20ft sphere
+        # Caster at x=-30 so its bbox [-32.5,-27.5] is well outside the 20ft sphere
         caster = _make_entity("Wizard", x=-30.0)
         corpse = _make_entity("Dead", x=5.0, hp=1)
         corpse.current_hp = 0
@@ -253,12 +253,12 @@ class TestRangeClamping:
     def test_target_beyond_range_is_clamped(self):
         """Blast target 200 ft away with a 150 ft range spell — sphere is at 150 ft.
 
-        Range is measured from the caster's bbox centre (2.5, 2.5, 2.5 for a MEDIUM caster
-        at origin).  Aiming directly along X to (200, 0, 0) the clamped sphere centre is
-        approximately (152.48, 0.60, 0.60) — close to but not exactly (152.5, 0, 0).
+        Range is measured from the caster's bbox centre (0, 2.5, 0) for a MEDIUM caster
+        at origin.  Aiming to (200, 0, 0) the clamped sphere centre is approximately
+        (149.98, 0.625, 0).
 
-        at_150 (bbox [145,150]) → nearest point ~(150, 0.60, 0.60), dist ≈ 2.48 → inside
-        beyond  (bbox [175,180]) → nearest point ~(175, 0.60, 0.60), dist ≈ 22.5  → outside
+        at_150 (bbox [142.5,147.5]) → nearest point ~(147.5, 0.625, 0), dist ≈ 2.5 → inside
+        beyond  (bbox [172.5,177.5]) → nearest point ~(172.5, 0.625, 0), dist ≈ 22.5  → outside
         """
         caster = _make_entity("Wizard", x=0.0)
         at_150 = _make_entity("At150", x=145.0, hp=100)
@@ -284,17 +284,16 @@ class TestRangeClamping:
 
         initial_hp = target_entity.hp
         combat.resolve_spell(caster, [], spell, target=Point3D(45.0, 0.0, 0.0))
-        # Sphere at (45, 0, 0) radius 20; entity bbox [40,45] nearest pt to sphere = (45,0,0) dist=0 → hit
+        # Sphere at (45, 0, 0) radius 20; entity bbox [37.5,42.5] nearest pt to sphere = (42.5,0,0) dist=2.5 → hit
         assert target_entity.hp < initial_hp
 
     def test_caster_center_is_used_for_range_not_corner(self):
         """Range is measured from the caster's bounding box centre, not corner."""
-        # MEDIUM caster: bbox [0,5]x[0,5]x[0,5], centre at (2.5, 2.5, 2.5)
+        # MEDIUM caster at origin: bbox [-2.5,2.5]x[0,5]x[-2.5,2.5], centre at (0, 2.5, 0)
         caster = _make_entity("Wizard", x=0.0)
-        # Target at exactly 150 ft from (2.5, 2.5, 2.5)
-        # Targeting directly along X: 150 ft from centre = x = 2.5 + 150 = 152.5
-        target_pt = Point3D(152.5, 2.5, 2.5)
-        entity = _make_entity("Target", x=147.0, hp=100)  # inside 20ft of target_pt
+        # Target at 150 ft from centre (0, 2.5, 0) along X: x = 150
+        target_pt = Point3D(150.0, 2.5, 0.0)
+        entity = _make_entity("Target", x=144.0, hp=100)  # inside 20ft of target_pt
         combat = _make_combat(caster, entity)
         spell = _fireball(range_ft=150, radius_ft=20)
 
@@ -385,7 +384,7 @@ class TestSingleTargetRange:
 
     def test_touch_spell_succeeds_at_4ft(self):
         caster = _make_entity("Cleric", x=0.0)
-        # Nearest edge of target bbox at x=4, which is ≤ 5 ft from caster centre (2.5,2.5,2.5)
+        # Caster centre at (0, 2.5, 0); target centred at x=4, nearest edge at x=1.5 → dist=1.5 ≤ 5 ft touch
         target = _make_entity("Goblin", x=4.0, hp=20)
         combat = _make_combat(caster, target)
         spell = _touch_spell()
@@ -395,8 +394,8 @@ class TestSingleTargetRange:
 
     def test_touch_spell_fails_beyond_5ft(self):
         caster = _make_entity("Cleric", x=0.0)
-        # Caster centre at (2.5, 2.5, 2.5); nearest point of target bbox at (11, 0, 0)
-        # Distance = sqrt((11-2.5)^2 + 2.5^2 + 2.5^2) ≈ 9.2 > 5
+        # Caster centre at (0, 2.5, 0); target centred at x=11, nearest edge at (8.5, 2.5, 0)
+        # Distance = 8.5 > 5
         target = _make_entity("Goblin", x=11.0, hp=20)
         combat = _make_combat(caster, target)
         spell = _touch_spell()
