@@ -53,12 +53,21 @@ function createToken(x = 0.5, y = 0.5, creatureData = null, team = 0) {
         maxHp:     creatureData?.hit_points_max ?? null,
         ac:        creatureData?.armor_class    ?? null,
         abilities: creatureData?.abilities      ?? null,
+        actions:   creatureData?.actions        ?? [],
     };
 }
 
+// Custom cursor for the action tool — lightning bolt
+const CURSOR_ACTION = (() => {
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20">'
+              + '<polygon points="11,1 4,11 10,11 9,19 16,9 10,9" fill="white" opacity="0.9"/>'
+              + '</svg>';
+    return `url('data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}') 10 10, crosshair`;
+})();
+
 // ── Tool state ────────────────────────────────────────────────────────────────
 
-let activeTool       = null;   // 'move' | 'measure' | 'info' | null
+let activeTool       = null;   // 'move' | 'measure' | 'info' | 'action' | null
 let measuring        = false;
 let measureStart     = null;   // { x, y } in cell units
 let measureEnd       = null;   // { x, y } in cell units
@@ -66,6 +75,9 @@ let draggingToken    = null;   // the token currently being dragged
 let dragOffset       = { x: 0, y: 0 };  // cursor-to-centre offset at drag start
 let hoveringToken    = false;  // whether the cursor is over a draggable token
 let infoHoveredToken = null;   // token currently inspected by the info tool
+let actionToken      = null;   // token whose action panel is open
+let targetingAction  = null;   // action object currently being targeted
+let targetHovered    = null;   // token under cursor during targeting
 
 // ── Resize ────────────────────────────────────────────────────────────────────
 
@@ -86,47 +98,100 @@ function worldToScreen(cx, cy) {
     };
 }
 
-function drawTokens() {
-    for (const token of tokens) {
-        const { x: sx, y: sy } = worldToScreen(token.x, token.y);
-        const sr = token.radius * CELL_PX * camera.zoom;
-        const dragging  = token === draggingToken;
-        const infoHover = token === infoHoveredToken;
-        const red = token.team === 2;
+function drawOneToken(token) {
+    const { x: sx, y: sy } = worldToScreen(token.x, token.y);
+    const sr = token.radius * CELL_PX * camera.zoom;
+    const dragging  = token === draggingToken;
+    const infoHover = token === infoHoveredToken;
+    const red = token.team === 2;
 
-        // Outer highlight ring when inspected by the info tool
-        if (infoHover) {
-            ctx.beginPath();
-            ctx.arc(sx, sy, sr + 5, 0, Math.PI * 2);
-            ctx.strokeStyle = "rgba(255, 240, 150, 0.50)";
-            ctx.lineWidth   = 1.5;
-            ctx.stroke();
-        }
-
+    if (infoHover) {
         ctx.beginPath();
-        ctx.arc(sx, sy, sr, 0, Math.PI * 2);
-        if (red) {
-            ctx.fillStyle   = dragging ? "rgba(220, 90, 90, 0.70)" : "rgba(180, 60, 60, 0.50)";
-        } else {
-            ctx.fillStyle   = dragging ? "rgba(100, 180, 255, 0.70)" : "rgba(80, 140, 255, 0.50)";
-        }
-        ctx.fill();
-        ctx.strokeStyle = dragging ? "rgba(255, 255, 255, 1.00)" : "rgba(255, 255, 255, 0.80)";
-        ctx.lineWidth   = dragging ? 2.0 : 1.5;
+        ctx.arc(sx, sy, sr + 5, 0, Math.PI * 2);
+        ctx.strokeStyle = "rgba(255, 240, 150, 0.50)";
+        ctx.lineWidth   = 1.5;
         ctx.stroke();
-
-        // Name label inside the token (capped at available space)
-        if (sr >= 14) {
-            const label = token.name.slice(0, Math.max(1, Math.floor(sr / 7)));
-            ctx.font = `${Math.min(12, sr * 0.45)}px sans-serif`;
-            ctx.textAlign    = "center";
-            ctx.textBaseline = "middle";
-            ctx.fillStyle    = "rgba(255, 255, 255, 0.85)";
-            ctx.fillText(label, sx, sy);
-        }
     }
-    ctx.textAlign    = "left";
-    ctx.textBaseline = "top";
+
+    ctx.beginPath();
+    ctx.arc(sx, sy, sr, 0, Math.PI * 2);
+    if (red) {
+        ctx.fillStyle = dragging ? "rgba(220, 90, 90, 0.70)" : "rgba(180, 60, 60, 0.50)";
+    } else {
+        ctx.fillStyle = dragging ? "rgba(100, 180, 255, 0.70)" : "rgba(80, 140, 255, 0.50)";
+    }
+    ctx.fill();
+    ctx.strokeStyle = dragging ? "rgba(255, 255, 255, 1.00)" : "rgba(255, 255, 255, 0.80)";
+    ctx.lineWidth   = dragging ? 2.0 : 1.5;
+    ctx.stroke();
+
+    if (sr >= 14) {
+        const label = token.name.slice(0, Math.max(1, Math.floor(sr / 7)));
+        ctx.font = `${Math.min(12, sr * 0.45)}px sans-serif`;
+        ctx.textAlign    = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillStyle    = "rgba(255, 255, 255, 0.85)";
+        ctx.fillText(label, sx, sy);
+        ctx.textAlign    = "left";
+        ctx.textBaseline = "top";
+    }
+}
+
+function drawTargetingLine() {
+    if (!targetingAction || !actionToken) return;
+
+    // Max range from token centre = attack reach + token radius (both in feet → cells)
+    const reachFt = targetingAction.reach_ft ?? 5;
+    const maxRangeCells = (reachFt + actionToken.radius * CELL_FEET) / CELL_FEET;
+
+    const dx   = cursorWorld.x - actionToken.x;
+    const dy   = cursorWorld.y - actionToken.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+
+    // Clamp end-point to max range; draw toward cursor if within range
+    const clamped = Math.min(dist, maxRangeCells);
+    const { x: sx, y: sy } = worldToScreen(actionToken.x, actionToken.y);
+    let ex = sx, ey = sy;
+    if (dist > 0) {
+        const end = worldToScreen(
+            actionToken.x + (dx / dist) * clamped,
+            actionToken.y + (dy / dist) * clamped,
+        );
+        ex = end.x;
+        ey = end.y;
+    }
+
+    const inRange   = dist <= maxRangeCells;
+    const lineColor = inRange ? "rgba(255, 220, 80, 0.85)" : "rgba(255, 100, 80, 0.65)";
+
+    ctx.strokeStyle = lineColor;
+    ctx.lineWidth   = 1.5;
+    ctx.setLineDash([6, 4]);
+    ctx.beginPath();
+    ctx.moveTo(sx, sy);
+    ctx.lineTo(ex, ey);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    ctx.fillStyle = lineColor;
+    ctx.beginPath();
+    ctx.arc(ex, ey, 3, 0, Math.PI * 2);
+    ctx.fill();
+}
+
+function drawTokens() {
+    const acting = targetingAction ? actionToken : null;
+
+    // Phase 1 — all tokens except the acting one
+    for (const token of tokens) {
+        if (token !== acting) drawOneToken(token);
+    }
+
+    // Phase 2 — targeting line (above other tokens, below acting token)
+    drawTargetingLine();
+
+    // Phase 3 — acting token on top
+    if (acting) drawOneToken(acting);
 }
 
 function draw() {
@@ -234,6 +299,8 @@ function updateCursor() {
         canvas.style.cursor = "crosshair";
     } else if (activeTool === "info") {
         canvas.style.cursor = CURSOR_INFO;
+    } else if (activeTool === "action") {
+        canvas.style.cursor = CURSOR_ACTION;
     } else {
         canvas.style.cursor = "";  // falls back to CSS `grab`
     }
@@ -268,6 +335,17 @@ canvas.addEventListener("mousedown", (e) => {
         measuring    = true;
         measureStart = { x: cursorWorld.x, y: cursorWorld.y };
         measureEnd   = { x: cursorWorld.x, y: cursorWorld.y };
+        return;
+    }
+
+    if (e.button === 0 && activeTool === "action") {
+        const clicked = [...tokens].reverse().find(t => {
+            const dx = cursorWorld.x - t.x;
+            const dy = cursorWorld.y - t.y;
+            return Math.sqrt(dx * dx + dy * dy) <= t.radius;
+        }) ?? null;
+        if (clicked) openActionPanel(clicked);
+        else closeActionPanel();
         return;
     }
 
@@ -328,6 +406,23 @@ window.addEventListener("mousemove", (e) => {
         }
     }
 
+    // Target panel — show enemy stats when hovering a token during targeting
+    if (targetingAction) {
+        const found = [...tokens].reverse().find(t => {
+            if (t === actionToken) return false;
+            const dx = cursorWorld.x - t.x;
+            const dy = cursorWorld.y - t.y;
+            return Math.sqrt(dx * dx + dy * dy) <= t.radius;
+        }) ?? null;
+
+        if (found !== targetHovered) {
+            targetHovered = found;
+            updateTargetPanel(found);
+        } else if (found) {
+            tgtPosEl.textContent = `${(found.x * CELL_FEET).toFixed(1)} ft, ${(found.y * CELL_FEET).toFixed(1)} ft`;
+        }
+    }
+
     draw();
 });
 
@@ -381,8 +476,103 @@ canvas.addEventListener("wheel", (e) => {
 const btnMove        = document.getElementById("tool-move");
 const btnMeasure     = document.getElementById("tool-measure");
 const btnInfo        = document.getElementById("tool-info");
+const btnAction      = document.getElementById("tool-action");
 const btnAddToken    = document.getElementById("tool-add-token");
 const measureReadout = document.getElementById("measure-readout");
+
+// Action panel
+const actionPanel       = document.getElementById("action-panel");
+const actionActorNameEl = document.getElementById("action-actor-name");
+const actionListEl      = document.getElementById("action-list");
+
+// Target panel
+const targetPanel  = document.getElementById("target-panel");
+const tgtNameEl    = document.getElementById("tgt-name");
+const tgtHpEl      = document.getElementById("tgt-hp");
+const tgtAcEl      = document.getElementById("tgt-ac");
+const tgtPosEl     = document.getElementById("tgt-pos");
+const tgtStrEl     = document.getElementById("tgt-str");
+const tgtDexEl     = document.getElementById("tgt-dex");
+const tgtConEl     = document.getElementById("tgt-con");
+const tgtIntEl     = document.getElementById("tgt-int");
+const tgtWisEl     = document.getElementById("tgt-wis");
+const tgtChaEl     = document.getElementById("tgt-cha");
+
+function updateTargetPanel(token) {
+    if (!token) {
+        targetPanel.classList.remove("visible");
+        return;
+    }
+    const abs = token.abilities;
+    tgtNameEl.textContent = `Target: ${token.name}`;
+    tgtHpEl.textContent   = token.hp !== null ? `${token.hp} / ${token.maxHp}` : "—";
+    tgtAcEl.textContent   = token.ac !== null ? token.ac : "—";
+    tgtPosEl.textContent  = `${(token.x * CELL_FEET).toFixed(1)} ft, ${(token.y * CELL_FEET).toFixed(1)} ft`;
+    tgtStrEl.textContent  = abs ? abs.strength     : "—";
+    tgtDexEl.textContent  = abs ? abs.dexterity    : "—";
+    tgtConEl.textContent  = abs ? abs.constitution : "—";
+    tgtIntEl.textContent  = abs ? abs.intelligence : "—";
+    tgtWisEl.textContent  = abs ? abs.wisdom       : "—";
+    tgtChaEl.textContent  = abs ? abs.charisma     : "—";
+    targetPanel.classList.add("visible");
+}
+
+// Targeting banner
+const targetingBanner    = document.getElementById("targeting-banner");
+const targetingLabelEl   = document.getElementById("targeting-label");
+const targetingCancelBtn = document.getElementById("targeting-cancel");
+
+function setTargetingAction(action) {
+    targetingAction = action;
+    // Toggle active class on all action buttons
+    for (const btn of actionListEl.querySelectorAll(".action-btn")) {
+        btn.classList.toggle("active", btn.dataset.actionName === action?.name);
+    }
+    if (action) {
+        targetingLabelEl.textContent = `Targeting: ${action.name}`;
+        targetingBanner.classList.add("visible");
+    } else {
+        targetingBanner.classList.remove("visible");
+        targetHovered = null;
+        updateTargetPanel(null);
+    }
+}
+
+function openActionPanel(token) {
+    actionToken = token;
+    setTargetingAction(null);
+
+    actionActorNameEl.textContent = token.name;
+    actionListEl.innerHTML = "";
+
+    if (token.actions.length === 0) {
+        const empty = document.createElement("div");
+        empty.style.cssText = "font-size:0.78rem;color:rgba(255,255,255,0.30);padding:0.25rem 0;";
+        empty.textContent = "No actions available.";
+        actionListEl.appendChild(empty);
+    } else {
+        for (const action of token.actions) {
+            const btn = document.createElement("button");
+            btn.className = "action-btn";
+            btn.textContent = action.name;
+            btn.dataset.actionName = action.name;
+            btn.addEventListener("click", () => {
+                setTargetingAction(targetingAction?.name === action.name ? null : action);
+            });
+            actionListEl.appendChild(btn);
+        }
+    }
+
+    actionPanel.classList.add("visible");
+}
+
+function closeActionPanel() {
+    actionToken = null;
+    setTargetingAction(null);
+    actionPanel.classList.remove("visible");
+}
+
+targetingCancelBtn.addEventListener("click", () => setTargetingAction(null));
 const infoPanel      = document.getElementById("info-panel");
 const infoNameEl     = document.getElementById("info-name");
 const infoHpEl       = document.getElementById("info-hp");
@@ -420,6 +610,7 @@ function setActiveTool(tool) {
     btnMove.classList.toggle("active",    activeTool === "move");
     btnMeasure.classList.toggle("active", activeTool === "measure");
     btnInfo.classList.toggle("active",    activeTool === "info");
+    btnAction.classList.toggle("active",  activeTool === "action");
 
     measureReadout.classList.toggle("visible", activeTool === "measure");
 
@@ -437,6 +628,9 @@ function setActiveTool(tool) {
         infoHoveredToken = null;
         updateInfoPanel(null);
     }
+    if (activeTool !== "action") {
+        closeActionPanel();
+    }
 
     draw();
     updateCursor();
@@ -445,6 +639,7 @@ function setActiveTool(tool) {
 btnMove.addEventListener("click",    () => setActiveTool("move"));
 btnMeasure.addEventListener("click", () => setActiveTool("measure"));
 btnInfo.addEventListener("click",    () => setActiveTool("info"));
+btnAction.addEventListener("click",  () => setActiveTool("action"));
 
 btnAddToken.addEventListener("click", () => {
     tokens.push(createToken());
