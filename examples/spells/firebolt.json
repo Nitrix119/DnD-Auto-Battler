@@ -28,5 +28,9 @@
     "verbal": true,
     "somatic": true,
     "material": []
-  }
+  },
+  "animation": [
+    [{"type": "projectile", "color": "#FF4400", "from": "caster", "to": "target", "speed": 8, "size": 3}],
+    [{"type": "flash", "color": "#FF6600", "at": "target", "duration": 0.25}]
+  ]
 }

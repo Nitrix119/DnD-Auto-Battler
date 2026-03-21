@@ -33,5 +33,13 @@
     "somatic": true,
     "material": ["a tiny ball of bat guano and sulfur"]
   },
-  "higher_level_scaling": "When you cast this spell using a spell slot of 4th level or higher, the damage increases by 1d6 for each slot level above 3rd."
+  "higher_level_scaling": "When you cast this spell using a spell slot of 4th level or higher, the damage increases by 1d6 for each slot level above 3rd.",
+  "animation": [
+    [{"type": "projectile", "color": "#FF4400", "from": "caster", "to": "target_point", "speed": 12, "size": 3}],
+    [
+      {"type": "expanding_ring", "color": "#FF6600", "at": "target_point", "radius": 20, "speed": 8, "fill": true},
+      {"type": "particles", "color": "#FF2200", "at": "target_point", "count": 40, "spread": 30, "duration": 0.6}
+    ],
+    [{"type": "flash", "color": "#FF4400", "at": "each_target", "duration": 0.3}]
+  ]
 }

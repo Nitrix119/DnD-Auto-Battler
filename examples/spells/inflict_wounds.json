@@ -28,5 +28,12 @@
     "somatic": true,
     "material": []
   },
-  "higher_level_scaling": "When you cast this spell using a spell slot of 2nd level or higher, the damage increases by 1d10 for each slot level above 1st."
+  "higher_level_scaling": "When you cast this spell using a spell slot of 2nd level or higher, the damage increases by 1d10 for each slot level above 1st.",
+  "animation": [
+    [
+      {"type": "beam", "color": "#7700AA", "from": "caster", "to": "target", "duration": 0.3, "width": 4},
+      {"type": "flash", "color": "#9933CC", "at": "target", "duration": 0.5, "size": 1.3}
+    ],
+    [{"type": "particles", "color": "#550088", "at": "target", "count": 12, "spread": 5, "duration": 0.5, "speed": 1.5}]
+  ]
 }

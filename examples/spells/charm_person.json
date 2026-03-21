@@ -22,5 +22,9 @@
         "charmer": "event.caster"
       }
     }
+  ],
+  "animation": [
+    [{"type": "projectile", "color": "#FF88CC", "from": "caster", "to": "target", "speed": 4, "size": 3, "trail": false}],
+    [{"type": "flash", "color": "#FF88CC", "at": "target", "duration": 0.5, "size": 1.2}]
   ]
 }

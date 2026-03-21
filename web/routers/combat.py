@@ -286,6 +286,8 @@ async def handle_cast_spell(
         "action_type": "spell",
         "attacker_id": caster.entity_id,
         "results": per_target,
+        "animation": spell_action.animation if spell_action.animation else [],
+        "target_point": {"x": tp["x"], "y": tp["y"]} if tp else None,
         "log": new_logs,
         "combat_state": serialize_combat_state(combat),
     })

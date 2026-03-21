@@ -17,5 +17,9 @@
     {
       "effect": "longstrider"
     }
+  ],
+  "animation": [
+    [{"type": "flash", "color": "#44DD88", "at": "target", "duration": 0.3}],
+    [{"type": "aura", "color": "#44DD88", "at": "target", "duration": 0.8, "size": 1.3, "pulses": 2}]
   ]
 }

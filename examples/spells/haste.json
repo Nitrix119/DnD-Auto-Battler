@@ -24,5 +24,9 @@
     "verbal": true,
     "somatic": true,
     "material": ["a shaving of licorice root"]
-  }
+  },
+  "animation": [
+    [{"type": "projectile", "color": "#FFDD44", "from": "caster", "to": "target", "speed": 6, "size": 2, "trail": false}],
+    [{"type": "aura", "color": "#FFDD44", "at": "target", "duration": 1.0, "size": 1.5, "pulses": 3}]
+  ]
 }

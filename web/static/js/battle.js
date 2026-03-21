@@ -859,7 +859,21 @@ function handleCombatStarted(msg) {
     console.log("[combat] started — initiative:", msg.initiative_order);
 }
 
-function handleActionResult(msg) {
+async function handleActionResult(msg) {
+    // Play spell animation before applying state (so pre-damage positions are used)
+    if (msg.action_type === "spell" && msg.animation && msg.animation.length > 0) {
+        const casterToken = tokens.find(t => t.id === msg.attacker_id);
+        const targetTokens = msg.results
+            .map(r => tokens.find(t => t.id === r.target_id))
+            .filter(Boolean);
+        const context = {
+            caster: casterToken ? { x: casterToken.x, y: casterToken.y } : { x: 0, y: 0 },
+            targets: targetTokens.map(t => ({ x: t.x, y: t.y })),
+            targetPoint: msg.target_point || null,
+        };
+        await animationManager.play(msg.animation, context);
+    }
+
     updateFromCombatState(msg.combat_state);
     for (const line of (msg.log || [])) {
         console.log("[combat log]", line);
