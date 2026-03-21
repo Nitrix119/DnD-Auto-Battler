@@ -67,6 +67,8 @@ function createToken(x = 0.5, y = 0.5, creatureData = null, team = 0) {
         ac:        creatureData?.armor_class    ?? null,
         abilities: creatureData?.abilities      ?? null,
         actions:   creatureData?.actions        ?? [],
+        spells:    creatureData?.known_spells   ?? [],  // raw name list
+        spellData: [],                                  // resolved spell objects (populated async)
     };
 }
 
@@ -150,11 +152,23 @@ function drawOneToken(token) {
     }
 }
 
+// Returns the effective range in feet for any action (attack or spell).
+// touch → 5 ft, self → 0 (should not enter targeting), missing → 5 ft default.
+function getActionRangeFt(action) {
+    if (action.spell_range) {
+        const sr = action.spell_range;
+        if (sr.type === "feet")  return sr.distance_ft;
+        if (sr.type === "touch") return 5;
+        return 0;  // "self" — guard; self spells bypass targeting entirely
+    }
+    return action.range_ft ?? 5;
+}
+
 function drawTargetingLine() {
     if (!targetingAction || !actionToken) return;
 
-    // Max range from token centre = attack reach + token radius (both in feet → cells)
-    const reachFt = targetingAction.reach_ft ?? 5;
+    // Max range from token centre = action range + attacker's own radius (centre → edge)
+    const reachFt = getActionRangeFt(targetingAction);
     const maxRangeCells = (reachFt + actionToken.radius * CELL_FEET) / CELL_FEET;
 
     const dx   = cursorWorld.x - actionToken.x;
@@ -551,6 +565,31 @@ function setTargetingAction(action) {
     }
 }
 
+function makeActionSection(label, buildBody) {
+    const wrapper = document.createElement("div");
+    wrapper.className = "action-section";
+
+    const header = document.createElement("div");
+    header.className = "action-section-header";
+    header.innerHTML = `<span class="section-arrow">▾</span>${label}`;
+    header.addEventListener("click", () => wrapper.classList.toggle("collapsed"));
+
+    const body = document.createElement("div");
+    body.className = "action-section-body";
+    buildBody(body);
+
+    wrapper.appendChild(header);
+    wrapper.appendChild(body);
+    return wrapper;
+}
+
+function makeEmptyNote(text) {
+    const el = document.createElement("div");
+    el.className = "action-empty";
+    el.textContent = text;
+    return el;
+}
+
 function openActionPanel(token) {
     actionToken = token;
     setTargetingAction(null);
@@ -558,23 +597,56 @@ function openActionPanel(token) {
     actionActorNameEl.textContent = token.name;
     actionListEl.innerHTML = "";
 
-    if (token.actions.length === 0) {
-        const empty = document.createElement("div");
-        empty.style.cssText = "font-size:0.78rem;color:rgba(255,255,255,0.30);padding:0.25rem 0;";
-        empty.textContent = "No actions available.";
-        actionListEl.appendChild(empty);
-    } else {
-        for (const action of token.actions) {
-            const btn = document.createElement("button");
-            btn.className = "action-btn";
-            btn.textContent = action.name;
-            btn.dataset.actionName = action.name;
-            btn.addEventListener("click", () => {
-                setTargetingAction(targetingAction?.name === action.name ? null : action);
-            });
-            actionListEl.appendChild(btn);
+    // ── Attacks ──────────────────────────────────────────────────────────────
+    actionListEl.appendChild(makeActionSection("Attacks", (body) => {
+        if (token.actions.length === 0) {
+            body.appendChild(makeEmptyNote("None."));
+        } else {
+            for (const action of token.actions) {
+                const btn = document.createElement("button");
+                btn.className = "action-btn";
+                btn.textContent = action.name;
+                btn.dataset.actionName = action.name;
+                btn.addEventListener("click", () => {
+                    setTargetingAction(targetingAction?.name === action.name ? null : action);
+                });
+                body.appendChild(btn);
+            }
         }
-    }
+    }));
+
+    // ── Spells ───────────────────────────────────────────────────────────────
+    actionListEl.appendChild(makeActionSection("Spells", (body) => {
+        if (token.spells.length === 0) {
+            body.appendChild(makeEmptyNote("None."));
+        } else if (token.spellData.length === 0) {
+            body.appendChild(makeEmptyNote("Loading…"));
+        } else {
+            for (const spell of token.spellData) {
+                const btn = document.createElement("button");
+                btn.className = "action-btn action-btn-spell";
+                btn.textContent = spell.name;
+                btn.dataset.actionName = spell.name;
+
+                if (spell.spell_range?.type === "self") {
+                    // Self-targeting: fires instantly — no targeting cursor needed
+                    btn.title = "Self — instant cast (not yet functional)";
+                    btn.addEventListener("click", () => setTargetingAction(null));
+                } else {
+                    btn.addEventListener("click", () => {
+                        setTargetingAction(targetingAction?.name === spell.name ? null : spell);
+                    });
+                }
+
+                body.appendChild(btn);
+            }
+        }
+    }));
+
+    // ── Other ─────────────────────────────────────────────────────────────────
+    actionListEl.appendChild(makeActionSection("Other", (body) => {
+        body.appendChild(makeEmptyNote("None."));
+    }));
 
     actionPanel.classList.add("visible");
 }
@@ -689,6 +761,21 @@ ws.onerror = () => {
     wsStatusEl.title = "Connection error";
 };
 
+// ── Spell resolution ──────────────────────────────────────────────────────────
+
+async function fetchSpellsForToken(token) {
+    if (token.spells.length === 0) return;
+    const results = await Promise.all(
+        token.spells.map(async (name) => {
+            try {
+                const r = await fetch(`/api/spells/by-name/${encodeURIComponent(name)}`);
+                return r.ok ? r.json() : null;
+            } catch { return null; }
+        })
+    );
+    token.spellData = results.filter(Boolean);
+}
+
 // ── Init ──────────────────────────────────────────────────────────────────────
 
 window.addEventListener("DOMContentLoaded", async () => {
@@ -718,6 +805,9 @@ window.addEventListener("DOMContentLoaded", async () => {
 
     if (data1) tokens.push(createToken(-3, 0, data1, 1));
     if (data2) tokens.push(createToken( 3, 0, data2, 2));
+
+    // Resolve known_spells names → full spell objects for all tokens
+    await Promise.all(tokens.map(fetchSpellsForToken));
 
     draw();
 });

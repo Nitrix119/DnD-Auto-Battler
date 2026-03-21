@@ -8,6 +8,7 @@ from src.combat.combat_system import CombatSystem
 router = APIRouter()
 
 _CREATURES_DIR = Path(__file__).parent.parent.parent / "examples" / "creatures"
+_SPELLS_DIR    = Path(__file__).parent.parent.parent / "examples" / "spells"
 
 
 @router.get("/api/creatures")
@@ -35,6 +36,17 @@ async def get_creature(path: str) -> dict:
         raise HTTPException(status_code=404, detail="Creature not found")
     with creature_path.open() as f:
         return json.load(f)
+
+
+@router.get("/api/spells/by-name/{name}")
+async def get_spell_by_name(name: str) -> dict:
+    """Find and return a spell JSON by matching its 'name' field (case-insensitive)."""
+    for path in sorted(_SPELLS_DIR.rglob("*.json")):
+        with path.open() as f:
+            data = json.load(f)
+        if data.get("name", "").lower() == name.lower():
+            return data
+    raise HTTPException(status_code=404, detail="Spell not found")
 
 
 @router.websocket("/ws/combat")
