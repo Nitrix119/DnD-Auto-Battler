@@ -52,11 +52,12 @@ const SIZE_RADIUS = {
 
 const tokens = [];
 
-function createToken(x = 0.5, y = 0.5, creatureData = null, team = 0) {
+function createToken(x = 0.5, y = 0.5, creatureData = null, team = 0, creaturePath = null) {
     const size   = creatureData?.size?.toLowerCase() ?? "medium";
     const radius = SIZE_RADIUS[size] ?? SIZE_RADIUS.medium;
     return {
         id:        crypto.randomUUID(),
+        _creaturePath: creaturePath,  // relative path for backend start_combat
         x,
         y,
         radius,    // cell units — derived from creature size
@@ -93,6 +94,7 @@ let infoHoveredToken = null;   // token currently inspected by the info tool
 let actionToken      = null;   // token whose action panel is open
 let targetingAction  = null;   // action object currently being targeted
 let targetHovered    = null;   // token under cursor during targeting
+let currentEntityId  = null;   // entity whose turn it is (from backend)
 
 // ── Resize ────────────────────────────────────────────────────────────────────
 
@@ -366,6 +368,46 @@ canvas.addEventListener("mousedown", (e) => {
     }
 
     if (e.button === 0 && activeTool === "action") {
+        // If targeting is active, clicking on a valid target executes the action
+        if (targetingAction && actionToken) {
+            const target = [...tokens].reverse().find(t => {
+                if (t === actionToken) return false;
+                const dx = cursorWorld.x - t.x;
+                const dy = cursorWorld.y - t.y;
+                return Math.sqrt(dx * dx + dy * dy) <= t.radius;
+            }) ?? null;
+
+            if (target) {
+                const action = targetingAction;
+                if (action.spell_range) {
+                    // Spell
+                    const payload = {
+                        type: "cast_spell",
+                        seq: nextSeq(),
+                        caster_id: actionToken.id,
+                        spell_name: action.name,
+                    };
+                    if (action.targeting_type === "aoe") {
+                        payload.target_point = { x: cursorWorld.x, y: cursorWorld.y };
+                    } else {
+                        payload.target_ids = [target.id];
+                    }
+                    wsSend(payload);
+                } else {
+                    // Attack
+                    wsSend({
+                        type: "attack",
+                        seq: nextSeq(),
+                        attacker_id: actionToken.id,
+                        defender_id: target.id,
+                        action_name: action.name,
+                    });
+                }
+                setTargetingAction(null);
+                return;
+            }
+        }
+
         const clicked = [...tokens].reverse().find(t => {
             const dx = cursorWorld.x - t.x;
             const dy = cursorWorld.y - t.y;
@@ -456,6 +498,13 @@ window.addEventListener("mousemove", (e) => {
 window.addEventListener("mouseup", (e) => {
     if (e.button === 0) {
         if (draggingToken) {
+            // Send final position to backend for validation
+            wsSend({
+                type: "move",
+                seq: nextSeq(),
+                entity_id: draggingToken.id,
+                position: { x: draggingToken.x, y: draggingToken.y },
+            });
             draggingToken = null;
             updateCursor();
             draw();
@@ -731,14 +780,22 @@ btnAddToken.addEventListener("click", () => {
     draw();
 });
 
+// End Turn button
+const btnEndTurn = document.getElementById("btn-end-turn");
+btnEndTurn.addEventListener("click", () => {
+    wsSend({ type: "end_turn", seq: nextSeq() });
+});
+
 // ── WebSocket — combat session ─────────────────────────────────────────────
-//
-// One WebSocket per page load → one CombatSystem on the server.
-// `ws` is module-level so future actions (move token, cast spell, end turn)
-// can call ws.send(JSON.stringify({ type: "...", ... })) from anywhere.
 
 const wsStatusEl = document.getElementById("ws-status");
 const ws = new WebSocket(`ws://${location.host}/ws/combat`);
+
+let seqCounter = 0;
+function nextSeq() { return ++seqCounter; }
+function wsSend(obj) {
+    if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj));
+}
 
 ws.onopen = () => {
     wsStatusEl.className = "ws-connected";
@@ -747,8 +804,19 @@ ws.onopen = () => {
 
 ws.onmessage = (e) => {
     const msg = JSON.parse(e.data);
-    // Dispatch on msg.type — future server-push handling goes here.
     console.log("[combat ws]", msg);
+
+    switch (msg.type) {
+        case "connected":       break;  // already handled by onopen
+        case "combat_started":  handleCombatStarted(msg); break;
+        case "action_result":   handleActionResult(msg);  break;
+        case "move_result":     handleMoveResult(msg);    break;
+        case "turn_changed":    handleTurnChanged(msg);   break;
+        case "combat_ended":    handleCombatEnded(msg);   break;
+        case "error":           handleWsError(msg);       break;
+        default:
+            console.warn("[combat ws] unknown message type:", msg.type);
+    }
 };
 
 ws.onclose = () => {
@@ -760,6 +828,78 @@ ws.onerror = () => {
     wsStatusEl.className = "ws-disconnected";
     wsStatusEl.title = "Connection error";
 };
+
+// ── WS message handlers ──────────────────────────────────────────────────────
+
+function updateFromCombatState(state) {
+    currentEntityId = state.current_entity_id;
+    for (const es of state.entities) {
+        const token = tokens.find(t => t.id === es.entity_id);
+        if (!token) continue;
+        token.hp    = es.hp;
+        token.maxHp = es.max_hp;
+        token.ac    = es.ac;
+        token.x     = es.position.x;
+        token.y     = es.position.y;
+        token.resources = es.resources;
+        token.alive     = es.alive;
+    }
+    draw();
+}
+
+function handleCombatStarted(msg) {
+    // Remap frontend token IDs → backend entity IDs
+    const idMap = msg.id_map;
+    for (const token of tokens) {
+        if (idMap[token.id]) {
+            token.id = idMap[token.id];
+        }
+    }
+    updateFromCombatState(msg.combat_state);
+    console.log("[combat] started — initiative:", msg.initiative_order);
+}
+
+function handleActionResult(msg) {
+    updateFromCombatState(msg.combat_state);
+    for (const line of (msg.log || [])) {
+        console.log("[combat log]", line);
+    }
+}
+
+function handleMoveResult(msg) {
+    updateFromCombatState(msg.combat_state);
+}
+
+function handleTurnChanged(msg) {
+    updateFromCombatState(msg.combat_state);
+    console.log(`[combat] turn changed — R${msg.round}T${msg.turn}, entity: ${msg.current_entity_id}`);
+}
+
+function handleCombatEnded(msg) {
+    updateFromCombatState(msg.combat_state);
+    console.log("[combat] ended — winner:", msg.winner);
+}
+
+function handleWsError(msg) {
+    console.error(`[combat error] ${msg.command}: ${msg.message}`);
+}
+
+// ── Send start_combat ─────────────────────────────────────────────────────────
+
+function sendStartCombat() {
+    const combatants = tokens
+        .filter(t => t._creaturePath)
+        .map(t => ({
+            creature_path: t._creaturePath,
+            team: t.team === 1 ? "ally" : t.team === 2 ? "enemy" : "neutral",
+            position: { x: t.x, y: t.y },
+            frontend_id: t.id,
+        }));
+
+    if (combatants.length >= 2) {
+        wsSend({ type: "start_combat", seq: nextSeq(), combatants });
+    }
+}
 
 // ── Spell resolution ──────────────────────────────────────────────────────────
 
@@ -803,11 +943,18 @@ window.addEventListener("DOMContentLoaded", async () => {
         fetchCreature(c2Path),
     ]);
 
-    if (data1) tokens.push(createToken(-3, 0, data1, 1));
-    if (data2) tokens.push(createToken( 3, 0, data2, 2));
+    if (data1) tokens.push(createToken(-3, 0, data1, 1, c1Path));
+    if (data2) tokens.push(createToken( 3, 0, data2, 2, c2Path));
 
     // Resolve known_spells names → full spell objects for all tokens
     await Promise.all(tokens.map(fetchSpellsForToken));
 
     draw();
+
+    // Bootstrap combat on the backend once the WS is ready
+    if (ws.readyState === WebSocket.OPEN) {
+        sendStartCombat();
+    } else {
+        ws.addEventListener("open", () => sendStartCombat(), { once: true });
+    }
 });

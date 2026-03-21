@@ -9,7 +9,9 @@
       "Bash(python -m pytest tests/ -x -q)",
       "Bash(python -m pytest tests/test_action_economy.py -v -q)",
       "Bash(python -m pytest tests/test_combat.py -v)",
-      "Bash(python -m pytest -q)"
+      "Bash(python -m pytest -q)",
+      "Bash(python -m pytest tests/test_spell_registry.py -x -q)",
+      "Bash(python -c \"from web.app import create_app; app = create_app\\(\\); print\\(''App created OK, spell registry has'', len\\(app.state.spell_registry\\), ''spells''\\)\")"
     ]
   }
 }

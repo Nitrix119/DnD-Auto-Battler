@@ -6,6 +6,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.types import Receive, Scope, Send
 
+from src.combat.spell_registry import SpellRegistry
 from web.routers import combat, health
 
 _WEB_DIR = Path(__file__).parent
@@ -33,6 +34,11 @@ class _NoCacheStaticFiles(StaticFiles):
 
 def create_app() -> FastAPI:
     application = FastAPI(title="D&D Auto Battler")
+
+    # Global spell registry — scanned once at startup, shared across all sessions
+    spell_registry = SpellRegistry()
+    spell_registry.scan_directory(str(_WEB_DIR.parent / "examples" / "spells"))
+    application.state.spell_registry = spell_registry
 
     application.mount(
         "/static",

@@ -67,6 +67,24 @@ canvas.panning {
     margin: 4px 2px;
 }
 
+.end-turn-btn {
+    height: 40px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 8px;
+    color: rgba(255, 255, 255, 0.80);
+    font-size: 0.78rem;
+    padding: 0 14px;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+    white-space: nowrap;
+}
+
+.end-turn-btn:hover {
+    background: rgba(255, 255, 255, 0.12);
+    border-color: rgba(255, 255, 255, 0.25);
+}
+
 /* ── WebSocket status dot ────────────────────────────────────────────────── */
 
 #ws-status {
