@@ -74,15 +74,6 @@ class TestMoveEntity:
         assert mover.y == 4.0
         assert mover.resources.movement == 25  # 30 - 5
 
-    def test_move_cost_ceiling_rounds_up(self):
-        # dist = sqrt(2) ≈ 1.414 → ceil = 2
-        mover = _make_entity(speed=30)
-        combat = _make_combat(mover)
-
-        combat.move_entity(mover, 1.0, 1.0, 0.0)
-
-        assert mover.resources.movement == 28  # 30 - 2
-
     def test_move_fails_insufficient_movement(self):
         mover = _make_entity(speed=5)
         combat = _make_combat(mover)

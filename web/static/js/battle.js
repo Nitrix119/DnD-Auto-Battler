@@ -456,6 +456,19 @@ canvas.addEventListener("mousedown", (e) => {
         return;
     }
 
+    if (e.button === 0 && activeTool === "info") {
+        const found = [...tokens].reverse().find(t => {
+            const dx = cursorWorld.x - t.x;
+            const dy = cursorWorld.y - t.y;
+            return Math.sqrt(dx * dx + dy * dy) <= t.radius;
+        }) ?? null;
+
+        infoHoveredToken = found;
+        updateInfoPanel(found);
+        draw();
+        return;
+    }
+
     if (e.button === 0 && activeTool === "measure") {
         measuring    = true;
         measureStart = { x: cursorWorld.x, y: cursorWorld.y };
@@ -489,8 +502,9 @@ canvas.addEventListener("mousedown", (e) => {
             }
 
             // Single-target spell or attack: require clicking on a token
+            const canTargetSelf = action.can_target_self === true;
             const target = [...tokens].reverse().find(t => {
-                if (t === actionToken) return false;
+                if (t === actionToken && !canTargetSelf) return false;
                 const tdx = cursorWorld.x - t.x;
                 const tdy = cursorWorld.y - t.y;
                 return Math.sqrt(tdx * tdx + tdy * tdy) <= t.radius;
@@ -580,21 +594,9 @@ window.addEventListener("mousemove", (e) => {
         updateCursor();
     }
 
-    // Info tool — find topmost token under cursor and update the panel
-    if (activeTool === "info") {
-        const found = [...tokens].reverse().find(t => {
-            const dx = cursorWorld.x - t.x;
-            const dy = cursorWorld.y - t.y;
-            return Math.sqrt(dx * dx + dy * dy) <= t.radius;
-        }) ?? null;
-
-        if (found !== infoHoveredToken) {
-            infoHoveredToken = found;
-            updateInfoPanel(found);
-        } else if (found) {
-            // Position changes even without token swap — refresh the pos line
-            infoPosEl.textContent = `${(found.x * CELL_FEET).toFixed(1)} ft, ${(found.y * CELL_FEET).toFixed(1)} ft`;
-        }
+    // Info tool — keep the selected token's position up to date while panel is open
+    if (activeTool === "info" && infoHoveredToken) {
+        infoPosEl.textContent = `${(infoHoveredToken.x * CELL_FEET).toFixed(1)} ft, ${(infoHoveredToken.y * CELL_FEET).toFixed(1)} ft`;
     }
 
     // Target panel — show enemy stats when hovering a token during targeting
@@ -712,9 +714,48 @@ const tgtIntEl     = document.getElementById("tgt-int");
 const tgtWisEl     = document.getElementById("tgt-wis");
 const tgtChaEl     = document.getElementById("tgt-cha");
 
+// ── Stat breakdown tooltip ────────────────────────────────────────────────────
+
+const breakdownTooltip = document.getElementById("stat-breakdown-tooltip");
+
+function showBreakdownTooltip(entries, label, anchorEl) {
+    if (!entries || entries.length === 0) {
+        hideBreakdownTooltip();
+        return;
+    }
+    const total = entries.reduce((s, e) => s + e.value, 0);
+    let html = `<div class="breakdown-header">${label}  ${total}</div>`;
+    html += '<div class="breakdown-sep"></div>';
+    for (const entry of entries) {
+        const sign = entry.value >= 0 ? "+" : "";
+        // First entry (Base) shown without a sign prefix
+        const prefix = entry === entries[0] ? "" : `${sign}`;
+        html += `<div class="breakdown-row">`
+              + `<span class="breakdown-val">${prefix}${entry.value}</span>`
+              + `<span class="breakdown-src">${entry.source}</span>`
+              + `</div>`;
+    }
+    breakdownTooltip.innerHTML = html;
+    breakdownTooltip.classList.add("visible");
+
+    const rect = anchorEl.getBoundingClientRect();
+    breakdownTooltip.style.left = `${rect.left}px`;
+    breakdownTooltip.style.top  = `${rect.bottom + 6}px`;
+}
+
+function hideBreakdownTooltip() {
+    breakdownTooltip.classList.remove("visible");
+}
+
+function attachBreakdownHover(el, getEntries, label) {
+    el.addEventListener("mouseenter", () => showBreakdownTooltip(getEntries(), label, el));
+    el.addEventListener("mouseleave", hideBreakdownTooltip);
+}
+
 function updateTargetPanel(token) {
     if (!token) {
         targetPanel.classList.remove("visible");
+        hideBreakdownTooltip();
         return;
     }
     const abs = token.abilities;
@@ -728,6 +769,8 @@ function updateTargetPanel(token) {
     tgtIntEl.textContent  = abs ? abs.intelligence : "—";
     tgtWisEl.textContent  = abs ? abs.wisdom       : "—";
     tgtChaEl.textContent  = abs ? abs.charisma     : "—";
+    tgtAcEl.classList.toggle("has-breakdown", !!(token.statBreakdowns?.ac?.length > 1));
+    attachBreakdownHover(tgtAcEl, () => token.statBreakdowns?.ac ?? [], "AC");
     targetPanel.classList.add("visible");
 }
 
@@ -816,9 +859,18 @@ function openActionPanel(token) {
                 btn.dataset.actionName = spell.name;
 
                 if (spell.spell_range?.type === "self") {
-                    // Self-targeting: fires instantly — no targeting cursor needed
-                    btn.title = "Self — instant cast (not yet functional)";
-                    btn.addEventListener("click", () => setTargetingAction(null));
+                    // Self-targeting: fires instantly at the caster
+                    btn.title = "Self — instant cast";
+                    btn.addEventListener("click", () => {
+                        setTargetingAction(null);
+                        wsSend({
+                            type: "cast_spell",
+                            seq: nextSeq(),
+                            caster_id: token.id,
+                            spell_name: spell.name,
+                            target_ids: [token.id],
+                        });
+                    });
                 } else {
                     btn.addEventListener("click", () => {
                         setTargetingAction(targetingAction?.name === spell.name ? null : spell);
@@ -860,6 +912,7 @@ const infoChaEl      = document.getElementById("info-cha");
 function updateInfoPanel(token) {
     if (!token) {
         infoPanel.classList.remove("visible");
+        hideBreakdownTooltip();
         return;
     }
     const abs = token.abilities;
@@ -873,6 +926,8 @@ function updateInfoPanel(token) {
     infoIntEl.textContent  = abs ? abs.intelligence : "—";
     infoWisEl.textContent  = abs ? abs.wisdom       : "—";
     infoChaEl.textContent  = abs ? abs.charisma     : "—";
+    infoAcEl.classList.toggle("has-breakdown", !!(token.statBreakdowns?.ac?.length > 1));
+    attachBreakdownHover(infoAcEl, () => token.statBreakdowns?.ac ?? [], "AC");
     infoPanel.classList.add("visible");
 }
 
@@ -990,13 +1045,14 @@ function updateFromCombatState(state) {
     for (const es of state.entities) {
         const token = tokens.find(t => t.id === es.entity_id);
         if (!token) continue;
-        token.hp    = es.hp;
-        token.maxHp = es.max_hp;
-        token.ac    = es.ac;
-        token.x     = es.position.x;
-        token.y     = es.position.y;
-        token.resources = es.resources;
-        token.alive     = es.alive;
+        token.hp             = es.hp;
+        token.maxHp          = es.max_hp;
+        token.ac             = es.ac;
+        token.x              = es.position.x;
+        token.y              = es.position.y;
+        token.resources      = es.resources;
+        token.alive          = es.alive;
+        token.statBreakdowns = es.stat_breakdowns ?? {};
     }
     draw();
     refreshMoveReadout();

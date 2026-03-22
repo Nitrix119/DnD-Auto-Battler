@@ -116,6 +116,7 @@ class SpellAction(Action):
     duration: Duration = field(default_factory=lambda: Duration(DurationUnit.INSTANTANEOUS))
     components: SpellComponents = field(default_factory=lambda: SpellComponents(verbal=True, somatic=True))
     higher_level_scaling: Optional[str] = None  # TODO: structured scaling rules
+    can_target_self: bool = False
     animation: List[Any] = field(default_factory=list)
     spell_effects: List[Dict[str, Any]] = field(default_factory=list)
     """Entity effects applied to the defender on spell hit.

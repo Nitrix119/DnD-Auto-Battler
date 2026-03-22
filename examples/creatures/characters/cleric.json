@@ -9,6 +9,7 @@
     "charisma": 12
   },
   "size": "medium",
+  "known_spells": ["Shield of Faith", "Cure Wounds", "Guiding Bolt", "Sacred Flame"],
   "hit_points": 38,
   "hit_points_max": 38,
   "armor_class": 16,
@@ -27,21 +28,6 @@
           "type": "BLUDGEONING",
           "amount": 6,
           "formula": "1d6+2"
-        }
-      ]
-    },
-    {
-      "name": "Sacred Flame",
-      "description": "A ranged divine attack",
-      "type": "attack",
-      "cost": {"actions": 1},
-      "range_ft": 60,
-      "bonus_to_hit": 7,
-      "damage": [
-        {
-          "type": "RADIANT",
-          "amount": 7,
-          "formula": "1d8+4"
         }
       ]
     }

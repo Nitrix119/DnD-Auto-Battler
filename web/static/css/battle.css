@@ -387,6 +387,67 @@ canvas.panning {
     display: none;
 }
 
+/* ── Stat breakdown tooltip ───────────────────────────────────────────────── */
+
+#stat-breakdown-tooltip {
+    display: none;
+    position: fixed;
+    z-index: 100;
+    background: rgba(10, 10, 20, 0.92);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 8px;
+    padding: 0.55rem 0.8rem;
+    min-width: 140px;
+    pointer-events: none;
+    backdrop-filter: blur(4px);
+}
+
+#stat-breakdown-tooltip.visible {
+    display: block;
+}
+
+.breakdown-header {
+    font-size: 0.75rem;
+    font-family: monospace;
+    color: rgba(255, 255, 255, 0.55);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 0.3rem;
+}
+
+.breakdown-sep {
+    height: 1px;
+    background: rgba(255, 255, 255, 0.10);
+    margin-bottom: 0.35rem;
+}
+
+.breakdown-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    font-size: 0.82rem;
+    font-family: monospace;
+    color: rgba(255, 255, 255, 0.85);
+    line-height: 1.5;
+}
+
+.breakdown-val {
+    color: rgba(200, 230, 255, 0.95);
+    min-width: 2.5rem;
+    text-align: right;
+}
+
+.breakdown-src {
+    color: rgba(255, 255, 255, 0.60);
+    text-align: left;
+}
+
+/* Underline hint on values that have a breakdown */
+.info-value.has-breakdown {
+    cursor: help;
+    border-bottom: 1px dashed rgba(255, 255, 255, 0.35);
+}
+
 .action-empty {
     font-size: 0.76rem;
     color: rgba(255, 255, 255, 0.22);

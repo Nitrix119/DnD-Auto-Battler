@@ -9,6 +9,7 @@
   "spell_range": {
     "type": "touch"
   },
+  "can_target_self": true,
   "targeting_type": "single_target",
   "casting_time": { "type": "action", "count": 1 },
   "duration": { "unit": "hour", "count": 1, "concentration": false },

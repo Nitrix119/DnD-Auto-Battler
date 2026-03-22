@@ -8,6 +8,7 @@ from .action_resources import ActionCost, ActionResources
 from .stat_block import StatBlock
 from .condition import Condition, ConditionType
 from .damage import Damage
+from .stat_modifier import StatModifier
 
 
 @dataclass
@@ -28,8 +29,9 @@ class Entity:
     conditions: List[Condition] = field(default_factory=list)
     team: Optional[str] = None  # faction/team identifier; None = hostile to everyone
     concentrating_on: Optional[str] = None
+    concentration_target: Optional["Entity"] = None
     active_effects: dict = field(default_factory=dict)  # {trigger_str: [Rule, ...]}
-    ac_bonus: int = 0
+    stat_modifiers: List[StatModifier] = field(default_factory=list)
     resources: Optional[ActionResources] = None
     x: float = 0.0
     y: float = 0.0
@@ -127,13 +129,43 @@ class Entity:
         self.active_effects.setdefault(trigger, []).append(effect)
 
     def remove_effect(self, name: str) -> None:
-        """Remove all effects matching this name across all trigger buckets."""
+        """Remove all effects matching this name across all trigger buckets.
+
+        Also removes any :class:`StatModifier` entries tagged with this
+        effect name so that stat bonuses are cleaned up automatically.
+        """
         for bucket in self.active_effects.values():
             bucket[:] = [e for e in bucket if e.name != name]
+        self.stat_modifiers = [m for m in self.stat_modifiers if m.effect_name != name]
 
     def get_effects_for_trigger(self, trigger: str) -> list:
         """Get all effects for a given trigger string."""
         return self.active_effects.get(trigger, [])
+
+    def add_stat_modifier(self, mod: StatModifier) -> None:
+        """Attach a stat modifier to this entity."""
+        self.stat_modifiers.append(mod)
+
+    def get_stat_modifiers(self, stat: str) -> List[StatModifier]:
+        """Return all modifiers for a given stat key."""
+        return [m for m in self.stat_modifiers if m.stat == stat]
+
+    def get_stat_breakdown(self, stat: str) -> List[dict]:
+        """Return a breakdown list for display, starting with the base value.
+
+        Each entry is ``{"source": str, "value": int}``.  The first entry is
+        always the base value from the stat block (e.g. the flat armor_class).
+        Subsequent entries are the :class:`StatModifier` objects for that stat.
+
+        Currently supported base stats: ``"ac"``.  For other stat keys the
+        base value will be 0 with label ``"Base"``; callers can supply the
+        correct base when building the breakdown themselves.
+        """
+        base_map = {"ac": self.stat_block.armor_class}
+        breakdown = [{"source": "Base", "value": base_map.get(stat, 0)}]
+        breakdown += [{"source": m.source, "value": m.value}
+                      for m in self.stat_modifiers if m.stat == stat]
+        return breakdown
 
     # ------------------------------------------------------------------
     # Resource management (action economy)
@@ -182,7 +214,9 @@ class Entity:
 
     @property
     def ac(self) -> int:
-        return self.stat_block.armor_class + self.ac_bonus
+        return self.stat_block.armor_class + sum(
+            m.value for m in self.stat_modifiers if m.stat == "ac"
+        )
 
     @property
     def bounding_box(self):

@@ -177,10 +177,19 @@ class SpellResolver:
     def _roll_saving_throw(
         defender: Entity, ability: str, dc: int,
     ) -> Tuple[int, bool]:
-        """Roll a saving throw and return (roll_total, success)."""
+        """Roll a saving throw and return (roll_total, success).
+
+        The total includes the base ability/proficiency bonus from the stat block
+        plus any :class:`StatModifier` entries on the entity keyed to
+        ``"saving_throw.<ability>"`` or the catch-all ``"saving_throw.all"``.
+        """
         roll = roll_d20()
-        bonus = defender.stat_block.get_saving_throw_bonus(ability)
-        total = roll + bonus
+        base_bonus = defender.stat_block.get_saving_throw_bonus(ability)
+        extra = sum(
+            m.value for m in defender.stat_modifiers
+            if m.stat in (f"saving_throw.{ability.lower()}", "saving_throw.all")
+        )
+        total = roll + base_bonus + extra
         return total, total >= dc
 
     def _apply_spell_effects(
@@ -250,6 +259,14 @@ class SpellResolver:
                     "Applied spell effect '%s' to %s (save_success=%s)",
                     rule.name, defender.name, save_success,
                 )
+
+                # Track concentration: link this caster to the target so that
+                # breaking concentration knows which entity to clean up.
+                if action.duration.concentration:
+                    if caster.concentrating_on and caster.concentration_target:
+                        caster.concentration_target.remove_effect(caster.concentrating_on)
+                    caster.concentrating_on = effect_name
+                    caster.concentration_target = defender
 
             # Execute immediate on-apply effects (e.g. granting temp HP, healing)
             for on_apply_effect in entry.get("on_apply", []):

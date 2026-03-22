@@ -275,6 +275,7 @@ class StatBlockLoader:
                 duration=duration,
                 components=components,
                 higher_level_scaling=action_data.get("higher_level_scaling"),
+                can_target_self=action_data.get("can_target_self", False),
                 animation=action_data.get("animation", []),
                 spell_effects=action_data.get("effects", []),
                 **cost_kwargs,
@@ -403,6 +404,9 @@ class StatBlockLoader:
 
             if action.higher_level_scaling:
                 base["higher_level_scaling"] = action.higher_level_scaling
+
+            if action.can_target_self:
+                base["can_target_self"] = True
 
             if action.animation:
                 base["animation"] = action.animation

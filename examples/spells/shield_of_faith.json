@@ -10,6 +10,7 @@
     "type": "feet",
     "distance_ft": 60
   },
+  "can_target_self": true,
   "targeting_type": "single_target",
   "casting_time": {
     "type": "bonus_action",
@@ -30,9 +31,12 @@
       "effect": "shield_of_faith",
       "on_apply": [
         {
-          "action": "ModifyAC",
+          "action": "AddModifier",
           "target": "event.defender",
-          "amount": 2
+          "stat": "ac",
+          "value": 2,
+          "source": "Shield of Faith",
+          "effect_name": "shield_of_faith"
         }
       ]
     }

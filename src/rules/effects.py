@@ -100,6 +100,7 @@ from src.combat.event_data import ConditionAddedData, ConditionRemovedData, Dama
 from src.combat.events import EventType
 from src.models.condition import Condition, ConditionType
 from src.models.damage import Damage, DamageType
+from src.models.stat_modifier import StatModifier
 from src.utils.dice import roll_d20, roll_formula
 
 from .expressions import resolve as _resolve
@@ -145,14 +146,22 @@ def force_concentration_check(effect: dict, ctx: dict, event: CombatEvent, event
 
     Required keys:  target (expr), dc (expr → int)
 
-    On a failed save, ``target.concentrating_on`` is set to None.
+    On a failed save, ``target.concentrating_on`` and
+    ``target.concentration_target`` are cleared, and the concentrated spell's
+    effect (including any :class:`StatModifier` entries) is removed from the
+    concentration target entity.
     """
     target = _resolve(effect["target"], ctx)
     dc = int(_resolve(effect["dc"], ctx))
     con_bonus = target.stat_block.get_saving_throw_bonus("constitution")
     roll = roll_d20() + con_bonus
     if roll < dc:
+        spell_name = target.concentrating_on
+        conc_target = target.concentration_target
         target.concentrating_on = None
+        target.concentration_target = None
+        if conc_target is not None and spell_name:
+            conc_target.remove_effect(spell_name)
 
 
 def cancel_event(effect: dict, ctx: dict, event: CombatEvent, event_bus: EventBus) -> None:
@@ -313,14 +322,41 @@ def remove_effect(effect: dict, ctx: dict, event: CombatEvent, event_bus: EventB
     target.remove_effect(effect_name)
 
 
+def add_modifier(effect: dict, ctx: dict, event: CombatEvent, event_bus: EventBus) -> None:
+    """Attach a labeled :class:`StatModifier` to a target entity.
+
+    Required keys:  target (expr), stat (str), value (int or expr)
+    Optional keys:  source (str, default "Unknown"), effect_name (str, default "")
+
+    The ``stat`` field is an open namespace string (e.g. ``"ac"``,
+    ``"saving_throw.wisdom"``, ``"spell_attack_bonus"``).  The modifier is
+    automatically removed when ``entity.remove_effect(effect_name)`` is called.
+    """
+    target = _resolve(effect["target"], ctx)
+    mod = StatModifier(
+        stat=str(effect["stat"]),
+        value=int(_resolve(effect["value"], ctx)),
+        source=str(effect.get("source", "Unknown")),
+        effect_name=str(effect.get("effect_name", "")),
+    )
+    target.add_stat_modifier(mod)
+
+
 def modify_ac(effect: dict, ctx: dict, event: CombatEvent, event_bus: EventBus) -> None:
-    """Modify a target's AC bonus.
+    """Modify a target's AC.
+
+    Deprecated — prefer ``AddModifier`` with ``"stat": "ac"`` so that the
+    change is labeled and tracked in the breakdown.  This shim delegates to
+    ``add_modifier`` with source "Unknown" and no owning effect so that
+    existing rule JSON continues to work.
 
     Required keys:  target (expr), amount (int or expr)
     """
-    target = _resolve(effect["target"], ctx)
-    amount = int(_resolve(effect["amount"], ctx))
-    target.ac_bonus += amount
+    add_modifier(
+        {**effect, "stat": "ac", "value": effect["amount"],
+         "source": effect.get("source", "Unknown"), "effect_name": ""},
+        ctx, event, event_bus,
+    )
 
 
 def add_resource(effect: dict, ctx: dict, event: CombatEvent, event_bus: EventBus) -> None:
@@ -355,5 +391,6 @@ BUILTIN_EFFECTS = {
     "RemoveEffect": remove_effect,
     "RefillResources": refill_resources,
     "AddResource": add_resource,
-    "ModifyAC": modify_ac,
+    "AddModifier": add_modifier,
+    "ModifyAC": modify_ac,  # deprecated — use AddModifier
 }

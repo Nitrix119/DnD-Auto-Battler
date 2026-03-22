@@ -67,6 +67,9 @@ def serialize_combat_state(combat: CombatSystem) -> dict[str, Any]:
                     "movement": e.resources.movement,
                 },
                 "conditions": [c.condition_type.value for c in e.conditions],
+                "stat_breakdowns": {
+                    "ac": e.get_stat_breakdown("ac"),
+                },
             }
             for e in combat.combatants
         ],
