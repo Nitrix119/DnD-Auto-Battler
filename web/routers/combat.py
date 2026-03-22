@@ -275,10 +275,10 @@ async def handle_cast_spell(
     )
     new_logs = combat.get_combat_log()[log_before:]
 
-    per_target = []
-    for i, (hit, damage) in enumerate(results):
-        target_id = defenders[i].entity_id if i < len(defenders) else None
-        per_target.append({"target_id": target_id, "hit": hit, "damage": damage})
+    per_target = [
+        {"target_id": entity.entity_id, "hit": hit, "damage": damage}
+        for entity, hit, damage in results
+    ]
 
     await _send(ws, {
         "type": "action_result",

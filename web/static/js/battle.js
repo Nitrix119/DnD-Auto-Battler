@@ -206,6 +206,69 @@ function drawTargetingLine() {
     ctx.beginPath();
     ctx.arc(ex, ey, 3, 0, Math.PI * 2);
     ctx.fill();
+
+    // AoE shape overlay — drawn at the clamped cursor point
+    if (targetingAction.targeting_type === "aoe" && targetingAction.aoe) {
+        const aoe       = targetingAction.aoe;
+        const aoeSizePx = (aoe.size_ft / CELL_FEET) * CELL_PX * camera.zoom;
+        const aoeColor  = inRange ? "rgba(255, 100, 30, 0.30)" : "rgba(150, 150, 150, 0.20)";
+        const aoeBorder = inRange ? "rgba(255, 160, 60, 0.85)" : "rgba(180, 180, 180, 0.50)";
+        const shape     = (aoe.shape ?? "sphere").toLowerCase();
+
+        ctx.save();
+        ctx.fillStyle   = aoeColor;
+        ctx.strokeStyle = aoeBorder;
+        ctx.lineWidth   = 1.5;
+        ctx.setLineDash([]);
+
+        if (shape === "sphere" || shape === "cylinder") {
+            ctx.beginPath();
+            ctx.arc(ex, ey, aoeSizePx, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+        } else if (shape === "cube") {
+            ctx.beginPath();
+            ctx.rect(ex - aoeSizePx / 2, ey - aoeSizePx / 2, aoeSizePx, aoeSizePx);
+            ctx.fill();
+            ctx.stroke();
+        } else if (shape === "cone") {
+            if (dist > 0) {
+                // Backend ConeVolume: radius at distance d = d * 0.5 (tan_half_angle = 0.5)
+                // → full width at tip = length; draw base at (length forward) ± (length/2 perpendicular)
+                const angle = Math.atan2(ey - sy, ex - sx);
+                const fwdX  = Math.cos(angle) * aoeSizePx;
+                const fwdY  = Math.sin(angle) * aoeSizePx;
+                const perpX = Math.cos(angle + Math.PI / 2) * (aoeSizePx / 2);
+                const perpY = Math.sin(angle + Math.PI / 2) * (aoeSizePx / 2);
+                ctx.beginPath();
+                ctx.moveTo(sx, sy);
+                ctx.lineTo(sx + fwdX + perpX, sy + fwdY + perpY);
+                ctx.lineTo(sx + fwdX - perpX, sy + fwdY - perpY);
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
+            }
+        } else if (shape === "line") {
+            if (dist > 0) {
+                const angle = Math.atan2(ey - sy, ex - sx);
+                const halfW = (5 / CELL_FEET) * CELL_PX * camera.zoom / 2; // 5 ft half-width
+                const perpX = Math.cos(angle + Math.PI / 2) * halfW;
+                const perpY = Math.sin(angle + Math.PI / 2) * halfW;
+                const fwdX  = Math.cos(angle) * aoeSizePx;
+                const fwdY  = Math.sin(angle) * aoeSizePx;
+                ctx.beginPath();
+                ctx.moveTo(sx - perpX, sy - perpY);
+                ctx.lineTo(sx + perpX, sy + perpY);
+                ctx.lineTo(sx + fwdX + perpX, sy + fwdY + perpY);
+                ctx.lineTo(sx + fwdX - perpX, sy + fwdY - perpY);
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
+            }
+        }
+
+        ctx.restore();
+    }
 }
 
 function drawTokens() {
@@ -368,33 +431,48 @@ canvas.addEventListener("mousedown", (e) => {
     }
 
     if (e.button === 0 && activeTool === "action") {
-        // If targeting is active, clicking on a valid target executes the action
+        // If targeting is active, clicking executes the action
         if (targetingAction && actionToken) {
-            const target = [...tokens].reverse().find(t => {
-                if (t === actionToken) return false;
-                const dx = cursorWorld.x - t.x;
-                const dy = cursorWorld.y - t.y;
-                return Math.sqrt(dx * dx + dy * dy) <= t.radius;
-            }) ?? null;
+            const action = targetingAction;
+            const reachFt       = getActionRangeFt(action);
+            const maxRangeCells = (reachFt + actionToken.radius * CELL_FEET) / CELL_FEET;
+            const dx   = cursorWorld.x - actionToken.x;
+            const dy   = cursorWorld.y - actionToken.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
 
-            if (target) {
-                const action = targetingAction;
-                if (action.spell_range) {
-                    // Spell
-                    const payload = {
+            if (action.targeting_type === "aoe" && action.spell_range) {
+                // AoE spell: fire at cursor position — no token required
+                if (dist <= maxRangeCells) {
+                    wsSend({
                         type: "cast_spell",
                         seq: nextSeq(),
                         caster_id: actionToken.id,
                         spell_name: action.name,
-                    };
-                    if (action.targeting_type === "aoe") {
-                        payload.target_point = { x: cursorWorld.x, y: cursorWorld.y };
-                    } else {
-                        payload.target_ids = [target.id];
-                    }
-                    wsSend(payload);
+                        target_point: { x: cursorWorld.x, y: cursorWorld.y },
+                    });
+                    setTargetingAction(null);
+                }
+                return;
+            }
+
+            // Single-target spell or attack: require clicking on a token
+            const target = [...tokens].reverse().find(t => {
+                if (t === actionToken) return false;
+                const tdx = cursorWorld.x - t.x;
+                const tdy = cursorWorld.y - t.y;
+                return Math.sqrt(tdx * tdx + tdy * tdy) <= t.radius;
+            }) ?? null;
+
+            if (target) {
+                if (action.spell_range) {
+                    wsSend({
+                        type: "cast_spell",
+                        seq: nextSeq(),
+                        caster_id: actionToken.id,
+                        spell_name: action.name,
+                        target_ids: [target.id],
+                    });
                 } else {
-                    // Attack
                     wsSend({
                         type: "attack",
                         seq: nextSeq(),

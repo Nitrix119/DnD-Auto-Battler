@@ -194,7 +194,7 @@ class CombatSystem:
         action: SpellAction,
         *,
         target: Optional[Point3D] = None,
-    ) -> List[Tuple[bool, int]]:
+    ) -> List[Tuple[Entity, bool, int]]:
         """Resolve a spell action against one or more targets.
 
         For **AOE spells**, *target* (the point the caster aimed at) is
@@ -248,7 +248,7 @@ class CombatSystem:
         for _, _, log_msg in results:
             if log_msg:
                 self._log_action(caster, log_msg)
-        return [(hit, damage) for hit, damage, _ in results]
+        return [(defenders[i], hit, damage) for i, (hit, damage, _) in enumerate(results)]
 
     def resolve_saving_throw(self, defender: Entity, ability: str,
                             dc: int) -> Tuple[int, bool]:
