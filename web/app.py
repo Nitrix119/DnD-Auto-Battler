@@ -7,6 +7,7 @@ from fastapi.templating import Jinja2Templates
 from starlette.types import Receive, Scope, Send
 
 from src.combat.spell_registry import SpellRegistry
+from src.rules.effect_registry import EffectRegistry
 from web.routers import combat, health
 
 _WEB_DIR = Path(__file__).parent
@@ -39,6 +40,11 @@ def create_app() -> FastAPI:
     spell_registry = SpellRegistry()
     spell_registry.scan_directory(str(_WEB_DIR.parent / "examples" / "spells"))
     application.state.spell_registry = spell_registry
+
+    # Global entity effect registry — scanned once, shared across all sessions
+    effect_registry = EffectRegistry()
+    effect_registry.scan_directory(str(_WEB_DIR.parent / "rules" / "entity_effects"))
+    application.state.effect_registry = effect_registry
 
     application.mount(
         "/static",

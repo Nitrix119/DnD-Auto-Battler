@@ -739,18 +739,31 @@ function showBreakdownTooltip(entries, label, anchorEl) {
     breakdownTooltip.classList.add("visible");
 
     const rect = anchorEl.getBoundingClientRect();
-    breakdownTooltip.style.left = `${rect.left}px`;
-    breakdownTooltip.style.top  = `${rect.bottom + 6}px`;
+    breakdownTooltip.style.left  = "auto";
+    breakdownTooltip.style.right = `${window.innerWidth - rect.right}px`;
+    breakdownTooltip.style.top   = `${rect.bottom + 6}px`;
 }
 
 function hideBreakdownTooltip() {
     breakdownTooltip.classList.remove("visible");
 }
 
-function attachBreakdownHover(el, getEntries, label) {
-    el.addEventListener("mouseenter", () => showBreakdownTooltip(getEntries(), label, el));
-    el.addEventListener("mouseleave", hideBreakdownTooltip);
+// Permanent listeners — set up once; read the current token at hover time.
+// This avoids duplicate listeners that would accumulate across panel refreshes.
+// (infoHoveredToken / targetHovered are live variables, always up-to-date.)
+function initBreakdownHovers() {
+    const infoAc = document.getElementById("info-ac");
+    const tgtAc  = document.getElementById("tgt-ac");
+    infoAc.addEventListener("mouseenter", () => {
+        showBreakdownTooltip(infoHoveredToken?.statBreakdowns?.ac ?? [], "AC", infoAc);
+    });
+    infoAc.addEventListener("mouseleave", hideBreakdownTooltip);
+    tgtAc.addEventListener("mouseenter", () => {
+        showBreakdownTooltip(targetHovered?.statBreakdowns?.ac ?? [], "AC", tgtAc);
+    });
+    tgtAc.addEventListener("mouseleave", hideBreakdownTooltip);
 }
+initBreakdownHovers();
 
 function updateTargetPanel(token) {
     if (!token) {
@@ -770,7 +783,6 @@ function updateTargetPanel(token) {
     tgtWisEl.textContent  = abs ? abs.wisdom       : "—";
     tgtChaEl.textContent  = abs ? abs.charisma     : "—";
     tgtAcEl.classList.toggle("has-breakdown", !!(token.statBreakdowns?.ac?.length > 1));
-    attachBreakdownHover(tgtAcEl, () => token.statBreakdowns?.ac ?? [], "AC");
     targetPanel.classList.add("visible");
 }
 
@@ -927,7 +939,6 @@ function updateInfoPanel(token) {
     infoWisEl.textContent  = abs ? abs.wisdom       : "—";
     infoChaEl.textContent  = abs ? abs.charisma     : "—";
     infoAcEl.classList.toggle("has-breakdown", !!(token.statBreakdowns?.ac?.length > 1));
-    attachBreakdownHover(infoAcEl, () => token.statBreakdowns?.ac ?? [], "AC");
     infoPanel.classList.add("visible");
 }
 
@@ -1054,6 +1065,9 @@ function updateFromCombatState(state) {
         token.alive          = es.alive;
         token.statBreakdowns = es.stat_breakdowns ?? {};
     }
+    // Refresh stat panels if their token data just changed
+    if (infoHoveredToken) updateInfoPanel(infoHoveredToken);
+    if (targetHovered)    updateTargetPanel(targetHovered);
     draw();
     refreshMoveReadout();
 }

@@ -82,7 +82,7 @@ class TestRuleLoader:
         rule = RuleLoader.load(CONCENTRATION_JSON)
         assert rule.name == "concentration_damage_check"
         assert rule.triggers == [EventType.DAMAGE_DEALT]
-        assert rule.condition == "event.defender.has_concentration"
+        assert rule.condition == "event.defender.has_concentration and event.total > 0"
         assert len(rule.effects) == 1
         assert rule.effects[0]["action"] == "ForceConcentrationCheck"
 

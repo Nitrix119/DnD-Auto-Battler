@@ -11,7 +11,10 @@ from src.combat.combat_system import CombatSystem
 from src.loaders.stat_block_loader import StatBlockLoader
 from src.models.action import AttackAction
 from src.models.entity import Entity
+from src.rules.rule_engine import RuleEngine
 from src.spatial.geometry import Point3D
+
+_RULES_DIR = Path(__file__).parent.parent.parent / "rules"
 
 logger = logging.getLogger(__name__)
 
@@ -190,6 +193,18 @@ async def handle_start_combat(
 
     # Attach global spell registry
     combat.spell_registry = ws.app.state.spell_registry
+
+    # Create per-session rule engine (needs the session's event bus)
+    effect_registry = ws.app.state.effect_registry
+    rule_engine = RuleEngine(
+        combat.event_bus,
+        entities_getter=lambda: combat.combatants,
+        damage_processor=combat._damage_processor,
+        effect_registry=effect_registry,
+    )
+    rule_engine.load_from_file(str(_RULES_DIR / "concentration.json"))
+    rule_engine.load_from_file(str(_RULES_DIR / "action_economy_refill.json"))
+    combat.rule_engine = rule_engine
 
     combat.start_combat()
 

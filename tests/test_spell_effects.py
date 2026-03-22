@@ -310,6 +310,118 @@ class TestCombatSystemIntegration:
 
 # ── Longstrider spell integration ────────────────────────────────────────────
 
+def load_cleric() -> Entity:
+    sb = StatBlockLoader.load_from_json(str(CHARACTERS_DIR / "cleric.json"))
+    return Entity(sb)
+
+
+# ── Shield of Faith ───────────────────────────────────────────────────────────
+
+class TestShieldOfFaithEffect:
+    """Shield of Faith adds +2 AC via AddModifier on_apply and tracks concentration."""
+
+    def test_ac_increases_by_two_on_cast(self):
+        """Casting Shield of Faith on an entity raises its AC by 2."""
+        cleric = load_cleric()
+        goblin = load_goblin()
+        bus, engine, resolver = setup_engine_and_resolver(cleric, goblin)
+
+        spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "shield_of_faith.json"))
+        base_ac = cleric.ac
+
+        resolver.resolve(cleric, [cleric], spell)
+
+        assert cleric.ac == base_ac + 2
+
+    def test_stat_modifier_is_recorded(self):
+        """A StatModifier with the correct fields is added to the target."""
+        cleric = load_cleric()
+        goblin = load_goblin()
+        bus, engine, resolver = setup_engine_and_resolver(cleric, goblin)
+
+        spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "shield_of_faith.json"))
+        resolver.resolve(cleric, [cleric], spell)
+
+        ac_mods = cleric.get_stat_modifiers("ac")
+        assert len(ac_mods) == 1
+        mod = ac_mods[0]
+        assert mod.value == 2
+        assert mod.source == "Shield of Faith"
+        assert mod.effect_name == "shield_of_faith"
+
+    def test_stat_breakdown_contains_base_and_modifier(self):
+        """get_stat_breakdown returns the base AC line followed by the spell modifier."""
+        cleric = load_cleric()
+        goblin = load_goblin()
+        bus, engine, resolver = setup_engine_and_resolver(cleric, goblin)
+
+        spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "shield_of_faith.json"))
+        base_ac = cleric.stat_block.armor_class
+        resolver.resolve(cleric, [cleric], spell)
+
+        breakdown = cleric.get_stat_breakdown("ac")
+        assert len(breakdown) == 2
+        assert breakdown[0] == {"source": "Base", "value": base_ac}
+        assert breakdown[1] == {"source": "Shield of Faith", "value": 2}
+
+    def test_concentration_tracked_on_caster(self):
+        """After casting, the caster's concentrating_on and concentration_target are set."""
+        cleric = load_cleric()
+        goblin = load_goblin()
+        bus, engine, resolver = setup_engine_and_resolver(cleric, goblin)
+
+        spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "shield_of_faith.json"))
+        resolver.resolve(cleric, [cleric], spell)
+
+        assert cleric.concentrating_on == "shield_of_faith"
+        assert cleric.concentration_target is cleric
+
+    def test_ac_restored_when_effect_removed(self):
+        """Removing the shield_of_faith effect strips the modifier and restores base AC."""
+        cleric = load_cleric()
+        goblin = load_goblin()
+        bus, engine, resolver = setup_engine_and_resolver(cleric, goblin)
+
+        spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "shield_of_faith.json"))
+        base_ac = cleric.ac
+        resolver.resolve(cleric, [cleric], spell)
+
+        assert cleric.ac == base_ac + 2
+
+        cleric.remove_effect("shield_of_faith")
+
+        assert cleric.ac == base_ac
+        assert cleric.get_stat_modifiers("ac") == []
+
+    def test_zero_damage_cast_does_not_break_concentration(self):
+        """Casting a zero-damage buff spell must not trigger a concentration check.
+
+        apply_damage always emits DAMAGE_DEALT (even with total=0), so the
+        concentration rule must guard on event.total > 0 — otherwise the cleric
+        risks losing concentration on a spell it just cast.
+        """
+        cleric = load_cleric()
+        goblin = load_goblin()
+        bus, engine, resolver = setup_engine_and_resolver(cleric, goblin)
+
+        # Load concentration rule so the engine enforces it
+        engine.load_from_file("rules/concentration.json")
+
+        spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "shield_of_faith.json"))
+        base_ac = cleric.ac
+
+        # Cast 20 times — if 0-damage DAMAGE_DEALT could strip concentration,
+        # a failed DC-10 Con save would occasionally drop the AC back to base.
+        for _ in range(20):
+            cleric.remove_effect("shield_of_faith")
+            cleric.concentrating_on = None
+            cleric.concentration_target = None
+            resolver.resolve(cleric, [cleric], spell)
+            assert cleric.ac == base_ac + 2, (
+                "AC should be base+2 immediately after casting Shield of Faith"
+            )
+
+
 def longstrider_spell() -> SpellAction:
     """Load Longstrider from the example spell file."""
     return StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "longstrider.json"))
