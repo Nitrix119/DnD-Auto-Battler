@@ -1,0 +1,39 @@
+{
+  "name": "Guiding Bolt",
+  "description": "A flash of light streaks toward a creature of your choice within range. Make a ranged spell attack against the target. On a hit, the target takes 4d6 radiant damage, and the next attack roll made against this target before the end of your next turn has advantage.",
+  "type": "spell",
+  "spell_level": 1,
+  "spell_attack_bonus": 0,
+  "save_dc": 0,
+  "damage": [
+    {
+      "type": "RADIANT",
+      "amount": 14,
+      "formula": "4d6"
+    }
+  ],
+  "spell_range": {
+    "type": "feet",
+    "distance_ft": 120
+  },
+  "targeting_type": "single_target",
+  "casting_time": {
+    "type": "action",
+    "count": 1
+  },
+  "duration": {
+    "unit": "round",
+    "count": 1
+  },
+  "components": {
+    "verbal": true,
+    "somatic": true,
+    "material": []
+  },
+  "higher_level_scaling": "When you cast this spell using a spell slot of 2nd level or higher, the damage increases by 1d6 for each slot level above 1st.",
+  "animation": [
+    [{"type": "projectile", "color": "#FFEE44", "from": "caster", "to": "target", "speed": 10, "size": 4, "trail": true}],
+    [{"type": "flash", "color": "#FFFF88", "at": "target", "duration": 0.4, "size": 1.5}],
+    [{"type": "aura", "color": "#FFEE44", "at": "target", "duration": 0.8, "size": 1.3, "pulses": 2}]
+  ]
+}

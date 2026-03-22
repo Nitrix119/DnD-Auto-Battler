@@ -29,6 +29,7 @@ class Entity:
     team: Optional[str] = None  # faction/team identifier; None = hostile to everyone
     concentrating_on: Optional[str] = None
     active_effects: dict = field(default_factory=dict)  # {trigger_str: [Rule, ...]}
+    ac_bonus: int = 0
     resources: Optional[ActionResources] = None
     x: float = 0.0
     y: float = 0.0
@@ -181,7 +182,7 @@ class Entity:
 
     @property
     def ac(self) -> int:
-        return self.stat_block.armor_class
+        return self.stat_block.armor_class + self.ac_bonus
 
     @property
     def bounding_box(self):

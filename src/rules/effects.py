@@ -313,6 +313,16 @@ def remove_effect(effect: dict, ctx: dict, event: CombatEvent, event_bus: EventB
     target.remove_effect(effect_name)
 
 
+def modify_ac(effect: dict, ctx: dict, event: CombatEvent, event_bus: EventBus) -> None:
+    """Modify a target's AC bonus.
+
+    Required keys:  target (expr), amount (int or expr)
+    """
+    target = _resolve(effect["target"], ctx)
+    amount = int(_resolve(effect["amount"], ctx))
+    target.ac_bonus += amount
+
+
 def add_resource(effect: dict, ctx: dict, event: CombatEvent, event_bus: EventBus) -> None:
     """Add bonus resources to an entity (can exceed defaults).
 
@@ -345,4 +355,5 @@ BUILTIN_EFFECTS = {
     "RemoveEffect": remove_effect,
     "RefillResources": refill_resources,
     "AddResource": add_resource,
+    "ModifyAC": modify_ac,
 }

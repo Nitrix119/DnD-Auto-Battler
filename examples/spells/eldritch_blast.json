@@ -1,0 +1,36 @@
+{
+  "name": "Eldritch Blast",
+  "description": "A beam of crackling energy streaks toward a creature within range. Make a ranged spell attack against the target. On a hit, the target takes 1d10 force damage.",
+  "type": "spell",
+  "spell_level": 0,
+  "spell_attack_bonus": 0,
+  "save_dc": 0,
+  "damage": [
+    {
+      "type": "FORCE",
+      "amount": 5,
+      "formula": "1d10"
+    }
+  ],
+  "spell_range": {
+    "type": "feet",
+    "distance_ft": 120
+  },
+  "targeting_type": "single_target",
+  "casting_time": {
+    "type": "action",
+    "count": 1
+  },
+  "duration": {
+    "unit": "instantaneous"
+  },
+  "components": {
+    "verbal": true,
+    "somatic": true,
+    "material": []
+  },
+  "animation": [
+    [{"type": "beam", "color": "#CC44FF", "from": "caster", "to": "target", "duration": 0.3, "width": 3}],
+    [{"type": "flash", "color": "#DD66FF", "at": "target", "duration": 0.25, "size": 1.1}]
+  ]
+}

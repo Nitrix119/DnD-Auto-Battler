@@ -130,6 +130,33 @@ canvas.panning {
     display: block;
 }
 
+/* ── Move readout ────────────────────────────────────────────────────────── */
+
+#move-readout {
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0, 0, 0, 0.60);
+    border-radius: 20px;
+    padding: 6px 20px;
+    color: rgba(255, 255, 255, 0.85);
+    font: 13px/1 monospace;
+    backdrop-filter: blur(6px);
+    pointer-events: none;
+    white-space: nowrap;
+    z-index: 10;
+    display: none;
+}
+
+#move-readout.visible {
+    display: block;
+}
+
+#move-readout.over-limit {
+    color: rgba(255, 80, 80, 0.95);
+}
+
 /* ── Info panel ───────────────────────────────────────────────────────────── */
 
 #info-panel {

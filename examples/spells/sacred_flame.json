@@ -1,0 +1,37 @@
+{
+  "name": "Sacred Flame",
+  "description": "Flame-like radiance descends on a creature that you can see within range. The target must succeed on a Dexterity saving throw or take 1d8 radiant damage. The target gains no benefit from cover for this saving throw.",
+  "type": "spell",
+  "spell_level": 0,
+  "spell_attack_bonus": 0,
+  "save_dc": 0,
+  "save_ability": "dexterity",
+  "damage": [
+    {
+      "type": "RADIANT",
+      "amount": 4,
+      "formula": "1d8"
+    }
+  ],
+  "spell_range": {
+    "type": "feet",
+    "distance_ft": 60
+  },
+  "targeting_type": "single_target",
+  "casting_time": {
+    "type": "action",
+    "count": 1
+  },
+  "duration": {
+    "unit": "instantaneous"
+  },
+  "components": {
+    "verbal": true,
+    "somatic": true,
+    "material": []
+  },
+  "animation": [
+    [{"type": "particles", "color": "#FFDD44", "at": "target", "count": 12, "spread": 3, "duration": 0.3, "speed": -1.5}],
+    [{"type": "flash", "color": "#FFEE88", "at": "target", "duration": 0.4, "size": 1.3}]
+  ]
+}

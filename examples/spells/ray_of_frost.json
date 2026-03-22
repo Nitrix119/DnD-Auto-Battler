@@ -1,0 +1,37 @@
+{
+  "name": "Ray of Frost",
+  "description": "A frigid beam of blue-white light streaks toward a creature within range. Make a ranged spell attack against the target. On a hit, it takes 1d8 cold damage, and its speed is reduced by 10 feet until the start of your next turn.",
+  "type": "spell",
+  "spell_level": 0,
+  "spell_attack_bonus": 0,
+  "save_dc": 0,
+  "damage": [
+    {
+      "type": "COLD",
+      "amount": 4,
+      "formula": "1d8"
+    }
+  ],
+  "spell_range": {
+    "type": "feet",
+    "distance_ft": 60
+  },
+  "targeting_type": "single_target",
+  "casting_time": {
+    "type": "action",
+    "count": 1
+  },
+  "duration": {
+    "unit": "instantaneous"
+  },
+  "components": {
+    "verbal": true,
+    "somatic": true,
+    "material": []
+  },
+  "animation": [
+    [{"type": "beam", "color": "#88CCFF", "from": "caster", "to": "target", "duration": 0.4, "width": 3}],
+    [{"type": "flash", "color": "#AADDFF", "at": "target", "duration": 0.3, "size": 1.1}],
+    [{"type": "particles", "color": "#CCEEFF", "at": "target", "count": 8, "spread": 4, "duration": 0.4, "speed": 0.8}]
+  ]
+}

@@ -11,6 +11,7 @@ from src.models import (
 )
 from src.loaders.stat_block_loader import StatBlockLoader
 from src.combat import CombatSystem, CombatState
+from src.rules.rule_engine import RuleEngine
 from src.spatial.geometry import Point3D
 from src.utils.dice import roll_d20, roll_formula
 
@@ -209,6 +210,401 @@ class TestSpellCombat:
         # The two bystanders must be completely unaffected
         assert bystander_a.hp == initial_b_a
         assert bystander_b.hp == initial_b_b
+
+
+class TestRayOfFrostLoading:
+    """Ray of Frost – cantrip, ranged spell attack, cold damage."""
+
+    def test_ray_of_frost_properties(self):
+        spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "ray_of_frost.json"))
+        assert spell.name == "Ray of Frost"
+        assert spell.spell_level == 0
+        assert spell.targeting_type == TargetingType.SINGLE_TARGET
+        assert spell.spell_range.range_type == RangeType.FEET
+        assert spell.spell_range.distance_ft == 60
+        assert spell.aoe is None
+        assert spell.casting_time.time_type == CastingTimeType.ACTION
+        assert spell.duration.unit == DurationUnit.INSTANTANEOUS
+        assert spell.components.verbal
+        assert spell.components.somatic
+        assert not spell.components.requires_material
+        assert len(spell.damage) == 1
+        assert spell.damage[0].damage_type == DamageType.COLD
+        assert spell.damage[0].formula == "1d8"
+
+
+class TestSacredFlameLoading:
+    """Sacred Flame – cantrip, Dex save, radiant damage."""
+
+    def test_sacred_flame_properties(self):
+        spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "sacred_flame.json"))
+        assert spell.name == "Sacred Flame"
+        assert spell.spell_level == 0
+        assert spell.targeting_type == TargetingType.SINGLE_TARGET
+        assert spell.spell_range.range_type == RangeType.FEET
+        assert spell.spell_range.distance_ft == 60
+        assert spell.save_ability == "dexterity"
+        assert len(spell.damage) == 1
+        assert spell.damage[0].damage_type == DamageType.RADIANT
+        assert spell.damage[0].formula == "1d8"
+
+
+class TestChillTouchLoading:
+    """Chill Touch – cantrip, ranged spell attack, necrotic damage."""
+
+    def test_chill_touch_properties(self):
+        spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "chill_touch.json"))
+        assert spell.name == "Chill Touch"
+        assert spell.spell_level == 0
+        assert spell.targeting_type == TargetingType.SINGLE_TARGET
+        assert spell.spell_range.range_type == RangeType.FEET
+        assert spell.spell_range.distance_ft == 120
+        assert spell.duration.unit == DurationUnit.ROUND
+        assert spell.duration.count == 1
+        assert len(spell.damage) == 1
+        assert spell.damage[0].damage_type == DamageType.NECROTIC
+        assert spell.damage[0].formula == "1d8"
+
+
+class TestEldritchBlastLoading:
+    """Eldritch Blast – cantrip, ranged spell attack, force damage."""
+
+    def test_eldritch_blast_properties(self):
+        spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "eldritch_blast.json"))
+        assert spell.name == "Eldritch Blast"
+        assert spell.spell_level == 0
+        assert spell.targeting_type == TargetingType.SINGLE_TARGET
+        assert spell.spell_range.range_type == RangeType.FEET
+        assert spell.spell_range.distance_ft == 120
+        assert spell.duration.unit == DurationUnit.INSTANTANEOUS
+        assert len(spell.damage) == 1
+        assert spell.damage[0].damage_type == DamageType.FORCE
+        assert spell.damage[0].formula == "1d10"
+
+
+class TestPoisonSprayLoading:
+    """Poison Spray – cantrip, Con save, poison damage."""
+
+    def test_poison_spray_properties(self):
+        spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "poison_spray.json"))
+        assert spell.name == "Poison Spray"
+        assert spell.spell_level == 0
+        assert spell.targeting_type == TargetingType.SINGLE_TARGET
+        assert spell.spell_range.range_type == RangeType.FEET
+        assert spell.spell_range.distance_ft == 10
+        assert spell.save_ability == "constitution"
+        assert len(spell.damage) == 1
+        assert spell.damage[0].damage_type == DamageType.POISON
+        assert spell.damage[0].formula == "1d12"
+
+
+class TestAcidSplashLoading:
+    """Acid Splash – cantrip, Dex save, acid damage."""
+
+    def test_acid_splash_properties(self):
+        spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "acid_splash.json"))
+        assert spell.name == "Acid Splash"
+        assert spell.spell_level == 0
+        assert spell.targeting_type == TargetingType.SINGLE_TARGET
+        assert spell.spell_range.range_type == RangeType.FEET
+        assert spell.spell_range.distance_ft == 60
+        assert spell.save_ability == "dexterity"
+        assert len(spell.damage) == 1
+        assert spell.damage[0].damage_type == DamageType.ACID
+        assert spell.damage[0].formula == "1d6"
+
+
+class TestGuidingBoltLoading:
+    """Guiding Bolt – 1st level, ranged spell attack, radiant damage."""
+
+    def test_guiding_bolt_properties(self):
+        spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "guiding_bolt.json"))
+        assert spell.name == "Guiding Bolt"
+        assert spell.spell_level == 1
+        assert spell.targeting_type == TargetingType.SINGLE_TARGET
+        assert spell.spell_range.range_type == RangeType.FEET
+        assert spell.spell_range.distance_ft == 120
+        assert spell.duration.unit == DurationUnit.ROUND
+        assert spell.duration.count == 1
+        assert not spell.components.requires_material
+        assert spell.higher_level_scaling is not None
+        assert len(spell.damage) == 1
+        assert spell.damage[0].damage_type == DamageType.RADIANT
+        assert spell.damage[0].formula == "4d6"
+
+
+class TestMagicMissileLoading:
+    """Magic Missile – 1st level, auto-hit, force damage."""
+
+    def test_magic_missile_properties(self):
+        spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "magic_missile.json"))
+        assert spell.name == "Magic Missile"
+        assert spell.spell_level == 1
+        assert spell.targeting_type == TargetingType.SINGLE_TARGET
+        assert spell.spell_range.range_type == RangeType.FEET
+        assert spell.spell_range.distance_ft == 120
+        assert spell.duration.unit == DurationUnit.INSTANTANEOUS
+        assert not spell.components.requires_material
+        assert spell.higher_level_scaling is not None
+        assert len(spell.damage) == 1
+        assert spell.damage[0].damage_type == DamageType.FORCE
+        assert spell.damage[0].formula == "3d4+3"
+
+
+class TestCureWoundsLoading:
+    """Cure Wounds – 1st level, touch, no damage (healing spell)."""
+
+    def test_cure_wounds_properties(self):
+        spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "cure_wounds.json"))
+        assert spell.name == "Cure Wounds"
+        assert spell.spell_level == 1
+        assert spell.targeting_type == TargetingType.SINGLE_TARGET
+        assert spell.spell_range.range_type == RangeType.TOUCH
+        assert spell.duration.unit == DurationUnit.INSTANTANEOUS
+        assert not spell.components.requires_material
+        assert spell.higher_level_scaling is not None
+        assert len(spell.damage) == 0
+
+
+class TestThunderwaveLoading:
+    """Thunderwave – 1st level, AoE cube, Con save, thunder damage."""
+
+    def test_thunderwave_properties(self):
+        spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "thunderwave.json"))
+        assert spell.name == "Thunderwave"
+        assert spell.spell_level == 1
+        assert spell.targeting_type == TargetingType.AOE
+        assert spell.spell_range.range_type == RangeType.SELF
+        assert spell.aoe is not None
+        assert spell.aoe.shape == AOEShape.CUBE
+        assert spell.aoe.size_ft == 15
+        assert spell.save_ability == "constitution"
+        assert spell.higher_level_scaling is not None
+        assert len(spell.damage) == 1
+        assert spell.damage[0].damage_type == DamageType.THUNDER
+        assert spell.damage[0].formula == "2d8"
+
+
+class TestBurningHandsLoading:
+    """Burning Hands – 1st level, AoE cone, Dex save, fire damage."""
+
+    def test_burning_hands_properties(self):
+        spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "burning_hands.json"))
+        assert spell.name == "Burning Hands"
+        assert spell.spell_level == 1
+        assert spell.targeting_type == TargetingType.AOE
+        assert spell.spell_range.range_type == RangeType.SELF
+        assert spell.aoe is not None
+        assert spell.aoe.shape == AOEShape.CONE
+        assert spell.aoe.size_ft == 15
+        assert spell.save_ability == "dexterity"
+        assert spell.higher_level_scaling is not None
+        assert len(spell.damage) == 1
+        assert spell.damage[0].damage_type == DamageType.FIRE
+        assert spell.damage[0].formula == "3d6"
+
+
+class TestShieldOfFaithLoading:
+    """Shield of Faith – 1st level, bonus action, concentration, buff."""
+
+    def test_shield_of_faith_properties(self):
+        spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "shield_of_faith.json"))
+        assert spell.name == "Shield of Faith"
+        assert spell.spell_level == 1
+        assert spell.targeting_type == TargetingType.SINGLE_TARGET
+        assert spell.spell_range.range_type == RangeType.FEET
+        assert spell.spell_range.distance_ft == 60
+        assert spell.casting_time.time_type == CastingTimeType.BONUS_ACTION
+        assert spell.duration.unit == DurationUnit.MINUTE
+        assert spell.duration.count == 10
+        assert spell.duration.concentration
+        assert spell.components.requires_material
+        assert len(spell.damage) == 0
+
+
+class TestNewSpellsCombat:
+    """Combat tests for newly added spells against goblins."""
+
+    @pytest.fixture
+    def wizard(self) -> Entity:
+        sb = StatBlockLoader.load_from_json(str(CHARACTERS_DIR / "wizard.json"))
+        return Entity(sb, is_player_controlled=True)
+
+    @pytest.fixture
+    def goblins(self):
+        def _make():
+            sb = StatBlockLoader.load_from_json(str(EXAMPLES_DIR / "creatures/goblin.json"))
+            return Entity(sb)
+        return [_make() for _ in range(3)]
+
+    @pytest.fixture
+    def combat(self, wizard, goblins) -> CombatSystem:
+        wizard.x, wizard.y, wizard.z = 0.0, 0.0, 0.0
+        for i, goblin in enumerate(goblins):
+            goblin.x = float(10 + i * 10)
+            goblin.y, goblin.z = 0.0, 0.0
+        cs = CombatSystem()
+        cs.add_combatant(wizard)
+        for goblin in goblins:
+            cs.add_combatant(goblin)
+        # Attach a RuleEngine so on_apply effects (e.g. HealTarget) work
+        cs.rule_engine = RuleEngine(cs.event_bus)
+        cs.start_combat()
+        return cs
+
+    # ------------------------------------------------------------------
+    # Ray of Frost – single target, ranged spell attack
+    # ------------------------------------------------------------------
+
+    def test_ray_of_frost_single_target(self, wizard, goblins, combat):
+        """Ray of Frost hits one goblin; bystanders are untouched."""
+        spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "ray_of_frost.json"))
+        spell.spell_attack_bonus = _WIZARD_SPELL_ATTACK
+        target, bystander_a, bystander_b = goblins
+        initial_b_a, initial_b_b = bystander_a.hp, bystander_b.hp
+
+        roll = roll_d20()
+        attack_total = roll + spell.spell_attack_bonus
+        if attack_total >= target.ac:
+            damage = roll_formula(spell.damage[0].formula)
+            target.take_damage(Damage(spell.damage[0].damage_type, damage))
+            assert target.hp < target.max_hp
+        else:
+            assert target.hp == target.max_hp
+
+        assert bystander_a.hp == initial_b_a
+        assert bystander_b.hp == initial_b_b
+
+    # ------------------------------------------------------------------
+    # Eldritch Blast – single target, ranged spell attack
+    # ------------------------------------------------------------------
+
+    def test_eldritch_blast_single_target(self, wizard, goblins, combat):
+        """Eldritch Blast hits one goblin; bystanders are untouched."""
+        spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "eldritch_blast.json"))
+        spell.spell_attack_bonus = _WIZARD_SPELL_ATTACK
+        target, bystander_a, bystander_b = goblins
+        initial_b_a, initial_b_b = bystander_a.hp, bystander_b.hp
+
+        roll = roll_d20()
+        attack_total = roll + spell.spell_attack_bonus
+        if attack_total >= target.ac:
+            damage = roll_formula(spell.damage[0].formula)
+            target.take_damage(Damage(spell.damage[0].damage_type, damage))
+            assert target.hp < target.max_hp
+        else:
+            assert target.hp == target.max_hp
+
+        assert bystander_a.hp == initial_b_a
+        assert bystander_b.hp == initial_b_b
+
+    # ------------------------------------------------------------------
+    # Magic Missile – auto-hit, force damage (no attack roll)
+    # ------------------------------------------------------------------
+
+    def test_magic_missile_auto_hit(self, wizard, goblins, combat):
+        """Magic Missile always hits — no attack roll or save needed."""
+        spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "magic_missile.json"))
+        target = goblins[0]
+        initial_hp = target.hp
+
+        damage = roll_formula(spell.damage[0].formula)
+        target.take_damage(Damage(spell.damage[0].damage_type, damage))
+        assert target.hp < initial_hp
+
+    # ------------------------------------------------------------------
+    # Guiding Bolt – single target, ranged spell attack, heavy damage
+    # ------------------------------------------------------------------
+
+    def test_guiding_bolt_single_target(self, wizard, goblins, combat):
+        """Guiding Bolt targets one goblin; bystanders are untouched."""
+        spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "guiding_bolt.json"))
+        spell.spell_attack_bonus = _WIZARD_SPELL_ATTACK
+        target, bystander_a, bystander_b = goblins
+        initial_b_a, initial_b_b = bystander_a.hp, bystander_b.hp
+
+        roll = roll_d20()
+        attack_total = roll + spell.spell_attack_bonus
+        if attack_total >= target.ac:
+            damage = roll_formula(spell.damage[0].formula)
+            target.take_damage(Damage(spell.damage[0].damage_type, damage))
+            assert target.hp < target.max_hp
+        else:
+            assert target.hp == target.max_hp
+
+        assert bystander_a.hp == initial_b_a
+        assert bystander_b.hp == initial_b_b
+
+    # ------------------------------------------------------------------
+    # Thunderwave – AoE cube, damages all nearby targets
+    # ------------------------------------------------------------------
+
+    def test_thunderwave_aoe(self, wizard, goblins, combat):
+        """Thunderwave is a 15-ft cube from self — should hit close goblins."""
+        spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "thunderwave.json"))
+        spell.save_dc = _WIZARD_SAVE_DC
+        assert spell.targeting_type == TargetingType.AOE
+        assert spell.aoe.shape == AOEShape.CUBE
+
+        # Place goblins close enough for 15-ft cube from origin
+        for i, goblin in enumerate(goblins):
+            goblin.x = float(5 + i * 5)  # 5, 10, 15 ft
+            goblin.y, goblin.z = 0.0, 0.0
+
+        initial_hps = [g.hp for g in goblins]
+        blast_origin = Point3D(0.0, 0.0, 0.0)
+        combat.resolve_spell(wizard, [], spell, target=blast_origin)
+
+        hit_count = sum(
+            1 for g, ihp in zip(goblins, initial_hps) if g.hp < ihp
+        )
+        # At minimum the closest goblin should be hit
+        assert hit_count >= 1
+
+    # ------------------------------------------------------------------
+    # Cure Wounds – healing spell via HealTarget on_apply
+    # ------------------------------------------------------------------
+
+    def test_cure_wounds_no_damage(self, wizard, goblins, combat):
+        """Cure Wounds has no damage entries — it is a healing spell."""
+        spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "cure_wounds.json"))
+        assert len(spell.damage) == 0
+        assert spell.spell_range.range_type == RangeType.TOUCH
+
+    def test_cure_wounds_heals_target(self, wizard, goblins, combat):
+        """Cure Wounds heals a damaged target via the HealTarget on_apply hook.
+
+        The wizard takes some damage, then casts Cure Wounds on itself
+        (touch range). Because the spell has no attack bonus and no save DC,
+        it auto-hits and the on_apply HealTarget effect fires, restoring
+        1d8 HP (minimum 1).
+        """
+        spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "cure_wounds.json"))
+
+        # Damage the wizard so healing is observable
+        wizard.take_damage(Damage(DamageType.BLUDGEONING, 6))
+        hp_after_damage = wizard.hp
+        assert hp_after_damage < wizard.max_hp
+
+        # Cast Cure Wounds on self (wizard is the defender)
+        combat.resolve_spell(wizard, [wizard], spell)
+
+        # The wizard should have been healed by 1-8 HP
+        assert wizard.hp > hp_after_damage
+        assert wizard.hp <= wizard.max_hp
+
+    def test_cure_wounds_does_not_exceed_max_hp(self, wizard, goblins, combat):
+        """Cure Wounds cannot heal above max HP."""
+        spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "cure_wounds.json"))
+
+        # Only take 1 damage so healing is capped by max HP
+        wizard.take_damage(Damage(DamageType.BLUDGEONING, 1))
+        assert wizard.hp == wizard.max_hp - 1
+
+        combat.resolve_spell(wizard, [wizard], spell)
+
+        # HP should be capped at max, not over-healed
+        assert wizard.hp == wizard.max_hp
 
 
 if __name__ == "__main__":

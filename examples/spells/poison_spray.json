@@ -1,0 +1,37 @@
+{
+  "name": "Poison Spray",
+  "description": "You extend your hand toward a creature you can see within range and project a puff of noxious gas from your palm. The creature must succeed on a Constitution saving throw or take 1d12 poison damage.",
+  "type": "spell",
+  "spell_level": 0,
+  "spell_attack_bonus": 0,
+  "save_dc": 0,
+  "save_ability": "constitution",
+  "damage": [
+    {
+      "type": "POISON",
+      "amount": 6,
+      "formula": "1d12"
+    }
+  ],
+  "spell_range": {
+    "type": "feet",
+    "distance_ft": 10
+  },
+  "targeting_type": "single_target",
+  "casting_time": {
+    "type": "action",
+    "count": 1
+  },
+  "duration": {
+    "unit": "instantaneous"
+  },
+  "components": {
+    "verbal": true,
+    "somatic": true,
+    "material": []
+  },
+  "animation": [
+    [{"type": "particles", "color": "#66CC22", "at": "target", "count": 20, "spread": 5, "duration": 0.5, "speed": 1.2}],
+    [{"type": "flash", "color": "#88DD44", "at": "target", "duration": 0.3, "size": 1.2}]
+  ]
+}

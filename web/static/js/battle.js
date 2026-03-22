@@ -89,6 +89,11 @@ let measureStart     = null;   // { x, y } in cell units
 let measureEnd       = null;   // { x, y } in cell units
 let draggingToken    = null;   // the token currently being dragged
 let dragOffset       = { x: 0, y: 0 };  // cursor-to-centre offset at drag start
+let dragStartPos     = null;   // { x, y } position of token when drag began
+let dragStartMovement = 0;     // movement remaining (ft) at start of this drag
+let pendingMoveToken = null;   // token whose move was sent to backend (for snap-back)
+let pendingMovePos   = null;   // pre-move position to restore if backend rejects
+let moveHoveredToken = null;   // token under cursor in move tool (not dragging)
 let hoveringToken    = false;  // whether the cursor is over a draggable token
 let infoHoveredToken = null;   // token currently inspected by the info tool
 let actionToken      = null;   // token whose action panel is open
@@ -271,19 +276,45 @@ function drawTargetingLine() {
     }
 }
 
-function drawTokens() {
-    const acting = targetingAction ? actionToken : null;
+function drawMovementTrail() {
+    if (!draggingToken || !dragStartPos) return;
 
-    // Phase 1 — all tokens except the acting one
+    const { x: sx, y: sy } = worldToScreen(dragStartPos.x, dragStartPos.y);
+    const { x: ex, y: ey } = worldToScreen(draggingToken.x, draggingToken.y);
+
+    const color = "rgba(100, 200, 180, 0.75)";
+    ctx.strokeStyle = color;
+    ctx.lineWidth   = 1.5;
+    ctx.setLineDash([6, 4]);
+    ctx.beginPath();
+    ctx.moveTo(sx, sy);
+    ctx.lineTo(ex, ey);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Dot marking the origin
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(sx, sy, 3, 0, Math.PI * 2);
+    ctx.fill();
+}
+
+function drawTokens() {
+    const acting  = targetingAction ? actionToken : null;
+    const dragged = draggingToken;
+
+    // Phase 1 — all tokens except the acting/dragged ones (which render on top)
     for (const token of tokens) {
-        if (token !== acting) drawOneToken(token);
+        if (token !== acting && token !== dragged) drawOneToken(token);
     }
 
-    // Phase 2 — targeting line (above other tokens, below acting token)
+    // Phase 2 — targeting line and movement trail (above other tokens)
     drawTargetingLine();
+    drawMovementTrail();
 
-    // Phase 3 — acting token on top
-    if (acting) drawOneToken(acting);
+    // Phase 3 — acting token, then dragged token on top
+    if (acting && acting !== dragged) drawOneToken(acting);
+    if (dragged) drawOneToken(dragged);
 }
 
 function draw() {
@@ -414,8 +445,10 @@ canvas.addEventListener("mousedown", (e) => {
             const dx = cursorWorld.x - t.x;
             const dy = cursorWorld.y - t.y;
             if (Math.sqrt(dx * dx + dy * dy) <= t.radius) {
-                draggingToken = t;
-                dragOffset    = { x: dx, y: dy };
+                draggingToken    = t;
+                dragOffset       = { x: dx, y: dy };
+                dragStartPos      = { x: t.x, y: t.y };
+                dragStartMovement = Math.round((t.resources?.movement ?? 0) * 10) / 10;
                 updateCursor();
                 return;
             }
@@ -511,6 +544,14 @@ window.addEventListener("mousemove", (e) => {
         // Update the token's canonical position directly
         draggingToken.x = cursorWorld.x - dragOffset.x;
         draggingToken.y = cursorWorld.y - dragOffset.y;
+
+        // Update movement readout — round to 1 dp to match backend cost calculation
+        const ddx    = (draggingToken.x - dragStartPos.x) * CELL_FEET;
+        const ddy    = (draggingToken.y - dragStartPos.y) * CELL_FEET;
+        const distFt = Math.round(Math.sqrt(ddx * ddx + ddy * ddy) * 10) / 10;
+        moveReadout.textContent = `${distFt.toFixed(1)} / ${dragStartMovement.toFixed(1)} ft`;
+        moveReadout.classList.toggle("over-limit", distFt > dragStartMovement);
+        moveReadout.classList.add("visible");
     }
 
     if (measuring) {
@@ -526,13 +567,16 @@ window.addEventListener("mousemove", (e) => {
         panLast = { x: e.clientX, y: e.clientY };
     }
 
-    // Update hover state for move tool cursor feedback
+    // Update hover state for move tool cursor feedback and readout
     if (activeTool === "move" && !draggingToken) {
-        hoveringToken = tokens.some(t => {
+        const found = [...tokens].reverse().find(t => {
             const dx = cursorWorld.x - t.x;
             const dy = cursorWorld.y - t.y;
             return Math.sqrt(dx * dx + dy * dy) <= t.radius;
-        });
+        }) ?? null;
+        hoveringToken    = found !== null;
+        moveHoveredToken = found;
+        refreshMoveReadout();
         updateCursor();
     }
 
@@ -576,14 +620,29 @@ window.addEventListener("mousemove", (e) => {
 window.addEventListener("mouseup", (e) => {
     if (e.button === 0) {
         if (draggingToken) {
-            // Send final position to backend for validation
-            wsSend({
-                type: "move",
-                seq: nextSeq(),
-                entity_id: draggingToken.id,
-                position: { x: draggingToken.x, y: draggingToken.y },
-            });
+            const ddx    = (draggingToken.x - dragStartPos.x) * CELL_FEET;
+            const ddy    = (draggingToken.y - dragStartPos.y) * CELL_FEET;
+            const distFt = Math.round(Math.sqrt(ddx * ddx + ddy * ddy) * 10) / 10;
+
+            if (distFt > dragStartMovement) {
+                // Over movement range — snap token back to where it started
+                draggingToken.x = dragStartPos.x;
+                draggingToken.y = dragStartPos.y;
+            } else {
+                // Broadcast the move to the backend; keep start pos in case of rejection
+                pendingMoveToken = draggingToken;
+                pendingMovePos   = { ...dragStartPos };
+                wsSend({
+                    type: "move",
+                    seq: nextSeq(),
+                    entity_id: draggingToken.id,
+                    position: { x: draggingToken.x, y: draggingToken.y },
+                });
+            }
+
+            dragStartPos  = null;
             draggingToken = null;
+            refreshMoveReadout();   // revert to "Y ft" idle display
             updateCursor();
             draw();
             return;
@@ -633,6 +692,7 @@ const btnInfo        = document.getElementById("tool-info");
 const btnAction      = document.getElementById("tool-action");
 const btnAddToken    = document.getElementById("tool-add-token");
 const measureReadout = document.getElementById("measure-readout");
+const moveReadout    = document.getElementById("move-readout");
 
 // Action panel
 const actionPanel       = document.getElementById("action-panel");
@@ -816,6 +876,16 @@ function updateInfoPanel(token) {
     infoPanel.classList.add("visible");
 }
 
+// Refresh the move readout to show remaining movement (non-dragging state).
+// Called whenever resources update or the move tool activates/deactivates.
+function refreshMoveReadout() {
+    if (activeTool !== "move" || draggingToken) return;
+    const token  = moveHoveredToken ?? tokens.find(t => t.id === currentEntityId);
+    const moveFt = token?.resources?.movement ?? 0;
+    moveReadout.textContent = `${(+moveFt).toFixed(1)} ft`;
+    moveReadout.classList.remove("over-limit");
+}
+
 function setActiveTool(tool) {
     activeTool = (activeTool === tool) ? null : tool;
 
@@ -833,8 +903,14 @@ function setActiveTool(tool) {
         measureEnd   = null;
     }
     if (activeTool !== "move") {
-        draggingToken = null;
-        hoveringToken = false;
+        draggingToken    = null;
+        hoveringToken    = false;
+        moveHoveredToken = null;
+        dragStartPos     = null;
+        moveReadout.classList.remove("visible");
+    } else {
+        refreshMoveReadout();
+        moveReadout.classList.add("visible");
     }
     if (activeTool !== "info") {
         infoHoveredToken = null;
@@ -923,6 +999,7 @@ function updateFromCombatState(state) {
         token.alive     = es.alive;
     }
     draw();
+    refreshMoveReadout();
 }
 
 function handleCombatStarted(msg) {
@@ -959,6 +1036,8 @@ async function handleActionResult(msg) {
 }
 
 function handleMoveResult(msg) {
+    pendingMoveToken = null;
+    pendingMovePos   = null;
     updateFromCombatState(msg.combat_state);
 }
 
@@ -974,6 +1053,14 @@ function handleCombatEnded(msg) {
 
 function handleWsError(msg) {
     console.error(`[combat error] ${msg.command}: ${msg.message}`);
+    if (msg.command === "move" && pendingMoveToken && pendingMovePos) {
+        // Backend rejected the move — snap token back to its pre-move position
+        pendingMoveToken.x = pendingMovePos.x;
+        pendingMoveToken.y = pendingMovePos.y;
+        draw();
+    }
+    pendingMoveToken = null;
+    pendingMovePos   = null;
 }
 
 // ── Send start_combat ─────────────────────────────────────────────────────────

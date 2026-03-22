@@ -228,31 +228,30 @@ class SpellResolver:
                     )
                     continue
 
-            # Look up the entity effect rule by name
+            # Look up the entity effect rule by name (optional — some
+            # entries only carry on_apply actions with no persistent effect).
             effect_name = entry.get("effect")
-            if not effect_name:
-                logger.warning("Spell effect entry missing 'effect' key: %s", entry)
-                continue
-            rule = self.rule_engine.effect_registry.get(effect_name)
+            if effect_name:
+                rule = self.rule_engine.effect_registry.get(effect_name)
 
-            # Evaluate instance_fields expressions
-            instance_fields: Dict[str, Any] = {}
-            for field_name, expr in entry.get("instance_fields", {}).items():
-                try:
-                    instance_fields[field_name] = resolve(expr, ctx)
-                except Exception as exc:
-                    logger.debug(
-                        "Spell effect instance_field '%s' evaluation failed (%s: %s)",
-                        field_name, type(exc).__name__, exc,
-                    )
+                # Evaluate instance_fields expressions
+                instance_fields: Dict[str, Any] = {}
+                for field_name, expr in entry.get("instance_fields", {}).items():
+                    try:
+                        instance_fields[field_name] = resolve(expr, ctx)
+                    except Exception as exc:
+                        logger.debug(
+                            "Spell effect instance_field '%s' evaluation failed (%s: %s)",
+                            field_name, type(exc).__name__, exc,
+                        )
 
-            self.rule_engine.apply_effect(defender, rule, instance_fields=instance_fields)
-            logger.info(
-                "Applied spell effect '%s' to %s (save_success=%s)",
-                rule.name, defender.name, save_success,
-            )
+                self.rule_engine.apply_effect(defender, rule, instance_fields=instance_fields)
+                logger.info(
+                    "Applied spell effect '%s' to %s (save_success=%s)",
+                    rule.name, defender.name, save_success,
+                )
 
-            # Execute immediate on-apply effects (e.g. granting temp HP at cast time)
+            # Execute immediate on-apply effects (e.g. granting temp HP, healing)
             for on_apply_effect in entry.get("on_apply", []):
                 action_name = on_apply_effect.get("action")
                 handler = self.rule_engine._effect_registry.get(action_name)

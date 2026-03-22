@@ -1,0 +1,44 @@
+{
+  "name": "Shield of Faith",
+  "description": "A shimmering field appears and surrounds a creature of your choice within range, granting it a +2 bonus to AC for the duration.",
+  "type": "spell",
+  "spell_level": 1,
+  "spell_attack_bonus": 0,
+  "save_dc": 0,
+  "damage": [],
+  "spell_range": {
+    "type": "feet",
+    "distance_ft": 60
+  },
+  "targeting_type": "single_target",
+  "casting_time": {
+    "type": "bonus_action",
+    "count": 1
+  },
+  "duration": {
+    "unit": "minute",
+    "count": 10,
+    "concentration": true
+  },
+  "components": {
+    "verbal": true,
+    "somatic": true,
+    "material": ["a small parchment with a bit of holy text written on it"]
+  },
+  "effects": [
+    {
+      "effect": "shield_of_faith",
+      "on_apply": [
+        {
+          "action": "ModifyAC",
+          "target": "event.defender",
+          "amount": 2
+        }
+      ]
+    }
+  ],
+  "animation": [
+    [{"type": "projectile", "color": "#FFD700", "from": "caster", "to": "target", "speed": 6, "size": 2, "trail": false}],
+    [{"type": "aura", "color": "#FFD700", "at": "target", "duration": 1.2, "size": 1.6, "pulses": 3}]
+  ]
+}

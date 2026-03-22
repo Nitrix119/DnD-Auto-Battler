@@ -493,7 +493,7 @@ class CombatSystem:
             + (new_y - entity.y) ** 2
             + (new_z - entity.z) ** 2
         )
-        cost_ft = math.ceil(distance)
+        cost_ft = round(distance, 1)
         movement_cost = ActionCost(movement=cost_ft)
 
         if not entity.can_afford(movement_cost):
