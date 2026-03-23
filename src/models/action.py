@@ -1,7 +1,7 @@
 """Combat actions available to entities."""
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 from enum import Enum
 
 from .action_resources import ActionCost, ACTION_COST, BONUS_ACTION_COST, REACTION_COST
@@ -106,9 +106,9 @@ class SpellAction(Action):
 
     action_type: ActionType = ActionType.SPELL
     spell_level: int = 0
-    save_dc: int = 0
-    save_ability: str = ""  # ability used for saving throws (e.g. "wisdom", "charisma")
-    spell_attack_bonus: int = 0
+    save_dc: Union[int, str] = 0          # int, or "use_caster_dc" to derive at cast time
+    save_ability: str = ""               # ability used for saving throws (e.g. "wisdom", "charisma")
+    spell_attack_bonus: Union[int, str] = 0  # int, or "use_caster_bonus" to derive at cast time
     spell_range: SpellRange = field(default_factory=lambda: SpellRange(RangeType.TOUCH))
     targeting_type: TargetingType = TargetingType.SINGLE_TARGET
     aoe: Optional[AOEProperties] = None
@@ -119,6 +119,8 @@ class SpellAction(Action):
     can_target_self: bool = False
     animation: List[Any] = field(default_factory=list)
     spell_effects: List[Dict[str, Any]] = field(default_factory=list)
+    on_successful_save: List[Dict[str, Any]] = field(default_factory=list)
+    on_failed_save: List[Dict[str, Any]] = field(default_factory=list)
     """Entity effects applied to the defender on spell hit.
 
     Each entry is a dict with:

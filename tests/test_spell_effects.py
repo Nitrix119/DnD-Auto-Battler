@@ -78,7 +78,8 @@ class TestSpellEffectLoading:
     def test_charm_person_save_ability(self):
         spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "charm_person.json"))
         assert spell.save_ability == "wisdom"
-        assert spell.save_dc == 13
+        # charm_person uses the caster's spell save DC rather than a hard-coded value
+        assert spell.save_dc == "use_caster_dc"
 
     def test_spell_without_effects_has_empty_list(self):
         spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "firebolt.json"))
@@ -127,7 +128,12 @@ class TestSavingThrows:
         assert spell_hit_events[0].data.get("save_success") is True
 
     def test_no_save_roll_when_save_dc_is_zero(self):
-        """Spells with save_dc=0 should not roll a save (save_roll stays None)."""
+        """Spells with save_dc=0 should not roll a save (save_roll stays None).
+
+        Magic Missile has no save at all (save_dc=0, save_ability=""), so it is
+        used here. Fireball now carries save_dc="use_caster_dc" and correctly
+        triggers a Dex save — that behaviour is tested in test_save_outcomes.py.
+        """
         wizard = load_wizard()
         goblin = load_goblin()
         bus, engine, resolver = setup_engine_and_resolver(wizard, goblin)
@@ -135,7 +141,7 @@ class TestSavingThrows:
         spell_hit_events = []
         bus.subscribe(EventType.SPELL_HIT, lambda e: spell_hit_events.append(e))
 
-        spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "fireball.json"))
+        spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "magic_missile.json"))
         resolver.resolve(wizard, [goblin], spell)
 
         assert spell_hit_events[0].data.get("save_roll") is None

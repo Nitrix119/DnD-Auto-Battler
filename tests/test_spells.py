@@ -20,10 +20,6 @@ EXAMPLES_DIR = Path(__file__).parent.parent / "examples"
 SPELLS_DIR = EXAMPLES_DIR / "spells"
 CHARACTERS_DIR = EXAMPLES_DIR / "creatures/characters"
 
-# Wizard stats: INT 18 (+4), proficiency +3 → spell attack +7, save DC 15
-_WIZARD_SPELL_ATTACK = 7
-_WIZARD_SAVE_DC = 15
-
 
 class TestSpellLoading:
     """Verify that spell JSON files round-trip through the loader correctly."""
@@ -97,21 +93,15 @@ class TestSpellCombat:
 
     @pytest.fixture
     def firebolt(self) -> SpellAction:
-        spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "firebolt.json"))
-        spell.spell_attack_bonus = _WIZARD_SPELL_ATTACK
-        return spell
+        return StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "firebolt.json"))
 
     @pytest.fixture
     def fireball(self) -> SpellAction:
-        spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "fireball.json"))
-        spell.save_dc = _WIZARD_SAVE_DC
-        return spell
+        return StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "fireball.json"))
 
     @pytest.fixture
     def inflict_wounds(self) -> SpellAction:
-        spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "inflict_wounds.json"))
-        spell.spell_attack_bonus = _WIZARD_SPELL_ATTACK
-        return spell
+        return StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "inflict_wounds.json"))
 
     @pytest.fixture
     def combat(self, wizard, goblins) -> CombatSystem:
@@ -140,9 +130,9 @@ class TestSpellCombat:
         initial_b_a = bystander_a.hp
         initial_b_b = bystander_b.hp
 
-        # Simulate the spell attack roll
+        # Simulate the spell attack roll using the caster's computed bonus
         roll = roll_d20()
-        attack_total = roll + firebolt.spell_attack_bonus
+        attack_total = roll + wizard.spell_attack_bonus
         hit = attack_total >= target.ac
 
         if hit:
@@ -196,9 +186,9 @@ class TestSpellCombat:
         initial_b_a = bystander_a.hp
         initial_b_b = bystander_b.hp
 
-        # Simulate the melee spell attack roll
+        # Simulate the melee spell attack roll using the caster's computed bonus
         roll = roll_d20()
-        attack_total = roll + inflict_wounds.spell_attack_bonus
+        attack_total = roll + wizard.spell_attack_bonus
         hit = attack_total >= target.ac
 
         if hit:
@@ -467,12 +457,11 @@ class TestNewSpellsCombat:
     def test_ray_of_frost_single_target(self, wizard, goblins, combat):
         """Ray of Frost hits one goblin; bystanders are untouched."""
         spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "ray_of_frost.json"))
-        spell.spell_attack_bonus = _WIZARD_SPELL_ATTACK
         target, bystander_a, bystander_b = goblins
         initial_b_a, initial_b_b = bystander_a.hp, bystander_b.hp
 
         roll = roll_d20()
-        attack_total = roll + spell.spell_attack_bonus
+        attack_total = roll + wizard.spell_attack_bonus
         if attack_total >= target.ac:
             damage = roll_formula(spell.damage[0].formula)
             target.take_damage(Damage(spell.damage[0].damage_type, damage))
@@ -490,12 +479,11 @@ class TestNewSpellsCombat:
     def test_eldritch_blast_single_target(self, wizard, goblins, combat):
         """Eldritch Blast hits one goblin; bystanders are untouched."""
         spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "eldritch_blast.json"))
-        spell.spell_attack_bonus = _WIZARD_SPELL_ATTACK
         target, bystander_a, bystander_b = goblins
         initial_b_a, initial_b_b = bystander_a.hp, bystander_b.hp
 
         roll = roll_d20()
-        attack_total = roll + spell.spell_attack_bonus
+        attack_total = roll + wizard.spell_attack_bonus
         if attack_total >= target.ac:
             damage = roll_formula(spell.damage[0].formula)
             target.take_damage(Damage(spell.damage[0].damage_type, damage))
@@ -527,12 +515,11 @@ class TestNewSpellsCombat:
     def test_guiding_bolt_single_target(self, wizard, goblins, combat):
         """Guiding Bolt targets one goblin; bystanders are untouched."""
         spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "guiding_bolt.json"))
-        spell.spell_attack_bonus = _WIZARD_SPELL_ATTACK
         target, bystander_a, bystander_b = goblins
         initial_b_a, initial_b_b = bystander_a.hp, bystander_b.hp
 
         roll = roll_d20()
-        attack_total = roll + spell.spell_attack_bonus
+        attack_total = roll + wizard.spell_attack_bonus
         if attack_total >= target.ac:
             damage = roll_formula(spell.damage[0].formula)
             target.take_damage(Damage(spell.damage[0].damage_type, damage))
@@ -550,7 +537,6 @@ class TestNewSpellsCombat:
     def test_thunderwave_aoe(self, wizard, goblins, combat):
         """Thunderwave is a 15-ft cube from self — should hit close goblins."""
         spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "thunderwave.json"))
-        spell.save_dc = _WIZARD_SAVE_DC
         assert spell.targeting_type == TargetingType.AOE
         assert spell.aoe.shape == AOEShape.CUBE
 

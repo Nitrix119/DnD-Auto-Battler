@@ -13,6 +13,7 @@
   "hit_points_max": 38,
   "armor_class": 15,
   "proficiency_bonus": 2,
+  "spellcasting_ability": "wisdom",
   "saving_throws": ["strength", "dexterity"],
   "actions": [
     {

@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "Bash(python -m pytest)",
+      "Bash(pytest:*)",
+      "Bash(python -m pytest:*)",
+      "Bash(grep:*)",
       "Bash(xargs grep:*)"
     ]
   }

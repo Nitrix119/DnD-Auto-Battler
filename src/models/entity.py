@@ -161,7 +161,13 @@ class Entity:
         base value will be 0 with label ``"Base"``; callers can supply the
         correct base when building the breakdown themselves.
         """
-        base_map = {"ac": self.stat_block.armor_class}
+        _sc_ability = self.stat_block.spellcasting_ability
+        _sc_mod = self.get_ability_modifier(_sc_ability) if _sc_ability else 0
+        base_map = {
+            "ac": self.stat_block.armor_class,
+            "spell_save_dc": 8 + self.stat_block.proficiency_bonus + _sc_mod,
+            "spell_attack_bonus": self.stat_block.proficiency_bonus + _sc_mod,
+        }
         breakdown = [{"source": "Base", "value": base_map.get(stat, 0)}]
         breakdown += [{"source": m.source, "value": m.value}
                       for m in self.stat_modifiers if m.stat == stat]
@@ -212,11 +218,31 @@ class Entity:
     def max_hp(self) -> int:
         return self.stat_block.hit_points_max
 
+    def get_ability_modifier(self, ability: str) -> int:
+        """Return the ability modifier for the given ability score."""
+        return self.stat_block.ability_scores.get_modifier(ability)
+
     @property
     def ac(self) -> int:
         return self.stat_block.armor_class + sum(
             m.value for m in self.stat_modifiers if m.stat == "ac"
         )
+
+    @property
+    def spell_save_dc(self) -> int:
+        """Computed spell save DC: 8 + proficiency + spellcasting ability mod + bonuses."""
+        ability = self.stat_block.spellcasting_ability
+        base_mod = self.get_ability_modifier(ability) if ability else 0
+        base = 8 + self.stat_block.proficiency_bonus + base_mod
+        return base + sum(m.value for m in self.stat_modifiers if m.stat == "spell_save_dc")
+
+    @property
+    def spell_attack_bonus(self) -> int:
+        """Computed spell attack bonus: proficiency + spellcasting ability mod + bonuses."""
+        ability = self.stat_block.spellcasting_ability
+        base_mod = self.get_ability_modifier(ability) if ability else 0
+        base = self.stat_block.proficiency_bonus + base_mod
+        return base + sum(m.value for m in self.stat_modifiers if m.stat == "spell_attack_bonus")
 
     @property
     def bounding_box(self):

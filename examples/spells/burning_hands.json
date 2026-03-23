@@ -4,8 +4,9 @@
   "type": "spell",
   "spell_level": 1,
   "spell_attack_bonus": 0,
-  "save_dc": 0,
+  "save_dc": "use_caster_dc",
   "save_ability": "dexterity",
+  "on_successful_save": [{"action": "HalfDamage"}],
   "damage": [
     {
       "type": "FIRE",

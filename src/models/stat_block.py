@@ -48,6 +48,7 @@ class StatBlock:
     resource_defaults: Dict[str, int] = field(default_factory=lambda: dict(DEFAULT_RESOURCE_DEFAULTS))
     size: CreatureSize = field(default=CreatureSize.MEDIUM)
     known_spells: List[str] = field(default_factory=list)
+    spellcasting_ability: str = ""  # e.g. "intelligence", "wisdom", "charisma"; "" = non-caster
 
     def __post_init__(self) -> None:
         """Initialize default skills and validate stats."""

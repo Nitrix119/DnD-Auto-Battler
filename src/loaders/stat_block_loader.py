@@ -116,6 +116,7 @@ class StatBlockLoader:
             resource_defaults=resource_defaults,
             size=creature_size,
             known_spells=list(data.get("known_spells", [])),
+            spellcasting_ability=data.get("spellcasting_ability", ""),
         )
 
         # Add saving throws if provided
@@ -278,6 +279,8 @@ class StatBlockLoader:
                 can_target_self=action_data.get("can_target_self", False),
                 animation=action_data.get("animation", []),
                 spell_effects=action_data.get("effects", []),
+                on_successful_save=action_data.get("on_successful_save", []),
+                on_failed_save=action_data.get("on_failed_save", []),
                 **cost_kwargs,
             )
 

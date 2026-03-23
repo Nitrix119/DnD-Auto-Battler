@@ -3,7 +3,7 @@
   "description": "Make a melee spell attack against a creature you can reach. On a hit, the target takes 3d10 necrotic damage.",
   "type": "spell",
   "spell_level": 1,
-  "spell_attack_bonus": 0,
+  "spell_attack_bonus": "use_caster_bonus",
   "save_dc": 0,
   "damage": [
     {

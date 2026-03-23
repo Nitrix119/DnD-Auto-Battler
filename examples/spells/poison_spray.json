@@ -4,8 +4,9 @@
   "type": "spell",
   "spell_level": 0,
   "spell_attack_bonus": 0,
-  "save_dc": 0,
+  "save_dc": "use_caster_dc",
   "save_ability": "constitution",
+  "on_successful_save": [{"action": "NoDamage"}],
   "damage": [
     {
       "type": "POISON",
