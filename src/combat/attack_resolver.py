@@ -1,6 +1,6 @@
 """Attack roll resolution."""
 
-from typing import Tuple
+from typing import Optional, Tuple
 
 from src.models.entity import Entity
 from src.models.action import AttackAction
@@ -52,11 +52,13 @@ class AttackResolver:
         attacker: Entity,
         defender: Entity,
         action: AttackAction,
-    ) -> Tuple[bool, int, str]:
+    ) -> Tuple[bool, int, str, Optional[dict]]:
         """Resolve an attack roll and damage.
 
         Returns:
-            Tuple of (hit, total_damage, log_message).
+            Tuple of (hit, total_damage, log_message, roll_detail).
+            ``roll_detail`` is a dict with keys ``d20``, ``bonus``, ``total``,
+            and ``ac`` — or ``None`` when the attack was cancelled.
             log_message is empty string if the attack was cancelled.
         """
         declared = self._event_bus.emit(
@@ -64,7 +66,7 @@ class AttackResolver:
             AttackDeclaredData(attacker=attacker, defender=defender, action=action),
         )
         if declared.cancelled:
-            return False, 0, ""
+            return False, 0, "", None
 
         attack_roll = self._resolve_attack_roll(declared)
         attack_total = attack_roll + action.bonus_to_hit
@@ -103,4 +105,10 @@ class AttackResolver:
                 f"vs AC {defender.ac}. Miss!"
             )
 
-        return hit, total_damage, log_msg
+        roll_detail = {
+            "d20":   attack_roll,
+            "bonus": action.bonus_to_hit,
+            "total": attack_total,
+            "ac":    defender.ac,
+        }
+        return hit, total_damage, log_msg, roll_detail

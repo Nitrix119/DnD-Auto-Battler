@@ -39,7 +39,7 @@ class SpellResolver:
         action: SpellAction,
         *,
         origin=None,
-    ) -> List[Tuple[bool, int, str]]:
+    ) -> List[Tuple[bool, int, str, Optional[dict]]]:
         """Resolve a spell action against one or more targets.
 
         Damage is rolled once and applied to every target, matching D&D rules
@@ -80,7 +80,7 @@ class SpellResolver:
             else action.spell_attack_bonus
         )
 
-        results: List[Tuple[bool, int, str]] = []
+        results: List[Tuple[bool, int, str, Optional[dict]]] = []
         for defender in defenders:
             if effective_attack_bonus != 0 and effective_dc == 0:
                 result = self._resolve_spell_attack(
@@ -104,7 +104,7 @@ class SpellResolver:
         rolled_damages: List[Damage],
         effective_attack_bonus: int,
         effective_dc: int,
-    ) -> Tuple[bool, int, str]:
+    ) -> Tuple[bool, int, str, Optional[dict]]:
         """Spell with attack roll (e.g. Fire Bolt, Chromatic Orb)."""
         spell_declared = self._event_bus.emit(
             EventType.ATTACK_DECLARED,
@@ -148,7 +148,13 @@ class SpellResolver:
             f"Spell attack{roll_mode}: {attack_roll}+{effective_attack_bonus}"
             f"={attack_total} vs AC {defender.ac}. {hit_str}"
         )
-        return hit, damage_dealt, log_msg
+        roll_detail = {
+            "d20":   attack_roll,
+            "bonus": effective_attack_bonus,
+            "total": attack_total,
+            "ac":    defender.ac,
+        }
+        return hit, damage_dealt, log_msg, roll_detail
 
     def _resolve_auto_hit(
         self,
@@ -157,7 +163,7 @@ class SpellResolver:
         action: SpellAction,
         rolled_damages: List[Damage],
         effective_dc: int,
-    ) -> Tuple[bool, int, str]:
+    ) -> Tuple[bool, int, str, None]:
         """Spell with no attack roll — auto-hit, saving throw if applicable."""
         save_roll, save_success = self._roll_saving_throw(
             defender, action.save_ability, effective_dc,
@@ -188,7 +194,7 @@ class SpellResolver:
             f"cast {action.name} at {defender.name}. "
             f"Damage: {damage_dealt}{save_str}"
         )
-        return True, damage_dealt, log_msg
+        return True, damage_dealt, log_msg, None
 
     # ------------------------------------------------------------------
     # Internal helpers

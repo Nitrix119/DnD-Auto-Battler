@@ -182,12 +182,12 @@ class CombatSystem:
             )
         attacker.spend_resources(action.cost)
 
-        hit, total_damage, log_msg = self._attack_resolver.resolve(
+        hit, total_damage, log_msg, roll_detail = self._attack_resolver.resolve(
             attacker, defender, action,
         )
         if log_msg:
             self._log_action(attacker, log_msg)
-        return hit, total_damage
+        return hit, total_damage, roll_detail
 
     def resolve_spell(
         self,
@@ -249,10 +249,13 @@ class CombatSystem:
                     self._check_single_target_range(caster, defender, action)
 
         results = self._spell_resolver.resolve(caster, defenders, action, origin=origin)
-        for _, _, log_msg in results:
+        for _, _, log_msg, _ in results:
             if log_msg:
                 self._log_action(caster, log_msg)
-        return [(defenders[i], hit, damage) for i, (hit, damage, _) in enumerate(results)]
+        return [
+            (defenders[i], hit, damage, roll_detail)
+            for i, (hit, damage, _, roll_detail) in enumerate(results)
+        ]
 
     def resolve_saving_throw(self, defender: Entity, ability: str,
                             dc: int) -> Tuple[int, bool]:

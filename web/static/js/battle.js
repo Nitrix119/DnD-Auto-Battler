@@ -100,6 +100,7 @@ let actionToken      = null;   // token whose action panel is open
 let targetingAction  = null;   // action object currently being targeted
 let targetHovered    = null;   // token under cursor during targeting
 let currentEntityId  = null;   // entity whose turn it is (from backend)
+let activeEntityIds  = new Set(); // set of entity IDs currently allowed to act
 
 // ── Resize ────────────────────────────────────────────────────────────────────
 
@@ -393,6 +394,9 @@ function draw() {
         ctx.beginPath(); ctx.arc(sx1, sy1, 3, 0, Math.PI * 2); ctx.fill();
         ctx.beginPath(); ctx.arc(sx2, sy2, 3, 0, Math.PI * 2); ctx.fill();
     }
+
+    // ── Floating attack-roll labels ───────────────────────────────────────
+    renderFloatingLabels();
 
     // ── Cursor position readout ───────────────────────────────────────────
     const readout = `x: ${(cursorWorld.x * CELL_FEET).toFixed(2)} ft  y: ${(cursorWorld.y * CELL_FEET).toFixed(2)} ft`;
@@ -1003,6 +1007,9 @@ btnAddToken.addEventListener("click", () => {
 // Turn order bar
 const turnOrderTrack = document.getElementById("turn-order-track");
 
+// Resource panel
+const resourcePanel = document.getElementById("resource-panel");
+
 // End Turn button
 const btnEndTurn = document.getElementById("btn-end-turn");
 btnEndTurn.addEventListener("click", () => {
@@ -1106,6 +1113,158 @@ async function updateTurnOrderBar(newIds, entities) {
     turnOrderAnimating = false;
 }
 
+// ── Floating attack-roll labels ───────────────────────────────────────────────
+//
+// Each entry: { text, wx, wy, hit, t0 }
+//   wx/wy: world-space base position (just above the defender's token rim)
+//   t0:    performance.now() at spawn time
+//
+// Rendered in draw() so they stay anchored to world space as the camera moves.
+
+const FLOAT_DURATION   = 2200;   // ms total lifetime
+const FLOAT_RISE_CELLS = 1.1;    // cells to drift upward over lifetime
+
+const floatingLabels = [];
+
+function _floatEaseOut(t) { return t * (2 - t); }  // ease-out quad
+
+function renderFloatingLabels() {
+    if (floatingLabels.length === 0) return;
+    const now = performance.now();
+    ctx.save();
+    ctx.textAlign    = "center";
+    ctx.textBaseline = "middle";
+    for (let i = floatingLabels.length - 1; i >= 0; i--) {
+        const lbl = floatingLabels[i];
+        const t   = (now - lbl.t0) / FLOAT_DURATION;
+        if (t >= 1) { floatingLabels.splice(i, 1); continue; }
+
+        const rise  = FLOAT_RISE_CELLS * _floatEaseOut(t);
+        const alpha = t > 0.55 ? 1 - (t - 0.55) / 0.45 : 1.0;
+
+        const { x: sx, y: sy } = worldToScreen(lbl.wx, lbl.wy - rise);
+
+        const fontSize = Math.round(Math.min(Math.max(11, 13 * camera.zoom), 20));
+        ctx.font = `bold ${fontSize}px sans-serif`;
+
+        const tw = ctx.measureText(lbl.text).width + 14;
+        const th = fontSize + 8;
+
+        // Background pill
+        ctx.fillStyle = `rgba(0, 0, 0, ${0.58 * alpha})`;
+        ctx.beginPath();
+        ctx.roundRect(sx - tw / 2, sy - th / 2, tw, th, th / 2);
+        ctx.fill();
+
+        // Label text — muted green for hit, muted red for miss
+        ctx.fillStyle = lbl.hit
+            ? `rgba(115, 210, 85,  ${alpha})`
+            : `rgba(210, 85,  85,  ${alpha})`;
+        ctx.fillText(lbl.text, sx, sy);
+    }
+    ctx.restore();
+}
+
+function spawnFloatingLabel(wx, wy, text, hit) {
+    floatingLabels.push({ text, wx, wy, hit, t0: performance.now() });
+    _ensureFloatLoop();
+}
+
+let _floatLoopRunning = false;
+
+function _ensureFloatLoop() {
+    if (_floatLoopRunning) return;
+    _floatLoopRunning = true;
+    requestAnimationFrame(_floatTick);
+}
+
+function _floatTick() {
+    draw();
+    if (floatingLabels.length > 0) {
+        requestAnimationFrame(_floatTick);
+    } else {
+        _floatLoopRunning = false;
+    }
+}
+
+// ── Resource panel ────────────────────────────────────────────────────────────
+//
+// Displays action economy (actions, bonus actions, reactions, movement) for
+// each currently-active entity.  Stacked vertically in turn order when
+// multiple entities are simultaneously active (future allied-turn feature).
+
+const RES_ACTIVE_COLORS = {
+    action:      "rgba(80, 210, 100, 0.95)",   // green
+    bonusAction: "rgba(255, 165, 50,  0.95)",   // orange
+    reaction:    "rgba(175, 100, 255, 0.95)",   // purple
+};
+const RES_SPENT_COLOR = "rgba(110, 110, 110, 0.45)";
+
+function _resSvgAction(fill) {
+    return `<svg class="res-icon" viewBox="0 0 24 24" width="22" height="22">`
+         + `<circle cx="12" cy="12" r="9" fill="${fill}"/></svg>`;
+}
+
+function _resSvgBonus(fill) {
+    return `<svg class="res-icon" viewBox="0 0 24 24" width="22" height="22">`
+         + `<polygon points="12,3 21.5,20 2.5,20" fill="${fill}"/></svg>`;
+}
+
+function _resSvgReaction(fill) {
+    // Sharp four-pointed star
+    return `<svg class="res-icon" viewBox="0 0 24 24" width="22" height="22">`
+         + `<path d="M12,2 L14.5,9.5 L22,12 L14.5,14.5 L12,22 L9.5,14.5 L2,12 L9.5,9.5Z"`
+         + ` fill="${fill}"/></svg>`;
+}
+
+function _resSlot(svgFn, count, colorKey) {
+    const fill  = count > 0 ? RES_ACTIVE_COLORS[colorKey] : RES_SPENT_COLOR;
+    const badge = count > 1 ? `\u00d7${count}` : "";   // ×N or empty
+    return `<div class="res-slot">${svgFn(fill)}<span class="res-count">${badge}</span></div>`;
+}
+
+function _resMoveSlot(moveFt) {
+    const color = moveFt > 0 ? "rgba(255,255,255,0.85)" : RES_SPENT_COLOR;
+    return `<div class="res-slot res-slot-move">`
+         + `<span class="res-move-text" style="color:${color}">${moveFt.toFixed(1)}&thinsp;ft</span>`
+         + `<span class="res-count"></span>`  // keeps height uniform with icon slots
+         + `</div>`;
+}
+
+function _buildResCard(token) {
+    const r   = token.resources ?? {};
+    const act = r.actions       ?? 0;
+    const bon = r.bonus_actions  ?? 0;
+    const rea = r.reactions     ?? 0;
+    const mov = +(r.movement    ?? 0);
+
+    const sep = `<div class="res-sep"></div>`;
+    return `<div class="res-card">`
+         + `<div class="res-card-name">${token.name}</div>`
+         + `<div class="res-row">`
+         + _resSlot(_resSvgAction,   act, "action")      + sep
+         + _resSlot(_resSvgBonus,    bon, "bonusAction")  + sep
+         + _resSlot(_resSvgReaction, rea, "reaction")     + sep
+         + _resMoveSlot(mov)
+         + `</div></div>`;
+}
+
+function updateResourcePanel() {
+    if (activeEntityIds.size === 0) {
+        resourcePanel.classList.remove("visible");
+        return;
+    }
+    // Render cards in initiative order (only for active entities)
+    const ordered = turnOrderIds.filter(id => activeEntityIds.has(id));
+    let html = "";
+    for (const id of ordered) {
+        const token = tokens.find(t => t.id === id);
+        if (token) html += _buildResCard(token);
+    }
+    resourcePanel.innerHTML = html;
+    resourcePanel.classList.add("visible");
+}
+
 // ── WebSocket — combat session ─────────────────────────────────────────────
 
 const wsStatusEl = document.getElementById("ws-status");
@@ -1153,6 +1312,7 @@ ws.onerror = () => {
 
 function updateFromCombatState(state) {
     currentEntityId = state.current_entity_id;
+    activeEntityIds = new Set(state.active_entity_ids ?? (currentEntityId ? [currentEntityId] : []));
     for (const es of state.entities) {
         const token = tokens.find(t => t.id === es.entity_id);
         if (!token) continue;
@@ -1172,6 +1332,7 @@ function updateFromCombatState(state) {
     refreshMoveReadout();
     // Update initiative / turn order bar (async — runs independently)
     if (state.turn_order) updateTurnOrderBar(state.turn_order, state.entities);
+    updateResourcePanel();
 }
 
 function handleCombatStarted(msg) {
@@ -1202,6 +1363,15 @@ async function handleActionResult(msg) {
     }
 
     updateFromCombatState(msg.combat_state);
+
+    for (const r of (msg.results ?? [])) {
+        if (!r.roll) continue;
+        const target = tokens.find(t => t.id === r.target_id);
+        if (!target) continue;
+        const text = `ATK ${r.roll.total} vs ${r.roll.ac} AC`;
+        spawnFloatingLabel(target.x, target.y - target.radius - 0.15, text, r.hit);
+    }
+
     for (const line of (msg.log || [])) {
         console.log("[combat log]", line);
     }

@@ -256,7 +256,7 @@ async def handle_attack(
         raise ValueError(f"{attacker.name} has no attack called '{action_name}'")
 
     log_before = len(combat.log)
-    hit, damage = combat.resolve_attack(attacker, defender, action)
+    hit, damage, roll_detail = combat.resolve_attack(attacker, defender, action)
     new_logs = combat.get_combat_log()[log_before:]
 
     await _send(ws, {
@@ -265,7 +265,7 @@ async def handle_attack(
         "action_type": "attack",
         "attacker_id": attacker.entity_id,
         "results": [
-            {"target_id": defender.entity_id, "hit": hit, "damage": damage},
+            {"target_id": defender.entity_id, "hit": hit, "damage": damage, "roll": roll_detail},
         ],
         "log": new_logs,
         "combat_state": serialize_combat_state(combat),
@@ -309,8 +309,8 @@ async def handle_cast_spell(
     new_logs = combat.get_combat_log()[log_before:]
 
     per_target = [
-        {"target_id": entity.entity_id, "hit": hit, "damage": damage}
-        for entity, hit, damage in results
+        {"target_id": entity.entity_id, "hit": hit, "damage": damage, "roll": roll_detail}
+        for entity, hit, damage, roll_detail in results
     ]
 
     await _send(ws, {
