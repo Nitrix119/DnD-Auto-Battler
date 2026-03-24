@@ -242,6 +242,8 @@ class CombatSystem:
                 )
             origin, direction = self._derive_aoe_origin(caster, action, target)
             defenders = self.get_targets_in_aoe(origin, action.aoe, direction)
+            if action.cannot_cause_self_damage:
+                defenders = [d for d in defenders if d is not caster]
         else:
             # Single-target (or SPECIAL): range-check each defender if target given
             if target is not None:
@@ -453,14 +455,20 @@ class CombatSystem:
             # target == caster_center: choose an arbitrary forward direction
             direction = Vector3D(1.0, 0.0, 0.0)
 
-        if shape in (AOEShape.CONE, AOEShape.LINE):
-            # These always start at the caster; clamping is not meaningful
-            return caster_center, direction
+        # Offset directed shapes to the caster's token edge so the AOE begins
+        # where the caster's reach ends rather than at their centre.
+        half_size = caster.stat_block.size.size_ft / 2.0
 
-        # SPHERE, CYLINDER, CUBE: origin is the (possibly clamped) target
+        if shape in (AOEShape.CONE, AOEShape.LINE):
+            edge_origin = caster_center + direction.scale(half_size)
+            return edge_origin, direction
+
+        # SPHERE, CYLINDER, CUBE: origin is the (possibly clamped) target.
+        # Range is measured from the caster's edge, so allow half_size extra
+        # from centre when clamping.
         range_ft = self._effective_range_ft(action)
         if range_ft is not None:
-            origin = self._clamp_to_range(caster_center, target, range_ft)
+            origin = self._clamp_to_range(caster_center, target, range_ft + half_size)
         else:
             origin = target
 
@@ -514,7 +522,9 @@ class CombatSystem:
         caster_center = self._caster_center(caster)
         nearest = defender.bounding_box.nearest_point(caster_center)
         dist = caster_center.distance_to(nearest)
-        if dist > range_ft:
+        # Range is measured from the caster's edge: allow half_size extra from centre.
+        half_size = caster.stat_block.size.size_ft / 2.0
+        if dist > range_ft + half_size:
             raise ValueError(
                 f"{action.name}: {defender.name} is out of range "
                 f"({dist:.1f} ft, max {range_ft:.0f} ft)"

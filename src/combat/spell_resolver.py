@@ -194,7 +194,11 @@ class SpellResolver:
             f"cast {action.name} at {defender.name}. "
             f"Damage: {damage_dealt}{save_str}"
         )
-        return True, damage_dealt, log_msg, None
+        save_detail = (
+            {"total": save_roll, "dc": effective_dc, "save_success": save_success}
+            if save_roll is not None else None
+        )
+        return True, damage_dealt, log_msg, save_detail
 
     # ------------------------------------------------------------------
     # Internal helpers

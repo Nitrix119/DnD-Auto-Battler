@@ -302,6 +302,8 @@ class TestCombatSystemIntegration:
         cs = CombatSystem()
         cs.event_bus = bus
         cs.rule_engine = engine
+        cs.add_combatant(wizard, initiative_modifier=100)
+        cs.add_combatant(goblin, initiative_modifier=0)
 
         spell = charm_person_spell(save_dc=30)  # goblin always fails
 

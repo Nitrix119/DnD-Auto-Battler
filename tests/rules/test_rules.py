@@ -324,6 +324,10 @@ class TestCancelEffect:
         combat.add_combatant(attacker)
         combat.add_combatant(defender)
         combat.start_combat()
+        for i, entry in enumerate(combat.initiative_tracker.initiative_order):
+            if entry.entity is attacker:
+                combat.initiative_tracker.current_turn_index = i
+                break
 
         engine = RuleEngine(combat.event_bus)
         engine.load_rule(Rule(
@@ -336,7 +340,7 @@ class TestCancelEffect:
             name="Sword", description="", bonus_to_hit=99,
             damage=[Damage(DamageType.SLASHING, 1)],
         )
-        hit, damage = combat.resolve_attack(attacker, defender, attack)
+        hit, damage, _ = combat.resolve_attack(attacker, defender, attack)
         assert hit is False
         assert damage == 0
         assert defender.hp == 50  # took no damage
@@ -487,6 +491,10 @@ class TestConcentrationRule:
         combat.add_combatant(attacker)
         combat.add_combatant(defender)
         combat.start_combat()
+        for i, entry in enumerate(combat.initiative_tracker.initiative_order):
+            if entry.entity is attacker:
+                combat.initiative_tracker.current_turn_index = i
+                break
 
         engine = RuleEngine(combat.event_bus)
         engine.load_from_file(CONCENTRATION_JSON)

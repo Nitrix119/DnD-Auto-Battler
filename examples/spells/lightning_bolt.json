@@ -1,0 +1,69 @@
+{
+  "name": "Lightning Bolt",
+  "description": "A stroke of lightning forming a line 100 feet long and 5 feet wide blasts out from you in a direction you choose. Each creature in the line must make a Dexterity saving throw. A creature takes 8d6 lightning damage on a failed save, or half as much damage on a successful one.",
+  "type": "spell",
+  "spell_level": 3,
+  "spell_attack_bonus": 0,
+  "save_dc": "use_caster_dc",
+  "save_ability": "dexterity",
+  "on_successful_save": [{"action": "HalfDamage"}],
+  "cannot_cause_self_damage": true,
+  "damage": [
+    {
+      "type": "LIGHTNING",
+      "amount": 28,
+      "formula": "8d6"
+    }
+  ],
+  "spell_range": {
+    "type": "feet",
+    "distance_ft": 100
+  },
+  "targeting_type": "aoe",
+  "aoe": {
+    "shape": "line",
+    "size_ft": 100,
+    "width_ft": 5
+  },
+  "casting_time": {
+    "type": "action",
+    "count": 1
+  },
+  "duration": {
+    "unit": "instantaneous"
+  },
+  "components": {
+    "verbal": true,
+    "somatic": true,
+    "material": ["a bit of fur and a rod of amber, crystal, or glass"]
+  },
+  "higher_level_scaling": "When you cast this spell using a spell slot of 4th level or higher, the damage increases by 1d6 for each slot level above 3rd.",
+  "animation": [
+    [
+      {
+        "type": "beam",
+        "color": "#aaddff",
+        "from": "caster_edge",
+        "to": "direction_endpoint",
+        "distance_ft": 100,
+        "width": 6,
+        "duration": 0.25,
+        "opacity": 0.95
+      },
+      {
+        "type": "beam",
+        "color": "#ffffff",
+        "from": "caster_edge",
+        "to": "direction_endpoint",
+        "distance_ft": 100,
+        "width": 2,
+        "duration": 0.25,
+        "opacity": 1.0
+      }
+    ],
+    [
+      {"type": "flash", "color": "#aaddff", "at": "each_target", "duration": 0.3},
+      {"type": "particles", "color": "#88ccff", "at": "each_target", "count": 12, "spread": 4, "duration": 0.4, "speed": 2.0}
+    ]
+  ]
+}

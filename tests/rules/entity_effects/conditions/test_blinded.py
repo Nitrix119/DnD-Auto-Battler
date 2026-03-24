@@ -75,6 +75,8 @@ class TestBlindedAttackerDisadvantage:
         from src.combat.combat_system import CombatSystem
         combat = CombatSystem()
         combat.event_bus = bus
+        combat.add_combatant(fighter, initiative_modifier=100)
+        combat.add_combatant(goblin, initiative_modifier=0)
 
         action = get_action(fighter, "Longsword")
         with patch("src.combat.attack_resolver.roll_with_disadvantage", return_value=10) as mock_dis, \
@@ -112,6 +114,8 @@ class TestBlindedDefenderAdvantage:
         from src.combat.combat_system import CombatSystem
         combat = CombatSystem()
         combat.event_bus = bus
+        combat.add_combatant(fighter, initiative_modifier=100)
+        combat.add_combatant(goblin, initiative_modifier=0)
 
         action = get_action(fighter, "Longsword")
         with patch("src.combat.attack_resolver.roll_with_advantage", return_value=15) as mock_adv, \
@@ -152,6 +156,8 @@ class TestBlindedBothCancelOut:
         from src.combat.combat_system import CombatSystem
         combat = CombatSystem()
         combat.event_bus = bus
+        combat.add_combatant(fighter, initiative_modifier=100)
+        combat.add_combatant(goblin, initiative_modifier=0)
 
         action = get_action(fighter, "Longsword")
         with patch("src.combat.attack_resolver.roll_d20", return_value=12) as mock_d20, \

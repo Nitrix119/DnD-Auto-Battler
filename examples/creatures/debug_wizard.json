@@ -1,0 +1,69 @@
+{
+  "name": "Debug Wizard",
+  "abilities": {
+    "strength": 10,
+    "dexterity": 14,
+    "constitution": 14,
+    "intelligence": 20,
+    "wisdom": 14,
+    "charisma": 10
+  },
+  "size": "medium",
+  "hit_points": 200,
+  "hit_points_max": 200,
+  "armor_class": 12,
+  "proficiency_bonus": 6,
+  "spellcasting_ability": "intelligence",
+  "saving_throws": [
+    "intelligence",
+    "wisdom"
+  ],
+  "resource_defaults": {
+    "actions": 9,
+    "bonus_actions": 9,
+    "reactions": 9,
+    "speed": 120
+  },
+  "actions": [
+    {
+      "name": "Quarterstaff",
+      "description": "A melee weapon attack",
+      "type": "attack",
+      "cost": {
+        "actions": 1
+      },
+      "range_ft": 5,
+      "bonus_to_hit": 4,
+      "damage": [
+        {
+          "type": "BLUDGEONING",
+          "amount": 4,
+          "formula": "1d6"
+        }
+      ]
+    }
+  ],
+  "known_spells": [
+    "Acid Splash",
+    "Armor of Agathys",
+    "Burning Hands",
+    "Charm Person",
+    "Chill Touch",
+    "Cone of Cold",
+    "Cure Wounds",
+    "Eldritch Blast",
+    "Fire Bolt",
+    "Fireball",
+    "Guiding Bolt",
+    "Haste",
+    "Inflict Wounds",
+    "Lightning Bolt",
+    "Longstrider",
+    "Magic Missile",
+    "Poison Spray",
+    "Ray of Frost",
+    "Sacred Flame",
+    "Shield of Faith",
+    "Thunderwave"
+  ]
+}

@@ -161,8 +161,10 @@ def _sight_spell() -> SpellAction:
 
 def _make_combat(*entities) -> CombatSystem:
     cs = CombatSystem()
-    for e in entities:
-        cs.add_combatant(e, initiative_modifier=0)
+    for i, e in enumerate(entities):
+        # Give the first entity (caster) a high initiative modifier so it is
+        # always the active entity, keeping tests deterministic.
+        cs.add_combatant(e, initiative_modifier=(100 if i == 0 else 0))
     cs.combatants = list(entities)
     return cs
 
@@ -251,14 +253,14 @@ class TestAoEAutoTargeting:
 
 class TestRangeClamping:
     def test_target_beyond_range_is_clamped(self):
-        """Blast target 200 ft away with a 150 ft range spell — sphere is at 150 ft.
+        """Blast target 200 ft away with a 150 ft range spell — sphere is clamped.
 
-        Range is measured from the caster's bbox centre (0, 2.5, 0) for a MEDIUM caster
-        at origin.  Aiming to (200, 0, 0) the clamped sphere centre is approximately
-        (149.98, 0.625, 0).
+        Range is measured from the caster's token edge: a MEDIUM caster (half-size 2.5 ft)
+        at origin allows clamping up to 152.5 ft from the bbox centre (0, 2.5, 0).
+        Aiming to (200, 0, 0) the clamped sphere centre is approximately (152.47, 1.91, 0).
 
-        at_150 (bbox [142.5,147.5]) → nearest point ~(147.5, 0.625, 0), dist ≈ 2.5 → inside
-        beyond  (bbox [172.5,177.5]) → nearest point ~(172.5, 0.625, 0), dist ≈ 22.5  → outside
+        at_150 (bbox [142.5,147.5]) → nearest point within 20 ft of sphere → inside
+        beyond  (bbox [172.5,177.5]) → nearest point ~25 ft from sphere centre → outside
         """
         caster = _make_entity("Wizard", x=0.0)
         at_150 = _make_entity("At150", x=145.0, hp=100)
@@ -288,28 +290,33 @@ class TestRangeClamping:
         assert target_entity.hp < initial_hp
 
     def test_caster_center_is_used_for_range_not_corner(self):
-        """Range is measured from the caster's bounding box centre, not corner."""
-        # MEDIUM caster at origin: bbox [-2.5,2.5]x[0,5]x[-2.5,2.5], centre at (0, 2.5, 0)
+        """Range is measured from the caster's bbox centre plus half-size (edge), not corner."""
+        # MEDIUM caster at origin: bbox centre at (0, 2.5, 0), half-size = 2.5 ft.
+        # Effective range from centre = 150 + 2.5 = 152.5 ft.
+        # Target at 150 ft from centre is well within range and must not be clamped.
         caster = _make_entity("Wizard", x=0.0)
-        # Target at 150 ft from centre (0, 2.5, 0) along X: x = 150
         target_pt = Point3D(150.0, 2.5, 0.0)
         entity = _make_entity("Target", x=144.0, hp=100)  # inside 20ft of target_pt
         combat = _make_combat(caster, entity)
         spell = _fireball(range_ft=150, radius_ft=20)
 
         initial_hp = entity.hp
-        # Should NOT clamp (target is exactly at range from caster centre)
+        # Should NOT clamp (target is within edge-measured range)
         combat.resolve_spell(caster, [], spell, target=target_pt)
         assert entity.hp < initial_hp
 
 
 # ---------------------------------------------------------------------------
-# Cone and line: origin always at caster
+# Cone and line: origin at caster's token edge
 # ---------------------------------------------------------------------------
 
 class TestConeAndLineOrigin:
-    def test_cone_origin_is_caster_center(self):
-        """Cone always starts at the caster; a very distant target just sets direction."""
+    def test_cone_origin_is_caster_edge(self):
+        """Cone starts at the caster's token edge; a very distant target just sets direction.
+
+        A MEDIUM caster at x=0 has a half-size of 2.5 ft, so the cone apex is at
+        x≈2.5 and extends 15 ft to x≈17.5 — the nearby entity at x=10 is inside.
+        """
         caster = _make_entity("Caster", x=0.0)
         # Entity right in front of the caster (inside 15ft cone)
         nearby = _make_entity("Near", x=10.0, hp=50)
@@ -321,14 +328,18 @@ class TestConeAndLineOrigin:
         initial_near = nearby.hp
         initial_far = far_off.hp
 
-        # Aim far to the right — cone still starts at caster
+        # Aim far to the right — cone starts at caster edge, direction unchanged
         combat.resolve_spell(caster, [], spell, target=Point3D(1000.0, 0.0, 0.0))
 
         assert nearby.hp < initial_near, "Entity within cone should be hit"
         assert far_off.hp == initial_far, "Entity outside cone should be unaffected"
 
-    def test_line_origin_is_caster_center(self):
-        """Line always starts at the caster; target just sets direction."""
+    def test_line_origin_is_caster_edge(self):
+        """Line starts at the caster's token edge; target just sets direction.
+
+        A MEDIUM caster at x=0 has a half-size of 2.5 ft, so the line starts at
+        x≈2.5 and extends 60 ft to x≈62.5 — the entity at x=20 is inside.
+        """
         caster = _make_entity("Caster", x=0.0)
         in_line = _make_entity("InLine", x=20.0, hp=50)
         off_line = _make_entity("OffLine", x=20.0, z=20.0, hp=50)

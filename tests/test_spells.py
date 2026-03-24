@@ -117,6 +117,11 @@ class TestSpellCombat:
         for goblin in goblins:
             cs.add_combatant(goblin)
         cs.start_combat()
+        # Ensure wizard is always the active entity regardless of initiative roll.
+        for i, entry in enumerate(cs.initiative_tracker.initiative_order):
+            if entry.entity is wizard:
+                cs.initiative_tracker.current_turn_index = i
+                break
         return cs
 
     # ------------------------------------------------------------------
@@ -448,6 +453,11 @@ class TestNewSpellsCombat:
             effect_registry=effect_registry,
         )
         cs.start_combat()
+        # Ensure wizard is always the active entity regardless of initiative roll.
+        for i, entry in enumerate(cs.initiative_tracker.initiative_order):
+            if entry.entity is wizard:
+                cs.initiative_tracker.current_turn_index = i
+                break
         return cs
 
     # ------------------------------------------------------------------

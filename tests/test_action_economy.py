@@ -223,6 +223,11 @@ class TestCombatSystemResourceEnforcement:
         combat.add_combatant(e1)
         combat.add_combatant(e2)
         combat.start_combat()
+        # Ensure Fighter (e1) is always the active entity regardless of initiative roll.
+        for i, entry in enumerate(combat.initiative_tracker.initiative_order):
+            if entry.entity is e1:
+                combat.initiative_tracker.current_turn_index = i
+                break
         return combat, e1, e2
 
     def test_resolve_attack_spends_resources(self, combat_pair):

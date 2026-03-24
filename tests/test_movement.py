@@ -41,8 +41,10 @@ def _make_entity(
 def _make_combat(*entities) -> CombatSystem:
     """Create a minimal CombatSystem with the given entities (no rule engine)."""
     combat = CombatSystem()
-    for e in entities:
-        combat.add_combatant(e, initiative_modifier=0)
+    for i, e in enumerate(entities):
+        # Give the first entity a high initiative modifier so it is always
+        # the active entity, keeping tests deterministic.
+        combat.add_combatant(e, initiative_modifier=(100 if i == 0 else 0))
     # Don't call start_combat to avoid needing a full rule engine
     # Movement methods work without combat being started
     combat.combatants = list(entities)

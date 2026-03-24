@@ -12,6 +12,17 @@ function resolveLocation(ref, context) {
         case "caster":       return context.caster;
         case "target":       return context.targets[0] || context.caster;
         case "target_point": return context.targetPoint || context.targets[0] || context.caster;
+        case "caster_edge": {
+            // Edge of the caster's token in the direction of the primary target/point.
+            const toward = context.targetPoint || context.targets[0] || null;
+            const r = context.casterRadius || 0;
+            if (!toward || r === 0) return context.caster;
+            const dx = toward.x - context.caster.x;
+            const dy = toward.y - context.caster.y;
+            const len = Math.sqrt(dx * dx + dy * dy);
+            if (len < 0.0001) return context.caster;
+            return { x: context.caster.x + (dx / len) * r, y: context.caster.y + (dy / len) * r };
+        }
         default:
             if (context._resolvedAt) return context._resolvedAt;
             console.warn(`[animation] Unknown location ref: "${ref}"`);
@@ -272,9 +283,26 @@ registerEffect("particles", (def, ctx) => {
 });
 
 // Beam: line between two points that appears and fades
+// Special `to` value: "direction_endpoint" — requires def.distance_ft.
+// Computes an endpoint at that distance (in feet) from `from`, in the
+// direction of targetPoint (or first target).
 registerEffect("beam", (def, ctx) => {
     const from = resolveLocation(def.from || "caster", ctx);
-    const to = resolveLocation(def.to || "target", ctx);
+    let to;
+    if (def.to === "direction_endpoint" && def.distance_ft != null) {
+        const dirTarget = ctx.targetPoint || ctx.targets[0] || from;
+        const dx = dirTarget.x - from.x;
+        const dy = dirTarget.y - from.y;
+        const len = Math.sqrt(dx * dx + dy * dy);
+        if (len > 0.0001) {
+            const distCells = def.distance_ft / 5;
+            to = { x: from.x + (dx / len) * distCells, y: from.y + (dy / len) * distCells };
+        } else {
+            to = from;
+        }
+    } else {
+        to = resolveLocation(def.to || "target", ctx);
+    }
     const duration = (def.duration || 0.4) * 1000;
     const width = def.width || 3;
     const baseOpacity = def.opacity ?? 1.0;

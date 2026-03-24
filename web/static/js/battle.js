@@ -199,11 +199,25 @@ function drawTargetingLine() {
     const inRange   = dist <= maxRangeCells;
     const lineColor = inRange ? "rgba(255, 220, 80, 0.85)" : "rgba(255, 100, 80, 0.65)";
 
+    // For directed self-origin shapes (cone, line) the visual starts from the
+    // caster's token edge rather than its centre.
+    const aoeShape = (targetingAction.aoe?.shape ?? "").toLowerCase();
+    const isDirected = targetingAction.targeting_type === "aoe" &&
+        (aoeShape === "cone" || aoeShape === "line");
+
+    let osx = sx, osy = sy;
+    if (isDirected && dist > 0) {
+        const angle = Math.atan2(ey - sy, ex - sx);
+        const tokenRadiusPx = actionToken.radius * CELL_PX * camera.zoom;
+        osx = sx + Math.cos(angle) * tokenRadiusPx;
+        osy = sy + Math.sin(angle) * tokenRadiusPx;
+    }
+
     ctx.strokeStyle = lineColor;
     ctx.lineWidth   = 1.5;
     ctx.setLineDash([6, 4]);
     ctx.beginPath();
-    ctx.moveTo(sx, sy);
+    ctx.moveTo(osx, osy);
     ctx.lineTo(ex, ey);
     ctx.stroke();
     ctx.setLineDash([]);
@@ -219,7 +233,6 @@ function drawTargetingLine() {
         const aoeSizePx = (aoe.size_ft / CELL_FEET) * CELL_PX * camera.zoom;
         const aoeColor  = inRange ? "rgba(255, 100, 30, 0.30)" : "rgba(150, 150, 150, 0.20)";
         const aoeBorder = inRange ? "rgba(255, 160, 60, 0.85)" : "rgba(180, 180, 180, 0.50)";
-        const shape     = (aoe.shape ?? "sphere").toLowerCase();
 
         ctx.save();
         ctx.fillStyle   = aoeColor;
@@ -227,17 +240,17 @@ function drawTargetingLine() {
         ctx.lineWidth   = 1.5;
         ctx.setLineDash([]);
 
-        if (shape === "sphere" || shape === "cylinder") {
+        if (aoeShape === "sphere" || aoeShape === "cylinder") {
             ctx.beginPath();
             ctx.arc(ex, ey, aoeSizePx, 0, Math.PI * 2);
             ctx.fill();
             ctx.stroke();
-        } else if (shape === "cube") {
+        } else if (aoeShape === "cube") {
             ctx.beginPath();
             ctx.rect(ex - aoeSizePx / 2, ey - aoeSizePx / 2, aoeSizePx, aoeSizePx);
             ctx.fill();
             ctx.stroke();
-        } else if (shape === "cone") {
+        } else if (aoeShape === "cone") {
             if (dist > 0) {
                 // Backend ConeVolume: radius at distance d = d * 0.5 (tan_half_angle = 0.5)
                 // → full width at tip = length; draw base at (length forward) ± (length/2 perpendicular)
@@ -247,26 +260,27 @@ function drawTargetingLine() {
                 const perpX = Math.cos(angle + Math.PI / 2) * (aoeSizePx / 2);
                 const perpY = Math.sin(angle + Math.PI / 2) * (aoeSizePx / 2);
                 ctx.beginPath();
-                ctx.moveTo(sx, sy);
-                ctx.lineTo(sx + fwdX + perpX, sy + fwdY + perpY);
-                ctx.lineTo(sx + fwdX - perpX, sy + fwdY - perpY);
+                ctx.moveTo(osx, osy);
+                ctx.lineTo(osx + fwdX + perpX, osy + fwdY + perpY);
+                ctx.lineTo(osx + fwdX - perpX, osy + fwdY - perpY);
                 ctx.closePath();
                 ctx.fill();
                 ctx.stroke();
             }
-        } else if (shape === "line") {
+        } else if (aoeShape === "line") {
             if (dist > 0) {
                 const angle = Math.atan2(ey - sy, ex - sx);
-                const halfW = (5 / CELL_FEET) * CELL_PX * camera.zoom / 2; // 5 ft half-width
+                const lineWidthFt = aoe.width_ft ?? 5;
+                const halfW = (lineWidthFt / CELL_FEET) * CELL_PX * camera.zoom / 2;
                 const perpX = Math.cos(angle + Math.PI / 2) * halfW;
                 const perpY = Math.sin(angle + Math.PI / 2) * halfW;
                 const fwdX  = Math.cos(angle) * aoeSizePx;
                 const fwdY  = Math.sin(angle) * aoeSizePx;
                 ctx.beginPath();
-                ctx.moveTo(sx - perpX, sy - perpY);
-                ctx.lineTo(sx + perpX, sy + perpY);
-                ctx.lineTo(sx + fwdX + perpX, sy + fwdY + perpY);
-                ctx.lineTo(sx + fwdX - perpX, sy + fwdY - perpY);
+                ctx.moveTo(osx - perpX, osy - perpY);
+                ctx.lineTo(osx + perpX, osy + perpY);
+                ctx.lineTo(osx + fwdX + perpX, osy + fwdY + perpY);
+                ctx.lineTo(osx + fwdX - perpX, osy + fwdY - perpY);
                 ctx.closePath();
                 ctx.fill();
                 ctx.stroke();
@@ -1144,7 +1158,7 @@ function renderFloatingLabels() {
 
         const { x: sx, y: sy } = worldToScreen(lbl.wx, lbl.wy - rise);
 
-        const fontSize = Math.round(Math.min(Math.max(11, 13 * camera.zoom), 20));
+        const fontSize = Math.round(Math.min(Math.max(11, 13 * camera.zoom), 20) * (lbl.scale ?? 1.0));
         ctx.font = `bold ${fontSize}px sans-serif`;
 
         const tw = ctx.measureText(lbl.text).width + 14;
@@ -1165,8 +1179,8 @@ function renderFloatingLabels() {
     ctx.restore();
 }
 
-function spawnFloatingLabel(wx, wy, text, hit) {
-    floatingLabels.push({ text, wx, wy, hit, t0: performance.now() });
+function spawnFloatingLabel(wx, wy, text, hit, scale = 1.0) {
+    floatingLabels.push({ text, wx, wy, hit, scale, t0: performance.now() });
     _ensureFloatLoop();
 }
 
@@ -1356,6 +1370,7 @@ async function handleActionResult(msg) {
             .filter(Boolean);
         const context = {
             caster: casterToken ? { x: casterToken.x, y: casterToken.y } : { x: 0, y: 0 },
+            casterRadius: casterToken ? casterToken.radius : 0,
             targets: targetTokens.map(t => ({ x: t.x, y: t.y })),
             targetPoint: msg.target_point || null,
         };
@@ -1368,8 +1383,19 @@ async function handleActionResult(msg) {
         if (!r.roll) continue;
         const target = tokens.find(t => t.id === r.target_id);
         if (!target) continue;
-        const text = `ATK ${r.roll.total} vs ${r.roll.ac} AC`;
-        spawnFloatingLabel(target.x, target.y - target.radius - 0.15, text, r.hit);
+        let text, success;
+        if (r.roll.dc != null) {
+            // Saving throw — green = saved (success for defender), red = failed
+            text = `SAVE ${r.roll.total} vs ${r.roll.dc} DC`;
+            success = r.roll.save_success;
+        } else {
+            // Attack roll — green = hit, red = miss
+            text = `ATK ${r.roll.total} vs ${r.roll.ac} AC`;
+            success = r.hit;
+        }
+        const baseY = target.y - target.radius - 0.15;
+        spawnFloatingLabel(target.x, baseY,        text,                   success);
+        spawnFloatingLabel(target.x, baseY - 0.55, "-" + String(r.damage),  success, 1.45);
     }
 
     for (const line of (msg.log || [])) {

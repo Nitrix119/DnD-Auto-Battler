@@ -277,6 +277,7 @@ class StatBlockLoader:
                 components=components,
                 higher_level_scaling=action_data.get("higher_level_scaling"),
                 can_target_self=action_data.get("can_target_self", False),
+                cannot_cause_self_damage=action_data.get("cannot_cause_self_damage", False),
                 animation=action_data.get("animation", []),
                 spell_effects=action_data.get("effects", []),
                 on_successful_save=action_data.get("on_successful_save", []),
@@ -410,6 +411,9 @@ class StatBlockLoader:
 
             if action.can_target_self:
                 base["can_target_self"] = True
+
+            if action.cannot_cause_self_damage:
+                base["cannot_cause_self_damage"] = True
 
             if action.animation:
                 base["animation"] = action.animation

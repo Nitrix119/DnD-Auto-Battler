@@ -5,6 +5,14 @@ from src.models import AbilityScores, StatBlock, Entity, AttackAction, Damage, D
 from src.combat import CombatSystem, CombatState
 
 
+def _force_turn(combat: CombatSystem, entity: Entity) -> None:
+    """Point the initiative tracker directly at ``entity``'s slot."""
+    for i, entry in enumerate(combat.initiative_tracker.initiative_order):
+        if entry.entity is entity:
+            combat.initiative_tracker.current_turn_index = i
+            return
+
+
 class TestCombatSystem:
     """Test combat system."""
     
@@ -78,9 +86,10 @@ class TestCombatSystem:
         combat.add_combatant(attacker)
         combat.add_combatant(defender)
         combat.start_combat()
-        
+        _force_turn(combat, attacker)
+
         initial_hp = defender.hp
-        hit, damage = combat.resolve_attack(attacker, defender, attack)
+        hit, damage, _ = combat.resolve_attack(attacker, defender, attack)
         
         # Note: hit result depends on random d20 roll
         if hit:
@@ -106,6 +115,7 @@ class TestAttackRange:
         combat.add_combatant(attacker)
         combat.add_combatant(defender)
         combat.start_combat()
+        _force_turn(combat, attacker)
         return combat
 
     def _melee(self, range_ft=5.0):

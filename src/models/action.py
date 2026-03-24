@@ -117,6 +117,7 @@ class SpellAction(Action):
     components: SpellComponents = field(default_factory=lambda: SpellComponents(verbal=True, somatic=True))
     higher_level_scaling: Optional[str] = None  # TODO: structured scaling rules
     can_target_self: bool = False
+    cannot_cause_self_damage: bool = False
     animation: List[Any] = field(default_factory=list)
     spell_effects: List[Dict[str, Any]] = field(default_factory=list)
     on_successful_save: List[Dict[str, Any]] = field(default_factory=list)

@@ -352,6 +352,10 @@ class TestDamageIncoming:
         combat.add_combatant(attacker)
         combat.add_combatant(defender)
         combat.start_combat()
+        for i, entry in enumerate(combat.initiative_tracker.initiative_order):
+            if entry.entity is attacker:
+                combat.initiative_tracker.current_turn_index = i
+                break
 
         engine = RuleEngine(combat.event_bus)
         # Register a global resistance rule: halve all incoming damage
@@ -368,7 +372,7 @@ class TestDamageIncoming:
         )
 
         with patch("src.combat.combat_system.roll_d20", return_value=20):
-            hit, total = combat.resolve_attack(attacker, defender, attack)
+            hit, total, _ = combat.resolve_attack(attacker, defender, attack)
 
         assert hit is True
         assert total == 10  # 20 halved to 10
@@ -385,6 +389,10 @@ class TestDamageIncoming:
         combat.add_combatant(attacker)
         combat.add_combatant(defender)
         combat.start_combat()
+        for i, entry in enumerate(combat.initiative_tracker.initiative_order):
+            if entry.entity is attacker:
+                combat.initiative_tracker.current_turn_index = i
+                break
 
         engine = RuleEngine(combat.event_bus)
         engine.load_rule(Rule(
@@ -400,7 +408,7 @@ class TestDamageIncoming:
         )
 
         with patch("src.combat.combat_system.roll_d20", return_value=20):
-            hit, total = combat.resolve_attack(attacker, defender, attack)
+            hit, total, _ = combat.resolve_attack(attacker, defender, attack)
 
         assert hit is True
         assert total == 0
