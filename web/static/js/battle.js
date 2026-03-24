@@ -1000,11 +1000,111 @@ btnAddToken.addEventListener("click", () => {
     draw();
 });
 
+// Turn order bar
+const turnOrderTrack = document.getElementById("turn-order-track");
+
 // End Turn button
 const btnEndTurn = document.getElementById("btn-end-turn");
 btnEndTurn.addEventListener("click", () => {
-    wsSend({ type: "end_turn", seq: nextSeq() });
+    wsSend({ type: "end_turn", seq: nextSeq(), entity_id: currentEntityId });
 });
+
+// ── Turn order bar ────────────────────────────────────────────────────────────
+
+const TOKEN_SIZE = 48;
+const TOKEN_GAP  = 8;
+const TOKEN_STEP = TOKEN_SIZE + TOKEN_GAP;   // pixels per slot
+
+let turnOrderIds       = [];   // entity_ids in current display order (active first)
+let turnOrderEntityMap = {};   // entity_id -> { name, team, alive }
+let turnOrderAnimating = false;
+
+function _turnTokenColor(team) {
+    if (team === "enemy")  return "rgba(180, 60, 60, 0.90)";
+    if (team === "ally")   return "rgba(80, 140, 255, 0.90)";
+    return "rgba(110, 110, 110, 0.90)";
+}
+
+function _turnTokenLabel(name) {
+    return name.slice(0, 3).toUpperCase();
+}
+
+function renderTurnOrderBar() {
+    turnOrderTrack.innerHTML = "";
+    for (let i = 0; i < turnOrderIds.length; i++) {
+        const id   = turnOrderIds[i];
+        const data = turnOrderEntityMap[id];
+        if (!data) continue;
+        const el = document.createElement("div");
+        const classes = ["turn-token"];
+        if (i === 0)       classes.push("active");
+        if (!data.alive)   classes.push("dead");
+        el.className        = classes.join(" ");
+        el.dataset.entityId = id;
+        el.style.background = _turnTokenColor(data.team);
+        el.textContent      = _turnTokenLabel(data.name);
+        el.title            = data.name;
+        turnOrderTrack.appendChild(el);
+    }
+}
+
+async function updateTurnOrderBar(newIds, entities) {
+    // Refresh entity map from latest state
+    for (const e of entities) {
+        turnOrderEntityMap[e.entity_id] = { name: e.name, team: e.team, alive: e.alive };
+    }
+
+    const oldFirst = turnOrderIds[0];
+    const newFirst = newIds[0];
+    const orderChanged = oldFirst !== undefined && oldFirst !== newFirst;
+
+    if (!orderChanged || turnOrderAnimating) {
+        turnOrderIds = newIds;
+        renderTurnOrderBar();
+        return;
+    }
+
+    // ── FLIP animation ───────────────────────────────────────────────────────
+    // Record where each entity currently sits (by index → pixel offset)
+    const oldIndexMap = {};
+    for (let i = 0; i < turnOrderIds.length; i++) {
+        oldIndexMap[turnOrderIds[i]] = i;
+    }
+
+    // Commit new order to DOM
+    turnOrderIds = newIds;
+    renderTurnOrderBar();
+    const newEls = Array.from(turnOrderTrack.querySelectorAll(".turn-token"));
+
+    // Invert: apply transforms so every element visually appears in its old slot
+    for (let j = 0; j < newEls.length; j++) {
+        const el  = newEls[j];
+        const eid = el.dataset.entityId;
+        const oldIdx = oldIndexMap[eid];
+        el.style.transition = "none";
+        if (oldIdx === undefined) {
+            // Brand-new entity — slide in from one slot to the right
+            el.style.transform = `translateX(${TOKEN_STEP}px)`;
+            el.style.opacity   = "0";
+        } else {
+            el.style.transform = `translateX(${(oldIdx - j) * TOKEN_STEP}px)`;
+        }
+    }
+
+    // Let the browser commit the no-transition state before we start animating
+    turnOrderAnimating = true;
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+
+    // Play: remove inverse transforms — elements slide to their real positions
+    for (const el of newEls) {
+        el.style.transition = "transform 0.35s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.30s ease";
+        el.style.transform  = "";
+        el.style.opacity    = "";
+    }
+
+    await new Promise(resolve => setTimeout(resolve, 380));
+    turnOrderAnimating = false;
+}
 
 // ── WebSocket — combat session ─────────────────────────────────────────────
 
@@ -1070,6 +1170,8 @@ function updateFromCombatState(state) {
     if (targetHovered)    updateTargetPanel(targetHovered);
     draw();
     refreshMoveReadout();
+    // Update initiative / turn order bar (async — runs independently)
+    if (state.turn_order) updateTurnOrderBar(state.turn_order, state.entities);
 }
 
 function handleCombatStarted(msg) {

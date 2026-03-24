@@ -168,9 +168,11 @@ class CombatSystem:
             Tuple of (hit, total_damage)
 
         Raises:
+            ValueError: If it is not the attacker's turn.
             ValueError: If the attacker cannot afford the action's cost.
             ValueError: If the defender is out of the attack's range.
         """
+        self._assert_active(attacker)
         self._check_attack_range(attacker, defender, action)
 
         if not attacker.can_afford(action.cost):
@@ -218,10 +220,12 @@ class CombatSystem:
             List of (hit, damage_dealt) per defender.
 
         Raises:
+            ValueError: If it is not the caster's turn.
             ValueError: If the caster cannot afford the spell's cost.
             ValueError: If an AOE spell is cast without a *target*.
             ValueError: If a single-target defender is out of range.
         """
+        self._assert_active(caster)
         if not caster.can_afford(action.cost):
             raise ValueError(
                 f"{caster.name} cannot afford {action.name}: "
@@ -269,8 +273,26 @@ class CombatSystem:
         success = total >= dc
         return total, success
 
-    def end_turn(self) -> None:
-        """End the current entity's turn and advance to the next."""
+    def end_turn(self, entity_id: Optional[str] = None) -> None:
+        """End the current entity's turn and advance to the next.
+
+        Args:
+            entity_id: When provided, the entity requesting the end of
+                turn is validated against the active set.  Pass ``None``
+                (default) to skip the check — preserves backward
+                compatibility with tests and the AI loop.
+
+        Raises:
+            ValueError: If *entity_id* is provided but not active.
+        """
+        if entity_id is not None:
+            entity = next(
+                (e for e in self.combatants if e.entity_id == entity_id),
+                None,
+            )
+            if entity is None:
+                raise ValueError(f"Unknown entity_id: {entity_id!r}")
+            self._assert_active(entity)
         should_continue = self._turn_manager.end_turn()
         if not should_continue:
             self.end_combat()
@@ -292,6 +314,39 @@ class CombatSystem:
     def get_current_entity(self) -> Optional[Entity]:
         """Get the entity whose turn it is."""
         return self.initiative_tracker.get_current_entity()
+
+    @property
+    def active_entity_ids(self) -> frozenset:
+        """IDs of entities that may act this turn.
+
+        Phase 1: always a singleton containing the entity at
+        ``current_turn_index``.
+
+        Phase 2 (future — simultaneous allied turns): replace this body
+        with logic that collects all consecutive same-team entities from
+        ``current_turn_index`` forward.  Every enforcement call site
+        (``_assert_active``) is unchanged; only this property changes.
+        """
+        current = self.initiative_tracker.get_current_entity()
+        if current is None:
+            return frozenset()
+        return frozenset({current.entity_id})
+
+    def _assert_active(self, entity: Entity) -> None:
+        """Raise ValueError if *entity* is not in the active turn group.
+
+        Args:
+            entity: The entity attempting to act.
+
+        Raises:
+            ValueError: When it is not *entity*'s turn.
+        """
+        if entity.entity_id not in self.active_entity_ids:
+            current = self.initiative_tracker.get_current_entity()
+            whose = current.name if current else "nobody"
+            raise ValueError(
+                f"It is not {entity.name}'s turn (active: {whose})"
+            )
 
     def get_alive_entities(self) -> List[Entity]:
         """Get all entities still in the fight."""
@@ -485,9 +540,11 @@ class CombatSystem:
             new_z: Destination z coordinate (default 0.0).
 
         Raises:
+            ValueError: If it is not the entity's turn.
             ValueError: If the entity lacks sufficient movement resources.
             ValueError: If the destination overlaps an alive entity.
         """
+        self._assert_active(entity)
         distance = math.sqrt(
             (new_x - entity.x) ** 2
             + (new_y - entity.y) ** 2

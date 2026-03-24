@@ -47,11 +47,26 @@ def backend_to_frontend(entity: Entity) -> dict[str, float]:
 def serialize_combat_state(combat: CombatSystem) -> dict[str, Any]:
     """Build a full combat state snapshot for the frontend."""
     current = combat.get_current_entity()
+
+    # Turn order: entity IDs rotated so the current entity is first
+    tracker = combat.initiative_tracker
+    if tracker.initiative_order:
+        n = len(tracker.initiative_order)
+        idx = tracker.current_turn_index
+        turn_order = [
+            tracker.initiative_order[(idx + i) % n].entity.entity_id
+            for i in range(n)
+        ]
+    else:
+        turn_order = []
+
     return {
         "state": combat.state.name,
         "round": combat.round,
         "turn": combat.turn,
         "current_entity_id": current.entity_id if current else None,
+        "turn_order": turn_order,
+        "active_entity_ids": list(combat.active_entity_ids),
         "entities": [
             {
                 "entity_id": e.entity_id,
@@ -343,12 +358,13 @@ async def handle_move(
 async def handle_end_turn(
     ws: WebSocket,
     combat: CombatSystem,
-    msg: dict,  # noqa: ARG001 — unused; kept for uniform handler signature
+    msg: dict,
     seq: int | None,
     entity_lookup: dict[str, Entity],  # noqa: ARG001
 ) -> None:
+    entity_id: str | None = msg.get("entity_id")
     log_before = len(combat.log)
-    combat.end_turn()
+    combat.end_turn(entity_id=entity_id)
     new_logs = combat.get_combat_log()[log_before:]
 
     if combat.state.name == "ENDED":
