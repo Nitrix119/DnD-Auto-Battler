@@ -8,6 +8,7 @@ the :class:`~src.models.entity.Entity` wrapper instead.
 from dataclasses import dataclass, field
 from typing import Dict, List
 
+from typing import Optional
 from .ability import AbilityScores
 from .skill import Skill, STANDARD_SKILLS
 from .action import Action
@@ -49,6 +50,8 @@ class StatBlock:
     size: CreatureSize = field(default=CreatureSize.MEDIUM)
     known_spells: List[str] = field(default_factory=list)
     spellcasting_ability: str = ""  # e.g. "intelligence", "wisdom", "charisma"; "" = non-caster
+    spell_slot_defaults: Dict[str, int] = field(default_factory=dict)  # {level_str: max_count}; empty = no slots
+    legendary_action_count: int = 0  # 0 = not a legendary creature
 
     def __post_init__(self) -> None:
         """Initialize default skills and validate stats."""

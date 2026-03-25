@@ -116,13 +116,16 @@ def apply_condition(effect: dict, ctx: dict, event: CombatEvent, event_bus: Even
     """Add a condition to a target entity.
 
     Required keys:  target (expr), condition_type (str)
-    Optional keys:  duration (int or expr, default None), source (str, default "")
+    Optional keys:  duration (int or expr, default None), source (str, default ""),
+                    effect_name (str, default derived from ``_effect_name`` in ctx)
     """
     target = _resolve(effect["target"], ctx)
     ctype = ConditionType[effect["condition_type"].upper()]
     duration = _resolve(effect.get("duration"), ctx) if "duration" in effect else None
     source = effect.get("source", "")
-    condition = Condition(condition_type=ctype, duration_rounds=duration, source=source)
+    effect_name = effect.get("effect_name", ctx.get("_effect_name", ""))
+    condition = Condition(condition_type=ctype, duration_rounds=duration, source=source,
+                          effect_name=effect_name)
     target.add_condition(condition)
     event_bus.emit(EventType.CONDITION_ADDED, ConditionAddedData(entity=target, condition=condition))
 

@@ -14,6 +14,7 @@
   "armor_class": 15,
   "proficiency_bonus": 2,
   "spellcasting_ability": "wisdom",
+  "spell_slots": { "1": 3 },
   "saving_throws": ["strength", "dexterity"],
   "actions": [
     {

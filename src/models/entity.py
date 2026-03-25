@@ -10,6 +10,8 @@ from .stat_block import StatBlock
 from .condition import Condition, ConditionType
 from .damage import Damage
 from .stat_modifier import StatModifier
+from .spell_slots import SpellSlots
+from .legendary_actions import LegendaryActions
 
 
 @dataclass
@@ -35,6 +37,8 @@ class Entity:
     stat_modifiers: List[StatModifier] = field(default_factory=list)
     granted_actions: List[Action] = field(default_factory=list)  # Temporary actions from effects
     resources: Optional[ActionResources] = None
+    spell_slots: Optional[SpellSlots] = None
+    legendary_actions: Optional[LegendaryActions] = None
     x: float = 0.0
     y: float = 0.0
     z: float = 0.0
@@ -52,6 +56,12 @@ class Entity:
                 bonus_actions=defaults.get("bonus_actions", 1),
                 reactions=defaults.get("reactions", 1),
                 movement=defaults.get("speed", 30),
+            )
+        if self.spell_slots is None and self.stat_block.spell_slot_defaults:
+            self.spell_slots = SpellSlots.from_dict(self.stat_block.spell_slot_defaults)
+        if self.legendary_actions is None and self.stat_block.legendary_action_count > 0:
+            self.legendary_actions = LegendaryActions(
+                count_per_round=self.stat_block.legendary_action_count
             )
 
     def __hash__(self) -> int:
@@ -122,6 +132,10 @@ class Entity:
         """Get all non-expired conditions."""
         return self.conditions.copy()
 
+    def remove_condition_by_type(self, condition_type: ConditionType) -> None:
+        """Remove all conditions of the given type."""
+        self.conditions = [c for c in self.conditions if c.condition_type != condition_type]
+
     # ------------------------------------------------------------------
     # Effect management (for rule engine)
     # ------------------------------------------------------------------
@@ -133,13 +147,15 @@ class Entity:
     def remove_effect(self, name: str) -> None:
         """Remove all effects matching this name across all trigger buckets.
 
-        Also removes any :class:`StatModifier` entries and granted actions
-        tagged with this effect name so that all bonuses are cleaned up automatically.
+        Also removes any :class:`StatModifier` entries, granted actions, and
+        :class:`Condition` objects tagged with this effect name so that all
+        bonuses and status effects are cleaned up automatically.
         """
         for bucket in self.active_effects.values():
             bucket[:] = [e for e in bucket if e.name != name]
         self.stat_modifiers = [m for m in self.stat_modifiers if m.effect_name != name]
         self.granted_actions = [a for a in self.granted_actions if a.source_effect != name]
+        self.conditions = [c for c in self.conditions if c.effect_name != name]
 
     def grant_action(self, action: Action) -> None:
         """Attach a temporary action granted by an entity effect."""

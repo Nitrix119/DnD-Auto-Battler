@@ -6,6 +6,7 @@ handlers import from here.
 """
 
 import ast
+import types
 from types import SimpleNamespace
 from typing import Any, Dict, Set
 
@@ -31,6 +32,7 @@ ALLOWED_NODES: frozenset = frozenset({
 })
 
 _validated_cache: Set[str] = set()
+_compiled_cache: Dict[str, types.CodeType] = {}
 
 
 def _validate_ast(expr: str) -> None:
@@ -110,9 +112,16 @@ def evaluate(expr: Any, ctx: dict) -> Any:
     Accepts either a string (validated via AST whitelist before eval) or a
     pre-compiled code object (e.g. from Rule._compiled_condition, which was
     validated as a string at Rule creation time in __post_init__).
+
+    String expressions are compiled once and cached as bytecode so that
+    repeated evaluations of the same expression (very common inside combat
+    loops) skip repeated parsing and AST validation.
     """
     if isinstance(expr, str):
-        _validate_ast(expr)
+        if expr not in _compiled_cache:
+            _validate_ast(expr)  # security boundary: validated once at first use
+            _compiled_cache[expr] = compile(expr, "<rule-expr>", "eval")
+        expr = _compiled_cache[expr]
     return eval(expr, {"__builtins__": {}}, ctx)
 
 

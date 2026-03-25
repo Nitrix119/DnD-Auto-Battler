@@ -371,7 +371,7 @@ class TestDamageIncoming:
             damage=[Damage(DamageType.SLASHING, 20)],
         )
 
-        with patch("src.combat.combat_system.roll_d20", return_value=20):
+        with patch("src.combat.attack_resolver.roll_d20", return_value=20):
             hit, total, _ = combat.resolve_attack(attacker, defender, attack)
 
         assert hit is True
@@ -407,7 +407,7 @@ class TestDamageIncoming:
             damage=[Damage(DamageType.SLASHING, 20)],
         )
 
-        with patch("src.combat.combat_system.roll_d20", return_value=20):
+        with patch("src.combat.attack_resolver.roll_d20", return_value=20):
             hit, total, _ = combat.resolve_attack(attacker, defender, attack)
 
         assert hit is True

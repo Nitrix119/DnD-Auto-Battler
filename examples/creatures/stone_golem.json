@@ -14,6 +14,9 @@
   "armor_class": 17,
   "proficiency_bonus": 5,
   "saving_throws": [],
+  "legendary_actions": {
+    "count_per_round": 3
+  },
   "actions": [
     {
       "name": "Slam",
@@ -27,6 +30,36 @@
           "type": "BLUDGEONING",
           "amount": 19,
           "formula": "3d8+6"
+        }
+      ]
+    },
+    {
+      "name": "Legendary Slam",
+      "description": "Melee weapon attack (legendary action)",
+      "type": "attack",
+      "legendary_action_cost": 1,
+      "range_ft": 5,
+      "bonus_to_hit": 10,
+      "damage": [
+        {
+          "type": "BLUDGEONING",
+          "amount": 13,
+          "formula": "2d6+6"
+        }
+      ]
+    },
+    {
+      "name": "Rock Hurl",
+      "description": "Ranged weapon attack (legendary action, costs 2)",
+      "type": "attack",
+      "legendary_action_cost": 2,
+      "range_ft": 60,
+      "bonus_to_hit": 10,
+      "damage": [
+        {
+          "type": "BLUDGEONING",
+          "amount": 22,
+          "formula": "4d6+8"
         }
       ]
     }

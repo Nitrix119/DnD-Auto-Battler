@@ -1,8 +1,17 @@
 """Stat block loading from JSON and YAML."""
 
 import json
+import re
 from pathlib import Path
 from typing import Dict, Any, Optional
+
+_FORMULA_RE = re.compile(r"^\d+d\d+([+\-]\d+)?$")
+
+
+def _validate_formula(formula: str) -> str:
+    if not _FORMULA_RE.match(formula):
+        raise ValueError(f"Invalid damage formula: {formula!r}")
+    return formula
 
 from src.models import (
     AbilityScores, StatBlock, AttackAction, SpellAction, Damage, DamageType,
@@ -15,6 +24,7 @@ from src.models import (
     SpellComponents,
 )
 from src.models.creature_size import CreatureSize
+from src.models.spell_slots import SpellSlots
 from src.models.stat_block import DEFAULT_RESOURCE_DEFAULTS
 
 
@@ -117,6 +127,8 @@ class StatBlockLoader:
             size=creature_size,
             known_spells=list(data.get("known_spells", [])),
             spellcasting_ability=data.get("spellcasting_ability", ""),
+            spell_slot_defaults=dict(data.get("spell_slots", {})),
+            legendary_action_count=data.get("legendary_actions", {}).get("count_per_round", 0),
         )
 
         # Add saving throws if provided
@@ -131,10 +143,12 @@ class StatBlockLoader:
         damage = []
         for dmg_data in action_data.get("damage", []):
             dmg_type = DamageType[dmg_data.get("type", "BLUDGEONING").upper()]
+            raw_formula = dmg_data.get("formula")
+            formula = _validate_formula(raw_formula) if raw_formula is not None else None
             damage.append(Damage(
                 dmg_type,
                 dmg_data.get("amount", 0),
-                formula=dmg_data.get("formula"),
+                formula=formula,
             ))
         return damage
 
@@ -203,6 +217,7 @@ class StatBlockLoader:
         description = action_data.get("description", "")
         recharge = action_data.get("recharge")
         cost = StatBlockLoader._parse_cost(action_data)
+        legendary_action_cost = action_data.get("legendary_action_cost", 0)
 
         damage = StatBlockLoader._parse_damage(action_data)
 
@@ -218,6 +233,7 @@ class StatBlockLoader:
                 damage=damage,
                 recharge=recharge,
                 range_ft=float(action_data.get("range_ft", 5.0)),
+                legendary_action_cost=legendary_action_cost,
                 **cost_kwargs,
             )
 
@@ -282,6 +298,7 @@ class StatBlockLoader:
                 spell_effects=action_data.get("effects", []),
                 on_successful_save=action_data.get("on_successful_save", []),
                 on_failed_save=action_data.get("on_failed_save", []),
+                legendary_action_cost=legendary_action_cost,
                 **cost_kwargs,
             )
 

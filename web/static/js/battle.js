@@ -511,7 +511,7 @@ canvas.addEventListener("mousedown", (e) => {
                     wsSend({
                         type: "cast_spell",
                         seq: nextSeq(),
-                        caster_id: actionToken.id,
+                        caster_id: actionToken.backendId ?? actionToken.id,
                         spell_name: action.name,
                         target_point: { x: cursorWorld.x, y: cursorWorld.y },
                     });
@@ -534,16 +534,16 @@ canvas.addEventListener("mousedown", (e) => {
                     wsSend({
                         type: "cast_spell",
                         seq: nextSeq(),
-                        caster_id: actionToken.id,
+                        caster_id: actionToken.backendId ?? actionToken.id,
                         spell_name: action.name,
-                        target_ids: [target.id],
+                        target_ids: [target.backendId ?? target.id],
                     });
                 } else {
                     wsSend({
                         type: "attack",
                         seq: nextSeq(),
-                        attacker_id: actionToken.id,
-                        defender_id: target.id,
+                        attacker_id: actionToken.backendId ?? actionToken.id,
+                        defender_id: target.backendId ?? target.id,
                         action_name: action.name,
                     });
                 }
@@ -656,7 +656,7 @@ window.addEventListener("mouseup", (e) => {
                 wsSend({
                     type: "move",
                     seq: nextSeq(),
-                    entity_id: draggingToken.id,
+                    entity_id: draggingToken.backendId ?? draggingToken.id,
                     position: { x: draggingToken.x, y: draggingToken.y },
                 });
             }
@@ -743,18 +743,38 @@ function showBreakdownTooltip(entries, label, anchorEl) {
         return;
     }
     const total = entries.reduce((s, e) => s + e.value, 0);
-    let html = `<div class="breakdown-header">${label}  ${total}</div>`;
-    html += '<div class="breakdown-sep"></div>';
+    const nodes = [];
+
+    const header = document.createElement("div");
+    header.className = "breakdown-header";
+    header.textContent = `${label}  ${total}`;
+    nodes.push(header);
+
+    const sep = document.createElement("div");
+    sep.className = "breakdown-sep";
+    nodes.push(sep);
+
     for (const entry of entries) {
         const sign = entry.value >= 0 ? "+" : "";
-        // First entry (Base) shown without a sign prefix
-        const prefix = entry === entries[0] ? "" : `${sign}`;
-        html += `<div class="breakdown-row">`
-              + `<span class="breakdown-val">${prefix}${entry.value}</span>`
-              + `<span class="breakdown-src">${entry.source}</span>`
-              + `</div>`;
+        const prefix = entry === entries[0] ? "" : sign;
+
+        const row = document.createElement("div");
+        row.className = "breakdown-row";
+
+        const valSpan = document.createElement("span");
+        valSpan.className = "breakdown-val";
+        valSpan.textContent = `${prefix}${entry.value}`;
+
+        const srcSpan = document.createElement("span");
+        srcSpan.className = "breakdown-src";
+        srcSpan.textContent = entry.source;
+
+        row.appendChild(valSpan);
+        row.appendChild(srcSpan);
+        nodes.push(row);
     }
-    breakdownTooltip.innerHTML = html;
+
+    breakdownTooltip.replaceChildren(...nodes);
     breakdownTooltip.classList.add("visible");
 
     const rect = anchorEl.getBoundingClientRect();
@@ -900,9 +920,9 @@ function openActionPanel(token) {
                         wsSend({
                             type: "cast_spell",
                             seq: nextSeq(),
-                            caster_id: token.id,
+                            caster_id: token.backendId ?? token.id,
                             spell_name: spell.name,
-                            target_ids: [token.id],
+                            target_ids: [token.backendId ?? token.id],
                         });
                     });
                 } else {
@@ -982,7 +1002,7 @@ function updateInfoPanel(token) {
 // Called whenever resources update or the move tool activates/deactivates.
 function refreshMoveReadout() {
     if (activeTool !== "move" || draggingToken) return;
-    const token  = moveHoveredToken ?? tokens.find(t => t.id === currentEntityId);
+    const token  = moveHoveredToken ?? tokens.find(t => (t.backendId ?? t.id) === currentEntityId);
     const moveFt = token?.resources?.movement ?? 0;
     moveReadout.textContent = `${(+moveFt).toFixed(1)} ft`;
     moveReadout.classList.remove("over-limit");
@@ -1290,7 +1310,7 @@ function updateResourcePanel() {
     const ordered = turnOrderIds.filter(id => activeEntityIds.has(id));
     let html = "";
     for (const id of ordered) {
-        const token = tokens.find(t => t.id === id);
+        const token = tokens.find(t => (t.backendId ?? t.id) === id);
         if (token) html += _buildResCard(token);
     }
     resourcePanel.innerHTML = html;
@@ -1300,45 +1320,77 @@ function updateResourcePanel() {
 // ── WebSocket — combat session ─────────────────────────────────────────────
 
 const wsStatusEl = document.getElementById("ws-status");
-const ws = new WebSocket(`ws://${location.host}/ws/combat`);
+
+let ws = null;
+let _wsBackoffMs = 250;
+let _wsReconnectTimer = null;
 
 let seqCounter = 0;
 function nextSeq() { return ++seqCounter; }
 function wsSend(obj) {
-    if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj));
+    if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj));
 }
 
-ws.onopen = () => {
-    wsStatusEl.className = "ws-connected";
-    wsStatusEl.title = "Connected";
-};
-
-ws.onmessage = (e) => {
-    const msg = JSON.parse(e.data);
-    console.log("[combat ws]", msg);
-
-    switch (msg.type) {
-        case "connected":       break;  // already handled by onopen
-        case "combat_started":  handleCombatStarted(msg); break;
-        case "action_result":   handleActionResult(msg);  break;
-        case "move_result":     handleMoveResult(msg);    break;
-        case "turn_changed":    handleTurnChanged(msg);   break;
-        case "combat_ended":    handleCombatEnded(msg);   break;
-        case "error":           handleWsError(msg);       break;
-        default:
-            console.warn("[combat ws] unknown message type:", msg.type);
+function connectWS() {
+    if (_wsReconnectTimer !== null) {
+        clearTimeout(_wsReconnectTimer);
+        _wsReconnectTimer = null;
     }
-};
 
-ws.onclose = () => {
-    wsStatusEl.className = "ws-disconnected";
-    wsStatusEl.title = "Disconnected";
-};
+    ws = new WebSocket(`ws://${location.host}/ws/combat`);
 
-ws.onerror = () => {
-    wsStatusEl.className = "ws-disconnected";
-    wsStatusEl.title = "Connection error";
-};
+    ws.onopen = () => {
+        wsStatusEl.className = "ws-connected";
+        wsStatusEl.title = "Connected";
+        _wsBackoffMs = 250;  // reset backoff on successful connection
+
+        const sessionToken = sessionStorage.getItem("session_token");
+        if (sessionToken) {
+            wsSend({ type: "rejoin_combat", seq: nextSeq(), session_token: sessionToken });
+        }
+    };
+
+    ws.onmessage = (e) => {
+        const msg = JSON.parse(e.data);
+        console.log("[combat ws]", msg);
+
+        switch (msg.type) {
+            case "connected":          break;  // already handled by onopen
+            case "combat_started":     handleCombatStarted(msg);    break;
+            case "rejoin_combat_ok":   handleRejoinCombatOk(msg);   break;
+            case "action_result":      handleActionResult(msg);     break;
+            case "move_result":        handleMoveResult(msg);       break;
+            case "turn_changed":       handleTurnChanged(msg);      break;
+            case "combat_ended":       handleCombatEnded(msg);      break;
+            case "error":              handleWsError(msg);          break;
+            default:
+                console.warn("[combat ws] unknown message type:", msg.type);
+        }
+    };
+
+    ws.onclose = () => {
+        wsStatusEl.className = "ws-disconnected";
+        wsStatusEl.title = `Disconnected — reconnecting in ${_wsBackoffMs}ms…`;
+        _scheduleReconnect();
+    };
+
+    ws.onerror = () => {
+        wsStatusEl.className = "ws-disconnected";
+        wsStatusEl.title = "Connection error";
+        // onclose will fire after onerror, so reconnect is handled there
+    };
+}
+
+function _scheduleReconnect() {
+    if (_wsReconnectTimer !== null) return;
+    _wsReconnectTimer = setTimeout(() => {
+        _wsReconnectTimer = null;
+        connectWS();
+    }, _wsBackoffMs);
+    _wsBackoffMs = Math.min(_wsBackoffMs * 2, 30_000);  // double, cap at 30s
+}
+
+connectWS();
 
 // ── WS message handlers ──────────────────────────────────────────────────────
 
@@ -1346,7 +1398,7 @@ function updateFromCombatState(state) {
     currentEntityId = state.current_entity_id;
     activeEntityIds = new Set(state.active_entity_ids ?? (currentEntityId ? [currentEntityId] : []));
     for (const es of state.entities) {
-        const token = tokens.find(t => t.id === es.entity_id);
+        const token = tokens.find(t => (t.backendId ?? t.id) === es.entity_id);
         if (!token) continue;
         token.hp             = es.hp;
         token.maxHp          = es.max_hp;
@@ -1369,23 +1421,41 @@ function updateFromCombatState(state) {
 }
 
 function handleCombatStarted(msg) {
-    // Remap frontend token IDs → backend entity IDs
+    // Persist session token for reconnection
+    if (msg.session_token) {
+        sessionStorage.setItem("session_token", msg.session_token);
+    }
+    // Map frontend token IDs → backend entity IDs without overwriting token.id,
+    // so the original frontend ID is preserved for reconnect purposes.
     const idMap = msg.id_map;
     for (const token of tokens) {
         if (idMap[token.id]) {
-            token.id = idMap[token.id];
+            token.backendId = idMap[token.id];
         }
     }
     updateFromCombatState(msg.combat_state);
     console.log("[combat] started — initiative:", msg.initiative_order);
 }
 
+function handleRejoinCombatOk(msg) {
+    // Re-apply the id_map on reconnect (backendId may have been lost if page reloaded,
+    // but tokens persist in this session so just refresh state).
+    const idMap = msg.id_map ?? {};
+    for (const token of tokens) {
+        if (idMap[token.id]) {
+            token.backendId = idMap[token.id];
+        }
+    }
+    updateFromCombatState(msg.combat_state);
+    console.log("[combat] rejoined session — initiative:", msg.initiative_order);
+}
+
 async function handleActionResult(msg) {
     // Play spell animation before applying state (so pre-damage positions are used)
     if (msg.action_type === "spell" && msg.animation && msg.animation.length > 0) {
-        const casterToken = tokens.find(t => t.id === msg.attacker_id);
+        const casterToken = tokens.find(t => (t.backendId ?? t.id) === msg.attacker_id);
         const targetTokens = msg.results
-            .map(r => tokens.find(t => t.id === r.target_id))
+            .map(r => tokens.find(t => (t.backendId ?? t.id) === r.target_id))
             .filter(Boolean);
         const context = {
             caster: casterToken ? { x: casterToken.x, y: casterToken.y } : { x: 0, y: 0 },
@@ -1399,7 +1469,7 @@ async function handleActionResult(msg) {
     updateFromCombatState(msg.combat_state);
 
     for (const r of (msg.results ?? [])) {
-        const target = tokens.find(t => t.id === r.target_id);
+        const target = tokens.find(t => (t.backendId ?? t.id) === r.target_id);
         if (!target) continue;
         const baseY = target.y - target.radius - 0.15;
 
@@ -1421,7 +1491,7 @@ async function handleActionResult(msg) {
         if (r.healing > 0) {
             // Healing may go to target (e.g. Cure Wounds) or caster (e.g. Vampiric Touch).
             // Use healed_id if provided, otherwise fall back to target.
-            const healedToken = tokens.find(t => t.id === (r.healed_id ?? r.target_id));
+            const healedToken = tokens.find(t => (t.backendId ?? t.id) === (r.healed_id ?? r.target_id));
             if (healedToken) {
                 const healY = healedToken.y - healedToken.radius - 0.15;
                 spawnFloatingLabel(healedToken.x, healY, "+" + String(r.healing), true, 1.45);

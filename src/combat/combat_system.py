@@ -10,10 +10,16 @@ from src.models.action import Action, AttackAction, SpellAction
 from .spell_registry import SpellRegistry
 from src.models.action_resources import ActionCost
 from src.models.spell_properties import AOEProperties, AOEShape, RangeType, TargetingType
-from src.utils.dice import roll_d20
+from src.utils.saving_throw import roll_saving_throw
 from src.spatial.geometry import BoundingBox, Point3D, Vector3D
 from src.spatial.aoe import (
     AOEVolume, SphereVolume, CylinderVolume, ConeVolume, CubeVolume, LineVolume,
+)
+from src.spatial.range_check import (
+    check_attack_range,
+    check_single_target_range,
+    derive_aoe_origin,
+    effective_range_ft,
 )
 from .enums import CombatState
 from .event_bus import EventBus
@@ -22,6 +28,7 @@ from .damage_processor import DamageProcessor
 from .attack_resolver import AttackResolver
 from .spell_resolver import SpellResolver
 from .turn_manager import TurnManager
+
 
 
 @dataclass
@@ -151,6 +158,15 @@ class CombatSystem:
         self._turn_manager = TurnManager(
             self.event_bus, self.initiative_tracker, self.combatants,
         )
+        # Refill legendary actions for a creature at the start of its own turn.
+        from .events import EventType as _ET
+        from .event_data import TurnEventData as _TED
+        def _on_turn_start(event) -> None:
+            entity = event.data.entity if hasattr(event.data, "entity") else event.data.get("entity")
+            if entity is not None and entity.legendary_actions is not None:
+                entity.legendary_actions.refill()
+        self.event_bus.subscribe(_ET.TURN_START, _on_turn_start)
+
         self._log_action(self.initiative_tracker.get_current_entity(),
                         "Combat started!")
         self._turn_manager.start()
@@ -173,7 +189,7 @@ class CombatSystem:
             ValueError: If the defender is out of the attack's range.
         """
         self._assert_active(attacker)
-        self._check_attack_range(attacker, defender, action)
+        check_attack_range(attacker, defender, action)
 
         if not attacker.can_afford(action.cost):
             raise ValueError(
@@ -231,8 +247,16 @@ class CombatSystem:
                 f"{caster.name} cannot afford {action.name}: "
                 f"have {caster.resources}, need {action.cost}"
             )
-        caster.spend_resources(action.cost)
+        # Validate spell slots before targeting so an out-of-range error cannot
+        # mask a "no slots remaining" condition, and vice versa.
+        if action.spell_level and action.spell_level > 0 and caster.spell_slots is not None:
+            if not caster.spell_slots.can_afford(action.spell_level):
+                raise ValueError(
+                    f"{caster.name} has no level-{action.spell_level} spell slots remaining"
+                )
 
+        # Validate targeting and range BEFORE spending resources so that an
+        # out-of-range or missing-target error does not consume the spell slot.
         origin: Optional[Point3D] = None
 
         if action.targeting_type == TargetingType.AOE:
@@ -240,7 +264,7 @@ class CombatSystem:
                 raise ValueError(
                     f"{action.name} is an AOE spell and requires a target point"
                 )
-            origin, direction = self._derive_aoe_origin(caster, action, target)
+            origin, direction = derive_aoe_origin(caster, action, target)
             defenders = self.get_targets_in_aoe(origin, action.aoe, direction)
             if action.cannot_cause_self_damage:
                 defenders = [d for d in defenders if d is not caster]
@@ -248,7 +272,11 @@ class CombatSystem:
             # Single-target (or SPECIAL): range-check each defender if target given
             if target is not None:
                 for defender in defenders:
-                    self._check_single_target_range(caster, defender, action)
+                    check_single_target_range(caster, defender, action)
+
+        caster.spend_resources(action.cost)
+        if action.spell_level and action.spell_level > 0 and caster.spell_slots is not None:
+            caster.spell_slots.spend(action.spell_level)
 
         results = self._spell_resolver.resolve(caster, defenders, action, origin=origin)
         for _, _, log_msg, _, _, _ in results:
@@ -271,12 +299,98 @@ class CombatSystem:
         Returns:
             Tuple of (save_roll_total, success)
         """
-        roll = roll_d20()
-        bonus = defender.stat_block.get_saving_throw_bonus(ability)
-        total = roll + bonus
+        return roll_saving_throw(defender, ability, dc)
 
-        success = total >= dc
-        return total, success
+    def resolve_legendary_action(
+        self,
+        entity: Entity,
+        action: Action,
+        defender: Optional[Entity] = None,
+        defenders: Optional[List[Entity]] = None,
+        target: Optional[Point3D] = None,
+    ):
+        """Use a legendary action outside of the entity's own turn.
+
+        Legendary actions are spent on other entities' turns.  This method
+        bypasses the normal ``_assert_active`` guard and instead validates the
+        entity's legendary action budget.
+
+        Args:
+            entity: The legendary creature using the action.
+            action: The action to use (must have ``legendary_action_cost > 0``).
+            defender: Single target for attack actions.
+            defenders: List of targets for spell actions.
+            target: Point target for AOE spells.
+
+        Returns:
+            For attacks: ``(hit, total_damage, roll_detail)``
+            For spells: list of ``(entity, hit, damage, roll_detail, healing, healed)``
+            For generic actions: ``None``
+
+        Raises:
+            ValueError: If the entity has no legendary actions.
+            ValueError: If the action is not tagged as a legendary action.
+            ValueError: If the entity cannot afford the legendary action cost.
+        """
+        if entity.legendary_actions is None:
+            raise ValueError(f"{entity.name} has no legendary actions")
+        if action.legendary_action_cost <= 0:
+            raise ValueError(f"{action.name} is not a legendary action")
+        if not entity.legendary_actions.can_use(action.legendary_action_cost):
+            raise ValueError(
+                f"{entity.name} has insufficient legendary actions remaining "
+                f"(needs {action.legendary_action_cost}, "
+                f"has {entity.legendary_actions.remaining})"
+            )
+
+        entity.legendary_actions.spend(action.legendary_action_cost)
+
+        if isinstance(action, AttackAction):
+            if defender is None:
+                raise ValueError("Legendary attack action requires a defender")
+            hit, total_damage, log_msg, roll_detail = self._attack_resolver.resolve(
+                entity, defender, action,
+            )
+            if log_msg:
+                self._log_action(entity, log_msg)
+            return hit, total_damage, roll_detail
+
+        if isinstance(action, SpellAction):
+            if defenders is None:
+                defenders = []
+            origin: Optional[Point3D] = None
+            if action.targeting_type == TargetingType.AOE:
+                if target is None:
+                    raise ValueError(
+                        f"{action.name} is an AOE spell and requires a target point"
+                    )
+                origin, direction = derive_aoe_origin(entity, action, target)
+                defenders = self.get_targets_in_aoe(origin, action.aoe, direction)
+                if action.cannot_cause_self_damage:
+                    defenders = [d for d in defenders if d is not entity]
+            elif target is not None:
+                for def_ in defenders:
+                    check_single_target_range(entity, def_, action)
+
+            if action.spell_level and action.spell_level > 0 and entity.spell_slots is not None:
+                if not entity.spell_slots.can_afford(action.spell_level):
+                    raise ValueError(
+                        f"{entity.name} has no level-{action.spell_level} spell slots remaining"
+                    )
+                entity.spell_slots.spend(action.spell_level)
+
+            results = self._spell_resolver.resolve(entity, defenders, action, origin=origin)
+            for _, _, log_msg, _, _, _ in results:
+                if log_msg:
+                    self._log_action(entity, log_msg)
+            return [
+                (defenders[i], hit, damage, roll_detail, healing, healed)
+                for i, (hit, damage, _, roll_detail, healing, healed) in enumerate(results)
+            ]
+
+        # Generic ability action
+        self._log_action(entity, f"uses {action.name}")
+        return None
 
     def end_turn(self, entity_id: Optional[str] = None) -> None:
         """End the current entity's turn and advance to the next.
@@ -382,153 +496,6 @@ class CombatSystem:
             return []
         return [e for e in self.get_alive_entities()
                 if e != entity and e.team == entity.team]
-
-    # ------------------------------------------------------------------
-    # Spell range and AoE helpers
-    # ------------------------------------------------------------------
-
-    @staticmethod
-    def _caster_center(entity: Entity) -> Point3D:
-        """Return the centre of the entity's bounding box."""
-        return entity.bounding_box.center()
-
-    @staticmethod
-    def _effective_range_ft(action: SpellAction) -> Optional[float]:
-        """Return the numeric spell range in feet, or None when unlimited.
-
-        SELF and directed shapes (CONE/LINE) return None so no clamping is
-        applied.  TOUCH uses the standard 5 ft melee reach.
-        """
-        rt = action.spell_range.range_type
-        if rt == RangeType.FEET:
-            return float(action.spell_range.distance_ft)
-        if rt == RangeType.TOUCH:
-            return 5.0
-        return None  # SELF, SIGHT, UNLIMITED, SPECIAL → no clamping
-
-    @staticmethod
-    def _clamp_to_range(
-        caster_center: Point3D,
-        target: Point3D,
-        range_ft: float,
-    ) -> Point3D:
-        """Return *target* clamped so it is at most *range_ft* from *caster_center*.
-
-        If the target is already within range it is returned unchanged.
-        If the target coincides with the caster centre (zero-length vector)
-        the caster centre itself is returned.
-        """
-        dist = caster_center.distance_to(target)
-        if dist <= range_ft:
-            return target
-        if dist == 0.0:
-            return caster_center
-        v = target - caster_center  # Vector3D
-        return caster_center + v.scale(range_ft / dist)
-
-    def _derive_aoe_origin(
-        self,
-        caster: Entity,
-        action: SpellAction,
-        target: Point3D,
-    ) -> Tuple[Point3D, Optional[Vector3D]]:
-        """Derive the AoE volume origin and direction from the target point.
-
-        For CONE and LINE the origin is always the caster's centre; the target
-        merely supplies the direction the volume faces.
-
-        For SPHERE, CYLINDER, and CUBE the target IS the origin (after
-        clamping to range when needed).
-
-        Returns:
-            (origin, direction) — direction is None for SPHERE/CYLINDER since
-            those volumes are symmetric and need no orientation.
-        """
-        caster_center = self._caster_center(caster)
-        shape = action.aoe.shape
-
-        # Compute direction from caster toward target
-        diff = target - caster_center
-        try:
-            direction: Optional[Vector3D] = diff.normalized()
-        except ValueError:
-            # target == caster_center: choose an arbitrary forward direction
-            direction = Vector3D(1.0, 0.0, 0.0)
-
-        # Offset directed shapes to the caster's token edge so the AOE begins
-        # where the caster's reach ends rather than at their centre.
-        half_size = caster.stat_block.size.size_ft / 2.0
-
-        if shape in (AOEShape.CONE, AOEShape.LINE):
-            edge_origin = caster_center + direction.scale(half_size)
-            return edge_origin, direction
-
-        # SPHERE, CYLINDER, CUBE: origin is the (possibly clamped) target.
-        # Range is measured from the caster's edge, so allow half_size extra
-        # from centre when clamping.
-        range_ft = self._effective_range_ft(action)
-        if range_ft is not None:
-            origin = self._clamp_to_range(caster_center, target, range_ft + half_size)
-        else:
-            origin = target
-
-        # SPHERE and CYLINDER are rotationally symmetric — no direction needed
-        if shape in (AOEShape.SPHERE, AOEShape.CYLINDER):
-            return origin, None
-
-        # CUBE needs direction so the face faces toward the caster
-        return origin, direction
-
-    def _check_attack_range(
-        self,
-        attacker: Entity,
-        defender: Entity,
-        action: AttackAction,
-    ) -> None:
-        """Raise ValueError when *defender* is beyond the attack's range.
-
-        Range is measured edge-to-edge between the two bounding boxes, so a
-        creature's own footprint does not eat into its reach.  The gap on each
-        axis is ``max(0, a_min - b_max, b_min - a_max)``; the 3-D distance is
-        the Euclidean length of the per-axis gaps.
-        """
-        a = attacker.bounding_box
-        d = defender.bounding_box
-        gap_x = max(0.0, a.min_corner.x - d.max_corner.x, d.min_corner.x - a.max_corner.x)
-        gap_y = max(0.0, a.min_corner.y - d.max_corner.y, d.min_corner.y - a.max_corner.y)
-        gap_z = max(0.0, a.min_corner.z - d.max_corner.z, d.min_corner.z - a.max_corner.z)
-        dist = math.sqrt(gap_x ** 2 + gap_y ** 2 + gap_z ** 2)
-        if dist > action.range_ft:
-            raise ValueError(
-                f"{attacker.name} cannot use {action.name}: "
-                f"{defender.name} is out of range "
-                f"({dist:.1f} ft, max {action.range_ft:.0f} ft)"
-            )
-
-    def _check_single_target_range(
-        self,
-        caster: Entity,
-        defender: Entity,
-        action: SpellAction,
-    ) -> None:
-        """Raise ValueError when *defender* is out of the spell's range.
-
-        Uses the nearest point on the defender's bounding box for the distance
-        measurement, which is the most generous (and D&D-compliant) approach.
-        """
-        range_ft = self._effective_range_ft(action)
-        if range_ft is None:
-            return  # unlimited range
-        caster_center = self._caster_center(caster)
-        nearest = defender.bounding_box.nearest_point(caster_center)
-        dist = caster_center.distance_to(nearest)
-        # Range is measured from the caster's edge: allow half_size extra from centre.
-        half_size = caster.stat_block.size.size_ft / 2.0
-        if dist > range_ft + half_size:
-            raise ValueError(
-                f"{action.name}: {defender.name} is out of range "
-                f"({dist:.1f} ft, max {range_ft:.0f} ft)"
-            )
 
     # ------------------------------------------------------------------
     # Spatial movement

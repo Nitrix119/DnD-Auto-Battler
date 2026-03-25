@@ -2,6 +2,8 @@
 
 import json
 import logging
+import secrets
+import time
 from pathlib import Path
 from typing import Any
 
@@ -11,7 +13,7 @@ from src.combat.combat_system import CombatSystem
 from src.combat.event_data import HealingAppliedData
 from src.combat.events import EventType
 from src.loaders.stat_block_loader import StatBlockLoader
-from src.models.action import AttackAction
+from src.models.action import AttackAction, SpellAction
 from src.models.entity import Entity
 from src.rules.rule_engine import RuleEngine
 from src.spatial.geometry import Point3D
@@ -23,6 +25,45 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 _CREATURES_DIR = Path(__file__).parent.parent.parent / "examples" / "creatures"
+
+# ---------------------------------------------------------------------------
+# Per-connection rate limiter
+# ---------------------------------------------------------------------------
+
+class _RateLimiter:
+    """Token-bucket rate limiter — 20 messages per second per connection."""
+
+    def __init__(self, rate: float = 20.0) -> None:
+        self._rate = rate
+        self._tokens = rate
+        self._last = time.monotonic()
+
+    def consume(self) -> bool:
+        now = time.monotonic()
+        self._tokens = min(self._rate, self._tokens + (now - self._last) * self._rate)
+        self._last = now
+        if self._tokens >= 1.0:
+            self._tokens -= 1.0
+            return True
+        return False
+
+
+# ---------------------------------------------------------------------------
+# Session store for WebSocket reconnection
+# ---------------------------------------------------------------------------
+
+_SESSION_TTL = 600  # seconds before an inactive session is pruned
+
+# session_token → (combat, id_map, entity_lookup, last_active_ts)
+_sessions: dict[str, tuple] = {}
+
+
+def _prune_sessions() -> None:
+    """Remove sessions that have been inactive for longer than _SESSION_TTL."""
+    cutoff = time.monotonic() - _SESSION_TTL
+    stale = [k for k, v in _sessions.items() if v[3] < cutoff]
+    for k in stale:
+        del _sessions[k]
 
 # ---------------------------------------------------------------------------
 # Coordinate conversion
@@ -86,6 +127,13 @@ def serialize_combat_state(combat: CombatSystem) -> dict[str, Any]:
                     "reactions": e.resources.reactions,
                     "movement": e.resources.movement,
                 },
+                "spell_slots": (
+                    {
+                        str(level): remaining
+                        for level, remaining in e.spell_slots.remaining.items()
+                    }
+                    if e.spell_slots is not None else None
+                ),
                 "conditions": [c.condition_type.value for c in e.conditions],
                 "stat_breakdowns": {
                     "ac": e.get_stat_breakdown("ac"),
@@ -133,7 +181,7 @@ async def list_creatures() -> list[dict]:
 async def get_creature(path: str) -> dict:
     """Return the full JSON for a single creature by relative path."""
     creature_path = (_CREATURES_DIR / path).resolve()
-    if not str(creature_path).startswith(str(_CREATURES_DIR.resolve())):
+    if not creature_path.is_relative_to(_CREATURES_DIR.resolve()):
         raise HTTPException(status_code=403, detail="Forbidden")
     if not creature_path.exists():
         raise HTTPException(status_code=404, detail="Creature not found")
@@ -181,6 +229,7 @@ async def handle_start_combat(
     seq: int | None,
     id_map: dict[str, str],
     entity_lookup: dict[str, Entity],
+    session_token: str = "",
 ) -> None:
     combatants_data = msg.get("combatants", [])
     if len(combatants_data) < 2:
@@ -231,6 +280,7 @@ async def handle_start_combat(
     await _send(ws, {
         "type": "combat_started",
         "seq": seq,
+        "session_token": session_token,
         "id_map": id_map,
         "initiative_order": serialize_initiative_order(combat),
         "combat_state": serialize_combat_state(combat),
@@ -384,6 +434,85 @@ async def handle_move(
     })
 
 
+# ── Handler: legendary_action ─────────────────────────────────────────────
+
+async def handle_legendary_action(
+    ws: WebSocket,
+    combat: CombatSystem,
+    msg: dict,
+    seq: int | None,
+    entity_lookup: dict[str, Entity],
+) -> None:
+    entity = entity_lookup.get(msg["entity_id"])
+    if not entity:
+        raise ValueError("Unknown entity ID")
+
+    action_name = msg["action_name"]
+    action = next(
+        (a for a in entity.stat_block.actions + entity.granted_actions
+         if a.name == action_name and a.legendary_action_cost > 0),
+        None,
+    )
+    if action is None:
+        raise ValueError(f"{entity.name} has no legendary action called '{action_name}'")
+
+    # Build optional targets
+    defender: Entity | None = None
+    defenders: list[Entity] = []
+    if isinstance(action, AttackAction):
+        defender = entity_lookup.get(msg.get("defender_id", ""))
+        if not defender:
+            raise ValueError("Legendary attack action requires 'defender_id'")
+    elif isinstance(action, SpellAction):
+        for tid in msg.get("target_ids", []):
+            ent = entity_lookup.get(tid)
+            if ent:
+                defenders.append(ent)
+
+    target_point: Point3D | None = None
+    tp = msg.get("target_point")
+    if tp is not None:
+        bx, by, bz = frontend_to_backend(tp["x"], tp["y"])
+        target_point = Point3D(bx, by, bz)
+
+    log_before = len(combat.log)
+    result_data = combat.resolve_legendary_action(
+        entity, action,
+        defender=defender,
+        defenders=defenders if defenders else None,
+        target=target_point,
+    )
+    new_logs = combat.get_combat_log()[log_before:]
+
+    if isinstance(action, AttackAction) and result_data is not None:
+        hit, damage, roll_detail = result_data
+        results = [{"target_id": defender.entity_id, "hit": hit, "damage": damage, "roll": roll_detail}]
+    elif isinstance(action, SpellAction) and result_data is not None:
+        results = [
+            {
+                "target_id": ent.entity_id,
+                "hit": hit,
+                "damage": damage,
+                "roll": roll_detail,
+                "healing": healing,
+                "healed_id": healed.entity_id if healed else None,
+            }
+            for ent, hit, damage, roll_detail, healing, healed in result_data
+        ]
+    else:
+        results = []
+
+    await _send(ws, {
+        "type": "action_result",
+        "seq": seq,
+        "action_type": "legendary_action",
+        "attacker_id": entity.entity_id,
+        "results": results,
+        "log": new_logs,
+        "combat_state": serialize_combat_state(combat),
+    })
+
+
 # ── Handler: end_turn ──────────────────────────────────────────────────────
 
 async def handle_end_turn(
@@ -428,6 +557,7 @@ _HANDLERS = {
     "start_combat": handle_start_combat,
     "attack": handle_attack,
     "cast_spell": handle_cast_spell,
+    "legendary_action": handle_legendary_action,
     "move": handle_move,
     "end_turn": handle_end_turn,
 }
@@ -441,6 +571,8 @@ async def combat_websocket(websocket: WebSocket) -> None:
     id_map: dict[str, str] = {}            # frontend_id → entity_id
     entity_lookup: dict[str, Entity] = {}  # entity_id → Entity
 
+    rate_limiter = _RateLimiter()
+
     await _send(websocket, {
         "type": "connected",
         "state": combat.state.name,
@@ -452,6 +584,32 @@ async def combat_websocket(websocket: WebSocket) -> None:
             msg_type = msg.get("type")
             seq = msg.get("seq")
 
+            # Per-connection rate limiting
+            if not rate_limiter.consume():
+                await _send_error(websocket, seq, msg_type, "Rate limit exceeded")
+                continue
+
+            _prune_sessions()
+
+            # ── Reconnection: rejoin existing session ──────────────────────
+            if msg_type == "rejoin_combat":
+                token = msg.get("session_token", "")
+                session = _sessions.get(token)
+                if session:
+                    combat, id_map, entity_lookup, _ = session
+                    _sessions[token] = (combat, id_map, entity_lookup, time.monotonic())
+                    await _send(websocket, {
+                        "type": "rejoin_combat_ok",
+                        "seq": seq,
+                        "id_map": id_map,
+                        "initiative_order": serialize_initiative_order(combat),
+                        "combat_state": serialize_combat_state(combat),
+                    })
+                else:
+                    await _send_error(websocket, seq, "rejoin_combat",
+                                      "Session not found or expired")
+                continue
+
             handler = _HANDLERS.get(msg_type)
             if handler is None:
                 await _send_error(websocket, seq, msg_type, f"Unknown command: {msg_type}")
@@ -459,9 +617,18 @@ async def combat_websocket(websocket: WebSocket) -> None:
 
             try:
                 if handler in (handle_start_combat,):
-                    await handler(websocket, combat, msg, seq, id_map, entity_lookup)
+                    session_token = secrets.token_urlsafe(16)
+                    await handler(websocket, combat, msg, seq, id_map, entity_lookup,
+                                  session_token)
+                    _sessions[session_token] = (combat, id_map, entity_lookup, time.monotonic())
                 else:
                     await handler(websocket, combat, msg, seq, entity_lookup)
+                    # Refresh last-active for any session referencing this combat
+                    for tok, (sc, _, _, _) in list(_sessions.items()):
+                        if sc is combat:
+                            _sessions[tok] = (_sessions[tok][0], _sessions[tok][1],
+                                              _sessions[tok][2], time.monotonic())
+                            break
             except (ValueError, RuntimeError, KeyError) as exc:
                 logger.warning("Command %s failed: %s", msg_type, exc)
                 await _send_error(websocket, seq, msg_type, str(exc))

@@ -247,6 +247,7 @@ class RuleEngine:
         if entity is not None:
             ctx["entity"] = entity
         ctx["instance_fields"] = SimpleNamespace(**(instance_fields or {}))
+        ctx["_effect_name"] = rule.name
 
         if rule._compiled_condition is not None:
             try:
@@ -322,7 +323,12 @@ class RuleEngine:
             self._tick_durations(event.data.get("entity"))
 
     def _tick_durations(self, entity) -> None:
-        """Decrement duration_remaining for entity's effect instances; remove expired ones."""
+        """Decrement duration_remaining for entity's effect instances; remove expired ones.
+
+        Also ticks timed :class:`~src.models.condition.Condition` objects on the
+        entity — conditions whose ``rounds_remaining`` reaches zero are removed
+        automatically, unifying duration tracking under one mechanism.
+        """
         if entity is None:
             return
         expired_instances: set = set()  # id(instance) of instances that expired this tick
@@ -342,6 +348,16 @@ class RuleEngine:
                     continue
                 surviving.append(instance)
             bucket[:] = surviving
+
+        # Tick timed conditions on this entity (at the end of their own turn).
+        expired_condition_indices = []
+        for i, condition in enumerate(entity.conditions):
+            if condition.rounds_remaining is not None:
+                condition.rounds_remaining -= 1
+                if condition.rounds_remaining <= 0:
+                    expired_condition_indices.append(i)
+        for i in reversed(expired_condition_indices):
+            entity.remove_condition(i)
 
     @staticmethod
     def _tick_one(instance: EffectInstance) -> bool:

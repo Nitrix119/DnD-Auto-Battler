@@ -7,6 +7,7 @@ from src.models.entity import Entity
 from src.models.action import SpellAction
 from src.models.damage import Damage
 from src.utils.dice import roll_d20
+from src.utils.saving_throw import roll_saving_throw
 from src.rules.expressions import build_context, evaluate, resolve
 from .event_bus import CombatEvent, EventBus
 from .event_data import AttackDeclaredData, SpellCastData, SpellHitData, HealingAppliedData
@@ -122,7 +123,7 @@ class SpellResolver:
         healing_total = 0
         healed_entity: Optional[Entity] = None
         if hit:
-            save_roll, save_success = self._roll_saving_throw(
+            save_roll, save_success = roll_saving_throw(
                 defender, action.save_ability, effective_dc,
             ) if effective_dc > 0 and action.save_ability else (None, True)
 
@@ -172,7 +173,7 @@ class SpellResolver:
         effective_dc: int,
     ) -> Tuple[bool, int, str, None]:
         """Spell with no attack roll — auto-hit, saving throw if applicable."""
-        save_roll, save_success = self._roll_saving_throw(
+        save_roll, save_success = roll_saving_throw(
             defender, action.save_ability, effective_dc,
         ) if effective_dc > 0 and action.save_ability else (None, True)
 
@@ -215,25 +216,6 @@ class SpellResolver:
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
-
-    @staticmethod
-    def _roll_saving_throw(
-        defender: Entity, ability: str, dc: int,
-    ) -> Tuple[int, bool]:
-        """Roll a saving throw and return (roll_total, success).
-
-        The total includes the base ability/proficiency bonus from the stat block
-        plus any :class:`StatModifier` entries on the entity keyed to
-        ``"saving_throw.<ability>"`` or the catch-all ``"saving_throw.all"``.
-        """
-        roll = roll_d20()
-        base_bonus = defender.stat_block.get_saving_throw_bonus(ability)
-        extra = sum(
-            m.value for m in defender.stat_modifiers
-            if m.stat in (f"saving_throw.{ability.lower()}", "saving_throw.all")
-        )
-        total = roll + base_bonus + extra
-        return total, total >= dc
 
     def _process_save_outcomes(
         self,

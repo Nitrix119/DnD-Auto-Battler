@@ -104,7 +104,7 @@ class TestSavingThrows:
         bus.subscribe(EventType.SPELL_HIT, lambda e: spell_hit_events.append(e))
 
         spell = charm_person_spell(save_dc=30)  # DC 30 — goblin always fails
-        with patch("src.combat.spell_resolver.roll_d20", return_value=1):
+        with patch("src.utils.saving_throw.roll_d20", return_value=1):
             resolver.resolve(wizard, [goblin], spell)
 
         assert len(spell_hit_events) == 1
@@ -122,7 +122,7 @@ class TestSavingThrows:
         bus.subscribe(EventType.SPELL_HIT, lambda e: spell_hit_events.append(e))
 
         spell = charm_person_spell(save_dc=1)  # DC 1 — goblin always succeeds
-        with patch("src.combat.spell_resolver.roll_d20", return_value=20):
+        with patch("src.utils.saving_throw.roll_d20", return_value=20):
             resolver.resolve(wizard, [goblin], spell)
 
         assert spell_hit_events[0].data.get("save_success") is True
@@ -160,7 +160,7 @@ class TestSpellEffectApplicationOnFailedSave:
 
         spell = charm_person_spell(save_dc=30)  # DC 30 — goblin always fails
 
-        with patch("src.combat.spell_resolver.roll_d20", return_value=1):
+        with patch("src.utils.saving_throw.roll_d20", return_value=1):
             resolver.resolve(wizard, [goblin], spell)
 
         # The goblin should now have the charmed entity effect applied
@@ -178,7 +178,7 @@ class TestSpellEffectApplicationOnFailedSave:
 
         spell = charm_person_spell(save_dc=1)  # DC 1 — goblin always succeeds
 
-        with patch("src.combat.spell_resolver.roll_d20", return_value=20):
+        with patch("src.utils.saving_throw.roll_d20", return_value=20):
             resolver.resolve(wizard, [goblin], spell)
 
         assert goblin.active_effects.get("attack_declared", []) == []
@@ -191,7 +191,7 @@ class TestSpellEffectApplicationOnFailedSave:
 
         spell = charm_person_spell(save_dc=30)  # goblin always fails
 
-        with patch("src.combat.spell_resolver.roll_d20", return_value=1):
+        with patch("src.utils.saving_throw.roll_d20", return_value=1):
             resolver.resolve(wizard, [goblin], spell)
 
         # Now try the goblin attacking the wizard — should be cancelled
@@ -209,7 +209,7 @@ class TestSpellEffectApplicationOnFailedSave:
 
         spell = charm_person_spell(save_dc=30)
 
-        with patch("src.combat.spell_resolver.roll_d20", return_value=1):
+        with patch("src.utils.saving_throw.roll_d20", return_value=1):
             resolver.resolve(wizard, [goblin], spell)
 
         action = next(a for a in goblin.stat_block.actions if a.name == "Scimitar")
@@ -233,7 +233,7 @@ class TestSpellEffectsWithoutRuleEngine:
 
         spell = charm_person_spell(save_dc=30)
 
-        with patch("src.combat.spell_resolver.roll_d20", return_value=1):
+        with patch("src.utils.saving_throw.roll_d20", return_value=1):
             results = resolver.resolve(wizard, [goblin], spell)
 
         # Resolves without error; no active effects on goblin
@@ -254,7 +254,7 @@ class TestRuleCaching:
 
         spell = charm_person_spell(save_dc=30)
 
-        with patch("src.combat.spell_resolver.roll_d20", return_value=1):
+        with patch("src.utils.saving_throw.roll_d20", return_value=1):
             resolver.resolve(wizard, [goblin_a], spell)
             resolver.resolve(wizard, [goblin_b], spell)
 
@@ -307,7 +307,7 @@ class TestCombatSystemIntegration:
 
         spell = charm_person_spell(save_dc=30)  # goblin always fails
 
-        with patch("src.combat.spell_resolver.roll_d20", return_value=1):
+        with patch("src.utils.saving_throw.roll_d20", return_value=1):
             cs.resolve_spell(wizard, [goblin], spell)
 
         assert "attack_declared" in goblin.active_effects

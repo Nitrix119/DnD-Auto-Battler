@@ -202,7 +202,7 @@ class TestHalfDamage:
         resolver = _plain_resolver(caster, target)
         spell = _make_save_spell(damage_amount=20, on_successful_save=[{"action": "HalfDamage"}])
 
-        with patch("src.combat.spell_resolver.roll_d20", return_value=15):  # 15 >= 15 → succeed
+        with patch("src.utils.saving_throw.roll_d20", return_value=15):  # 15 >= 15 → succeed
             resolver.resolve(caster, [target], spell)
 
         assert target.hp == target.max_hp - 10  # 20 // 2
@@ -212,7 +212,7 @@ class TestHalfDamage:
         resolver = _plain_resolver(caster, target)
         spell = _make_save_spell(damage_amount=20, on_successful_save=[{"action": "HalfDamage"}])
 
-        with patch("src.combat.spell_resolver.roll_d20", return_value=14):  # 14 < 15 → fail
+        with patch("src.utils.saving_throw.roll_d20", return_value=14):  # 14 < 15 → fail
             resolver.resolve(caster, [target], spell)
 
         assert target.hp == target.max_hp - 20  # no modification
@@ -223,7 +223,7 @@ class TestHalfDamage:
         resolver = _plain_resolver(caster, target)
         spell = _make_save_spell(damage_amount=7, on_successful_save=[{"action": "HalfDamage"}])
 
-        with patch("src.combat.spell_resolver.roll_d20", return_value=15):
+        with patch("src.utils.saving_throw.roll_d20", return_value=15):
             resolver.resolve(caster, [target], spell)
 
         assert target.hp == target.max_hp - 3  # 7 // 2
@@ -234,7 +234,7 @@ class TestHalfDamage:
         resolver = _plain_resolver(caster, target)
         spell = _make_save_spell(damage_amount=1, on_successful_save=[{"action": "HalfDamage"}])
 
-        with patch("src.combat.spell_resolver.roll_d20", return_value=15):
+        with patch("src.utils.saving_throw.roll_d20", return_value=15):
             resolver.resolve(caster, [target], spell)
 
         assert target.hp == target.max_hp
@@ -252,7 +252,7 @@ class TestNoDamage:
         resolver = _plain_resolver(caster, target)
         spell = _make_save_spell(damage_amount=20, on_successful_save=[{"action": "NoDamage"}])
 
-        with patch("src.combat.spell_resolver.roll_d20", return_value=15):
+        with patch("src.utils.saving_throw.roll_d20", return_value=15):
             resolver.resolve(caster, [target], spell)
 
         assert target.hp == target.max_hp
@@ -262,7 +262,7 @@ class TestNoDamage:
         resolver = _plain_resolver(caster, target)
         spell = _make_save_spell(damage_amount=20, on_successful_save=[{"action": "NoDamage"}])
 
-        with patch("src.combat.spell_resolver.roll_d20", return_value=14):
+        with patch("src.utils.saving_throw.roll_d20", return_value=14):
             resolver.resolve(caster, [target], spell)
 
         assert target.hp == target.max_hp - 20
@@ -274,7 +274,7 @@ class TestNoDamage:
         spell = _make_save_spell(damage_amount=20, on_successful_save=[{"action": "NoDamage"}])
         spell.damage.append(Damage(DamageType.COLD, 10))  # second damage type
 
-        with patch("src.combat.spell_resolver.roll_d20", return_value=15):
+        with patch("src.utils.saving_throw.roll_d20", return_value=15):
             resolver.resolve(caster, [target], spell)
 
         assert target.hp == target.max_hp  # both entries zeroed
@@ -293,7 +293,7 @@ class TestOnFailedSave:
         resolver = _plain_resolver(caster, target)
         spell = _make_save_spell(damage_amount=20, on_failed_save=[{"action": "NoDamage"}])
 
-        with patch("src.combat.spell_resolver.roll_d20", return_value=14):  # fail
+        with patch("src.utils.saving_throw.roll_d20", return_value=14):  # fail
             resolver.resolve(caster, [target], spell)
 
         assert target.hp == target.max_hp
@@ -304,7 +304,7 @@ class TestOnFailedSave:
         resolver = _plain_resolver(caster, target)
         spell = _make_save_spell(damage_amount=20, on_failed_save=[{"action": "NoDamage"}])
 
-        with patch("src.combat.spell_resolver.roll_d20", return_value=15):  # succeed
+        with patch("src.utils.saving_throw.roll_d20", return_value=15):  # succeed
             resolver.resolve(caster, [target], spell)
 
         assert target.hp == target.max_hp - 20
@@ -315,7 +315,7 @@ class TestOnFailedSave:
         resolver = _plain_resolver(caster, target)
         spell = _make_save_spell(damage_amount=20, on_failed_save=[{"action": "HalfDamage"}])
 
-        with patch("src.combat.spell_resolver.roll_d20", return_value=14):  # fail
+        with patch("src.utils.saving_throw.roll_d20", return_value=14):  # fail
             resolver.resolve(caster, [target], spell)
 
         assert target.hp == target.max_hp - 10  # halved on fail
@@ -398,7 +398,7 @@ class TestPerTargetIndependence:
 
         # d20 called once per target; 15 → succeed, 14 → fail
         rolls = iter([15, 14])
-        with patch("src.combat.spell_resolver.roll_d20", side_effect=lambda: next(rolls)):
+        with patch("src.utils.saving_throw.roll_d20", side_effect=lambda: next(rolls)):
             resolver.resolve(caster, [saver, failer], spell)
 
         assert saver.hp == saver.max_hp - 10   # 20 // 2
@@ -415,7 +415,7 @@ class TestPerTargetIndependence:
             on_successful_save=[{"action": "NoDamage"}],
         )
 
-        with patch("src.combat.spell_resolver.roll_d20", return_value=20):
+        with patch("src.utils.saving_throw.roll_d20", return_value=20):
             resolver.resolve(caster, targets, spell)
 
         for t in targets:
@@ -432,7 +432,7 @@ class TestPerTargetIndependence:
             on_successful_save=[{"action": "HalfDamage"}],
         )
 
-        with patch("src.combat.spell_resolver.roll_d20", return_value=1):
+        with patch("src.utils.saving_throw.roll_d20", return_value=1):
             resolver.resolve(caster, targets, spell)
 
         for t in targets:
@@ -459,7 +459,7 @@ class TestSaveOutcomeEffects:
             }],
         )
 
-        with patch("src.combat.spell_resolver.roll_d20", return_value=14):  # fail
+        with patch("src.utils.saving_throw.roll_d20", return_value=14):  # fail
             resolver.resolve(caster, [target], spell)
 
         assert "attack_declared" in target.active_effects
@@ -480,7 +480,7 @@ class TestSaveOutcomeEffects:
             }],
         )
 
-        with patch("src.combat.spell_resolver.roll_d20", return_value=15):  # succeed
+        with patch("src.utils.saving_throw.roll_d20", return_value=15):  # succeed
             resolver.resolve(caster, [target], spell)
 
         assert target.active_effects.get("attack_declared", []) == []
@@ -498,7 +498,7 @@ class TestSaveOutcomeEffects:
             }],
         )
 
-        with patch("src.combat.spell_resolver.roll_d20", return_value=15):  # succeed
+        with patch("src.utils.saving_throw.roll_d20", return_value=15):  # succeed
             resolver.resolve(caster, [target], spell)
 
         assert "attack_declared" in target.active_effects
@@ -516,7 +516,7 @@ class TestSaveOutcomeEffects:
             }],
         )
 
-        with patch("src.combat.spell_resolver.roll_d20", return_value=14):  # fail
+        with patch("src.utils.saving_throw.roll_d20", return_value=14):  # fail
             resolver.resolve(caster, [target], spell)
 
         assert target.active_effects.get("attack_declared", []) == []
@@ -534,7 +534,7 @@ class TestSaveOutcomeEffects:
             ],
         )
 
-        with patch("src.combat.spell_resolver.roll_d20", return_value=14):  # fail
+        with patch("src.utils.saving_throw.roll_d20", return_value=14):  # fail
             resolver.resolve(caster, [target], spell)
 
         assert target.hp == target.max_hp - 10  # halved
@@ -565,7 +565,7 @@ class TestConditionKeyBackwardsCompat:
             "instance_fields": {"charmer": "event.caster"},
         }]
 
-        with patch("src.combat.spell_resolver.roll_d20", return_value=14):  # fail
+        with patch("src.utils.saving_throw.roll_d20", return_value=14):  # fail
             resolver.resolve(caster, [target], spell)
 
         assert "attack_declared" in target.active_effects
@@ -583,13 +583,13 @@ class TestConditionKeyBackwardsCompat:
         }]
 
         # fail — effect should NOT apply
-        with patch("src.combat.spell_resolver.roll_d20", return_value=14):
+        with patch("src.utils.saving_throw.roll_d20", return_value=14):
             resolver.resolve(caster, [target], spell)
 
         assert target.active_effects.get("attack_declared", []) == []
 
         # succeed — effect SHOULD apply
-        with patch("src.combat.spell_resolver.roll_d20", return_value=15):
+        with patch("src.utils.saving_throw.roll_d20", return_value=15):
             resolver.resolve(caster, [target], spell)
 
         assert "attack_declared" in target.active_effects
@@ -612,7 +612,7 @@ class TestConditionKeyBackwardsCompat:
             "instance_fields": {"charmer": "event.caster"},
         }]
 
-        with patch("src.combat.spell_resolver.roll_d20", return_value=14):  # fail
+        with patch("src.utils.saving_throw.roll_d20", return_value=14):  # fail
             resolver.resolve(caster, [target_a], spell)
 
         # Damage is halved by on_failed_save
@@ -650,7 +650,7 @@ class TestFireballIntegration:
         hit_events = []
         bus.subscribe(EventType.SPELL_HIT, lambda e: hit_events.append(e))
 
-        with patch("src.combat.spell_resolver.roll_d20", return_value=1):
+        with patch("src.utils.saving_throw.roll_d20", return_value=1):
             resolver.resolve(wizard, [target], fireball)
 
         assert len(hit_events) == 1
@@ -668,7 +668,7 @@ class TestFireballIntegration:
         # Patch roll_formula so the 8d6 roll is deterministic (returns 24)
         # AND roll_d20 so the save succeeds (20 >= wizard DC 15)
         with patch("src.models.action.roll_formula", return_value=24), \
-             patch("src.combat.spell_resolver.roll_d20", return_value=20):
+             patch("src.utils.saving_throw.roll_d20", return_value=20):
             resolver.resolve(wizard, [target], fireball)
 
         damage_taken = target.max_hp - target.hp
@@ -683,7 +683,7 @@ class TestFireballIntegration:
         resolver = SpellResolver(bus, dp, ar)
 
         with patch("src.models.action.roll_formula", return_value=24), \
-             patch("src.combat.spell_resolver.roll_d20", return_value=1):
+             patch("src.utils.saving_throw.roll_d20", return_value=1):
             resolver.resolve(wizard, [target], fireball)
 
         damage_taken = target.max_hp - target.hp
@@ -700,7 +700,7 @@ class TestFireballIntegration:
 
         rolls = iter([20, 1])  # saver succeeds, failer fails
         with patch("src.models.action.roll_formula", return_value=24), \
-             patch("src.combat.spell_resolver.roll_d20", side_effect=lambda: next(rolls)):
+             patch("src.utils.saving_throw.roll_d20", side_effect=lambda: next(rolls)):
             resolver.resolve(wizard, [saver, failer], fireball)
 
         assert saver.max_hp - saver.hp == 12   # 24 // 2

@@ -14,5 +14,6 @@
   "hit_points_max": 28,
   "armor_class": 12,
   "proficiency_bonus": 3,
-  "spellcasting_ability": "intelligence"
+  "spellcasting_ability": "intelligence",
+  "spell_slots": { "1": 4, "2": 3, "3": 2 }
 }
