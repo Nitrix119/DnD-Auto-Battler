@@ -145,6 +145,16 @@ class DamageDealtData(EventData):
     total: int
 
 
+
+# ── Healing flow ──────────────────────────────────────────────────────────────
+
+@dataclass
+class HealingAppliedData(EventData):
+    """Data for HEALING_APPLIED events."""
+    target: Entity
+    amount: int
+
+
 # ── Entity lifecycle ─────────────────────────────────────────────────────────
 
 @dataclass

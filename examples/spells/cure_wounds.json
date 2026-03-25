@@ -29,7 +29,8 @@
         {
           "action": "HealTarget",
           "target": "event.defender",
-          "formula": "1d8"
+          "formula": "1d8",
+          "bonus": "event.caster.spellcasting_modifier"
         }
       ]
     }

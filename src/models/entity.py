@@ -245,6 +245,12 @@ class Entity:
         return base + sum(m.value for m in self.stat_modifiers if m.stat == "spell_attack_bonus")
 
     @property
+    def spellcasting_modifier(self) -> int:
+        """Raw ability modifier for the entity's spellcasting ability, or 0 if non-caster."""
+        ability = self.stat_block.spellcasting_ability
+        return self.get_ability_modifier(ability) if ability else 0
+
+    @property
     def bounding_box(self):
         """Axis-aligned bounding box for this entity based on position and size.
 

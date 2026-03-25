@@ -10,7 +10,7 @@ from src.models import (
     CastingTimeType, DurationUnit,
 )
 from src.loaders.stat_block_loader import StatBlockLoader
-from src.combat import CombatSystem, CombatState
+from src.combat import CombatSystem, CombatState, EventType
 from src.rules.rule_engine import RuleEngine
 from src.rules.effect_registry import EffectRegistry
 from src.spatial.geometry import Point3D
@@ -576,26 +576,36 @@ class TestNewSpellsCombat:
         assert spell.spell_range.range_type == RangeType.TOUCH
 
     def test_cure_wounds_heals_target(self, wizard, goblins, combat):
-        """Cure Wounds heals a damaged target via the HealTarget on_apply hook.
+        """Cure Wounds heals via HealTarget on_apply: 1d8 + spellcasting modifier.
 
-        The wizard takes some damage, then casts Cure Wounds on itself
-        (touch range). Because the spell has no attack bonus and no save DC,
-        it auto-hits and the on_apply HealTarget effect fires, restoring
-        1d8 HP (minimum 1).
+        The wizard (INT 18, modifier +4) casts Cure Wounds on itself.
+        Healing must be between (1 + modifier) and (8 + modifier) HP, and a
+        HEALING_APPLIED event must be emitted with the correct target and amount.
         """
         spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "cure_wounds.json"))
 
-        # Damage the wizard so healing is observable
-        wizard.take_damage(Damage(DamageType.BLUDGEONING, 6))
+        # Damage the wizard enough that any roll is observable
+        wizard.take_damage(Damage(DamageType.BLUDGEONING, 20))
         hp_after_damage = wizard.hp
         assert hp_after_damage < wizard.max_hp
+
+        # Track HEALING_APPLIED events
+        healing_events = []
+        combat.event_bus.subscribe(EventType.HEALING_APPLIED, lambda e: healing_events.append(e))
 
         # Cast Cure Wounds on self (wizard is the defender)
         combat.resolve_spell(wizard, [wizard], spell)
 
-        # The wizard should have been healed by 1-8 HP
+        # HP should have increased but not exceeded max
         assert wizard.hp > hp_after_damage
         assert wizard.hp <= wizard.max_hp
+
+        # HEALING_APPLIED event must have fired once with the right target and amount
+        assert len(healing_events) == 1
+        event_data = healing_events[0].data
+        assert event_data.target is wizard
+        modifier = wizard.spellcasting_modifier  # INT 18 → +4
+        assert 1 + modifier <= event_data.amount <= 8 + modifier
 
     def test_cure_wounds_does_not_exceed_max_hp(self, wizard, goblins, combat):
         """Cure Wounds cannot heal above max HP."""

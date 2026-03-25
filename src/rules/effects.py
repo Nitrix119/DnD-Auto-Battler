@@ -96,7 +96,7 @@ Matching JSON rule (``rules/thorns.json``)::
 """
 
 from src.combat.event_bus import CombatEvent, EventBus
-from src.combat.event_data import ConditionAddedData, ConditionRemovedData, DamageDealtData
+from src.combat.event_data import ConditionAddedData, ConditionRemovedData, DamageDealtData, HealingAppliedData
 from src.combat.events import EventType
 from src.models.condition import Condition, ConditionType
 from src.models.damage import Damage, DamageType
@@ -173,13 +173,16 @@ def cancel_event(effect: dict, ctx: dict, event: CombatEvent, event_bus: EventBu
 
 
 def heal_target(effect: dict, ctx: dict, event: CombatEvent, event_bus: EventBus) -> None:
-    """Heal a target by a dice formula.
+    """Heal a target by a dice formula plus an optional bonus.
 
     Required keys:  target (expr), formula (str, e.g. "1d6" or "2d4+2")
+    Optional keys:  bonus (int or expr, default 0)
     """
     target = _resolve(effect["target"], ctx)
-    amount = roll_formula(effect["formula"])
+    bonus = int(_resolve(effect.get("bonus", 0), ctx))
+    amount = roll_formula(effect["formula"]) + bonus
     target.heal(amount)
+    event_bus.emit(EventType.HEALING_APPLIED, HealingAppliedData(target=target, amount=amount))
 
 
 def _resolve_damage_type(raw, ctx: dict) -> DamageType:

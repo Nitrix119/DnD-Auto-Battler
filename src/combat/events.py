@@ -21,6 +21,9 @@ class EventType(Enum):
     DAMAGE_INCOMING = "damage_incoming"  # before HP reduction; handlers can modify damage
     DAMAGE_DEALT = "damage_dealt"  # after damage is applied to the target
 
+    # Healing flow
+    HEALING_APPLIED = "healing_applied"  # after HP is restored
+
     # Entity lifecycle
     ENTITY_DIES = "entity_dies"
     CONDITION_ADDED = "condition_added"
