@@ -251,12 +251,12 @@ class CombatSystem:
                     self._check_single_target_range(caster, defender, action)
 
         results = self._spell_resolver.resolve(caster, defenders, action, origin=origin)
-        for _, _, log_msg, _ in results:
+        for _, _, log_msg, _, _, _ in results:
             if log_msg:
                 self._log_action(caster, log_msg)
         return [
-            (defenders[i], hit, damage, roll_detail)
-            for i, (hit, damage, _, roll_detail) in enumerate(results)
+            (defenders[i], hit, damage, roll_detail, healing, healed)
+            for i, (hit, damage, _, roll_detail, healing, healed) in enumerate(results)
         ]
 
     def resolve_saving_throw(self, defender: Entity, ability: str,

@@ -1,0 +1,15 @@
+{
+  "name": "vampiric_touch",
+  "triggers": ["DAMAGE_DEALT"],
+  "condition": "event.source == entity and event.action_name == 'Vampiric Touch'",
+  "effects": [
+    {
+      "action": "HealTarget",
+      "target": "entity",
+      "formula": "0",
+      "bonus": "event.total // 2"
+    }
+  ],
+  "duration_rounds": 10,
+  "source": "Vampiric Touch"
+}

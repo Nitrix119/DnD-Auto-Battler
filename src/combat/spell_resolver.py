@@ -9,7 +9,7 @@ from src.models.damage import Damage
 from src.utils.dice import roll_d20
 from src.rules.expressions import build_context, evaluate, resolve
 from .event_bus import CombatEvent, EventBus
-from .event_data import AttackDeclaredData, SpellCastData, SpellHitData
+from .event_data import AttackDeclaredData, SpellCastData, SpellHitData, HealingAppliedData
 from .events import EventType
 from .damage_processor import DamageProcessor
 from .attack_resolver import AttackResolver
@@ -119,6 +119,8 @@ class SpellResolver:
         roll_mode = AttackResolver._roll_mode_label(spell_declared)
 
         damage_dealt = 0
+        healing_total = 0
+        healed_entity: Optional[Entity] = None
         if hit:
             save_roll, save_success = self._roll_saving_throw(
                 defender, action.save_ability, effective_dc,
@@ -131,16 +133,21 @@ class SpellResolver:
                     roll=attack_total, save_success=save_success, save_roll=save_roll,
                 ),
             )
-            self._apply_spell_effects(
-                caster, defender, action, attack_total, save_success, save_roll,
-            )
-            target_damages = [Damage(d.damage_type, d.amount) for d in rolled_damages]
-            target_damages = self._process_save_outcomes(
-                caster, defender, action, save_success, save_roll, attack_total, target_damages,
-            )
-            damage_dealt = self._damage_processor.apply_damage(
-                defender, target_damages, source=caster,
-            )
+            subscribe_heal, unsubscribe_heal = self._make_healing_listener()
+            subscribe_heal()
+            try:
+                self._apply_spell_effects(
+                    caster, defender, action, attack_total, save_success, save_roll,
+                )
+                target_damages = [Damage(d.damage_type, d.amount) for d in rolled_damages]
+                target_damages = self._process_save_outcomes(
+                    caster, defender, action, save_success, save_roll, attack_total, target_damages,
+                )
+                damage_dealt = self._damage_processor.apply_damage(
+                    defender, target_damages, source=caster, action_name=action.name,
+                )
+            finally:
+                healing_total, healed_entity = unsubscribe_heal()
 
         hit_str = f"Hit! Damage: {damage_dealt}" if hit else "Miss!"
         log_msg = (
@@ -154,7 +161,7 @@ class SpellResolver:
             "total": attack_total,
             "ac":    defender.ac,
         }
-        return hit, damage_dealt, log_msg, roll_detail
+        return hit, damage_dealt, log_msg, roll_detail, healing_total, healed_entity
 
     def _resolve_auto_hit(
         self,
@@ -176,16 +183,21 @@ class SpellResolver:
                 roll=None, save_success=save_success, save_roll=save_roll,
             ),
         )
-        self._apply_spell_effects(
-            caster, defender, action, None, save_success, save_roll,
-        )
-        target_damages = [Damage(d.damage_type, d.amount) for d in rolled_damages]
-        target_damages = self._process_save_outcomes(
-            caster, defender, action, save_success, save_roll, None, target_damages,
-        )
-        damage_dealt = self._damage_processor.apply_damage(
-            defender, target_damages, source=caster,
-        )
+        subscribe_heal, unsubscribe_heal = self._make_healing_listener()
+        subscribe_heal()
+        try:
+            self._apply_spell_effects(
+                caster, defender, action, None, save_success, save_roll,
+            )
+            target_damages = [Damage(d.damage_type, d.amount) for d in rolled_damages]
+            target_damages = self._process_save_outcomes(
+                caster, defender, action, save_success, save_roll, None, target_damages,
+            )
+            damage_dealt = self._damage_processor.apply_damage(
+                defender, target_damages, source=caster, action_name=action.name,
+            )
+        finally:
+            healing_total, healed_entity = unsubscribe_heal()
         save_str = ""
         if save_roll is not None:
             result_word = "success" if save_success else "failure"
@@ -198,7 +210,7 @@ class SpellResolver:
             {"total": save_roll, "dc": effective_dc, "save_success": save_success}
             if save_roll is not None else None
         )
-        return True, damage_dealt, log_msg, save_detail
+        return True, damage_dealt, log_msg, save_detail, healing_total, healed_entity
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -306,6 +318,29 @@ class SpellResolver:
 
         return target_damages
 
+    def _make_healing_listener(self) -> tuple:
+        """Create a HEALING_APPLIED listener and return (subscribe, unsubscribe).
+
+        unsubscribe() returns (total_healing, healed_entity_or_None).
+        """
+        healing_total = 0
+        healed_entity: Optional[Entity] = None
+
+        def _on_healing(event: CombatEvent) -> None:
+            nonlocal healing_total, healed_entity
+            if isinstance(event.data, HealingAppliedData):
+                healing_total += event.data.amount
+                healed_entity = event.data.target
+
+        def subscribe() -> None:
+            self._event_bus.subscribe(EventType.HEALING_APPLIED, _on_healing)
+
+        def unsubscribe() -> tuple:
+            self._event_bus.unsubscribe(EventType.HEALING_APPLIED, _on_healing)
+            return healing_total, healed_entity
+
+        return subscribe, unsubscribe
+
     def _apply_spell_effects(
         self,
         caster: Entity,
@@ -357,6 +392,11 @@ class SpellResolver:
             if effect_name:
                 rule = self.rule_engine.effect_registry.get(effect_name)
 
+                # "effect_on": "caster" attaches the effect to the caster instead of the
+                # defender (e.g. Vampiric Touch, where the ongoing ability belongs to the
+                # caster).  Concentration cleanup targets the same entity.
+                effect_entity = caster if entry.get("effect_on") == "caster" else defender
+
                 # Evaluate instance_fields expressions
                 instance_fields: Dict[str, Any] = {}
                 for field_name, expr in entry.get("instance_fields", {}).items():
@@ -368,19 +408,24 @@ class SpellResolver:
                             field_name, type(exc).__name__, exc,
                         )
 
-                self.rule_engine.apply_effect(defender, rule, instance_fields=instance_fields)
-                logger.info(
-                    "Applied spell effect '%s' to %s (save_success=%s)",
-                    rule.name, defender.name, save_success,
-                )
-
-                # Track concentration: link this caster to the target so that
-                # breaking concentration knows which entity to clean up.
+                # Remove old concentration effect BEFORE applying the new one,
+                # otherwise remove_effect() would also nuke the just-applied effect
+                # (both share the same name).
                 if action.duration.concentration:
                     if caster.concentrating_on and caster.concentration_target:
                         caster.concentration_target.remove_effect(caster.concentrating_on)
+
+                self.rule_engine.apply_effect(effect_entity, rule, instance_fields=instance_fields)
+                logger.info(
+                    "Applied spell effect '%s' to %s (save_success=%s)",
+                    rule.name, effect_entity.name, save_success,
+                )
+
+                # Track concentration: link this caster to the entity holding the effect
+                # so that breaking concentration removes the effect from the right entity.
+                if action.duration.concentration:
                     caster.concentrating_on = effect_name
-                    caster.concentration_target = defender
+                    caster.concentration_target = effect_entity
 
             # Execute immediate on-apply effects (e.g. granting temp HP, healing)
             for on_apply_effect in entry.get("on_apply", []):

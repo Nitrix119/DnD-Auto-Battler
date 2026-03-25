@@ -1,0 +1,63 @@
+{
+  "name": "Vampiric Touch",
+  "description": "The touch of your shadow-wreathed hand can siphon life force from others to heal your wounds. Make a melee spell attack against a creature within your reach. On a hit, the target takes 3d6 necrotic damage, and you regain hit points equal to half the amount of necrotic damage dealt. Until the spell ends, you can make the attack again on each of your turns as an action.",
+  "type": "spell",
+  "spell_level": 3,
+  "spell_attack_bonus": "use_caster_bonus",
+  "save_dc": 0,
+  "save_ability": "",
+  "damage": [
+    {
+      "type": "NECROTIC",
+      "formula": "3d6"
+    }
+  ],
+  "spell_range": {
+    "type": "touch"
+  },
+  "can_target_self": false,
+  "targeting_type": "single_target",
+  "casting_time": {
+    "type": "action",
+    "count": 1
+  },
+  "duration": {
+    "unit": "minute",
+    "count": 1,
+    "concentration": true
+  },
+  "components": {
+    "verbal": true,
+    "somatic": true,
+    "material": []
+  },
+  "effects": [
+    {
+      "effect": "vampiric_touch",
+      "effect_on": "caster",
+      "on_apply": [
+        {
+          "action": "GrantAction",
+          "target": "event.caster",
+          "name": "Vampiric Touch",
+          "description": "Melee spell attack granted by Vampiric Touch concentration.",
+          "bonus_to_hit": "event.caster.spell_attack_bonus",
+          "range_ft": 5,
+          "damage": [
+            {
+              "type": "NECROTIC",
+              "formula": "3d6"
+            }
+          ],
+          "source_effect": "vampiric_touch"
+        }
+      ]
+    }
+  ],
+  "animation": [
+    [{"type": "aura", "color": "#330033", "at": "caster", "duration": 0.4, "size": 1.2, "pulses": 2}],
+    [{"type": "projectile", "color": "#660066", "from": "caster", "to": "target", "speed": 5, "size": 4, "trail": true}],
+    [{"type": "flash", "color": "#440044", "at": "target", "duration": 0.4, "size": 1.5},
+     {"type": "particles", "color": "#220022", "at": "target", "count": 16, "spread": 3, "duration": 0.6, "speed": 1.0}]
+  ]
+}

@@ -20,6 +20,7 @@ class DamageProcessor:
         defender: Entity,
         damage_list: List[Damage],
         source: Optional[Entity] = None,
+        action_name: Optional[str] = None,
     ) -> int:
         """Apply damage to defender, emitting events. Returns total damage dealt.
 
@@ -41,7 +42,10 @@ class DamageProcessor:
 
         self._event_bus.emit(
             EventType.DAMAGE_DEALT,
-            DamageDealtData(defender=defender, damage_list=damage_list, total=total_damage),
+            DamageDealtData(
+                defender=defender, damage_list=damage_list, total=total_damage,
+                source=source, action_name=action_name,
+            ),
         )
 
         if was_alive and not defender.is_alive():

@@ -98,6 +98,8 @@ Matching JSON rule (``rules/thorns.json``)::
 from src.combat.event_bus import CombatEvent, EventBus
 from src.combat.event_data import ConditionAddedData, ConditionRemovedData, DamageDealtData, HealingAppliedData
 from src.combat.events import EventType
+from src.models.action import AttackAction, ActionType
+from src.models.action_resources import ACTION_COST
 from src.models.condition import Condition, ConditionType
 from src.models.damage import Damage, DamageType
 from src.models.stat_modifier import StatModifier
@@ -375,6 +377,44 @@ def add_resource(effect: dict, ctx: dict, event: CombatEvent, event_bus: EventBu
     target.add_resource(resource, amount)
 
 
+def grant_action(effect: dict, ctx: dict, event: CombatEvent, event_bus: EventBus) -> None:
+    """Grant a temporary AttackAction to an entity for the duration of an entity effect.
+
+    Required keys:  target (expr), name (str)
+    Optional keys:  bonus_to_hit (int or expr, default 0), range_ft (float, default 5.0),
+                    damage (list of {type, formula}), source_effect (str, default "")
+                    description (str, default "")
+
+    The granted action is tagged with ``source_effect`` so that it is automatically
+    revoked when :meth:`Entity.remove_effect` is called with that name.
+    """
+    target = _resolve(effect["target"], ctx)
+    name = effect["name"]
+    bonus_to_hit = int(_resolve(effect.get("bonus_to_hit", 0), ctx))
+    range_ft = float(effect.get("range_ft", 5.0))
+    source_eff = effect.get("source_effect", "")
+    description = effect.get("description", "")
+
+    damages = []
+    for d in effect.get("damage", []):
+        dtype = DamageType[d["type"].upper()]
+        formula = d.get("formula", "")
+        amount = int(_resolve(d.get("amount", 0), ctx))
+        damages.append(Damage(dtype, amount, formula=formula))
+
+    action = AttackAction(
+        name=name,
+        description=description,
+        action_type=ActionType.ATTACK,
+        bonus_to_hit=bonus_to_hit,
+        range_ft=range_ft,
+        damage=damages,
+        cost=ACTION_COST,
+        source_effect=source_eff,
+    )
+    target.grant_action(action)
+
+
 # ---------------------------------------------------------------------------
 # Registry
 # ---------------------------------------------------------------------------
@@ -396,4 +436,5 @@ BUILTIN_EFFECTS = {
     "AddResource": add_resource,
     "AddModifier": add_modifier,
     "ModifyAC": modify_ac,  # deprecated — use AddModifier
+    "GrantAction": grant_action,
 }

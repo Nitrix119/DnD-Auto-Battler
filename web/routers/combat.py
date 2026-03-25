@@ -8,6 +8,8 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
 
 from src.combat.combat_system import CombatSystem
+from src.combat.event_data import HealingAppliedData
+from src.combat.events import EventType
 from src.loaders.stat_block_loader import StatBlockLoader
 from src.models.action import AttackAction
 from src.models.entity import Entity
@@ -88,6 +90,9 @@ def serialize_combat_state(combat: CombatSystem) -> dict[str, Any]:
                 "stat_breakdowns": {
                     "ac": e.get_stat_breakdown("ac"),
                 },
+                "granted_actions": [
+                    StatBlockLoader._serialize_action(a) for a in e.granted_actions
+                ],
             }
             for e in combat.combatants
         ],
@@ -248,25 +253,44 @@ async def handle_attack(
 
     action_name = msg["action_name"]
     action = next(
-        (a for a in attacker.stat_block.actions
+        (a for a in attacker.stat_block.actions + attacker.granted_actions
          if isinstance(a, AttackAction) and a.name == action_name),
         None,
     )
     if action is None:
         raise ValueError(f"{attacker.name} has no attack called '{action_name}'")
 
+    # Track healing triggered by entity effects (e.g. Vampiric Touch heals on hit)
+    healing_total = 0
+    healed_entity: Entity | None = None
+
+    def _on_healing(event):
+        nonlocal healing_total, healed_entity
+        if isinstance(event.data, HealingAppliedData):
+            healing_total += event.data.amount
+            healed_entity = event.data.target
+
+    combat.event_bus.subscribe(EventType.HEALING_APPLIED, _on_healing)
     log_before = len(combat.log)
-    hit, damage, roll_detail = combat.resolve_attack(attacker, defender, action)
+    try:
+        hit, damage, roll_detail = combat.resolve_attack(attacker, defender, action)
+    finally:
+        combat.event_bus.unsubscribe(EventType.HEALING_APPLIED, _on_healing)
     new_logs = combat.get_combat_log()[log_before:]
+
+    result: dict[str, Any] = {
+        "target_id": defender.entity_id, "hit": hit, "damage": damage, "roll": roll_detail,
+    }
+    if healing_total > 0:
+        result["healing"] = healing_total
+        result["healed_id"] = healed_entity.entity_id if healed_entity else None
 
     await _send(ws, {
         "type": "action_result",
         "seq": seq,
         "action_type": "attack",
         "attacker_id": attacker.entity_id,
-        "results": [
-            {"target_id": defender.entity_id, "hit": hit, "damage": damage, "roll": roll_detail},
-        ],
+        "results": [result],
         "log": new_logs,
         "combat_state": serialize_combat_state(combat),
     })
@@ -309,8 +333,15 @@ async def handle_cast_spell(
     new_logs = combat.get_combat_log()[log_before:]
 
     per_target = [
-        {"target_id": entity.entity_id, "hit": hit, "damage": damage, "roll": roll_detail}
-        for entity, hit, damage, roll_detail in results
+        {
+            "target_id": entity.entity_id,
+            "hit": hit,
+            "damage": damage,
+            "roll": roll_detail,
+            "healing": healing,
+            "healed_id": healed.entity_id if healed else None,
+        }
+        for entity, hit, damage, roll_detail, healing, healed in results
     ]
 
     await _send(ws, {

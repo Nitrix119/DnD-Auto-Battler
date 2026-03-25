@@ -86,7 +86,7 @@ class AttackResolver:
             )
             rolled_damages = action.roll_damage()
             total_damage = self._damage_processor.apply_damage(
-                defender, rolled_damages, source=attacker,
+                defender, rolled_damages, source=attacker, action_name=action.name,
             )
             log_msg = (
                 f"attacked {defender.name} with {action.name}. "

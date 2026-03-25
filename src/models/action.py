@@ -43,6 +43,7 @@ class Action:
     damage: List[Damage] = field(default_factory=list)
     bonus_damage: List[Damage] = field(default_factory=list)
     cost: ActionCost = field(default_factory=lambda: ACTION_COST)
+    source_effect: str = ""  # non-empty → revoked when that entity effect is removed
 
     def __hash__(self) -> int:
         """Make action hashable for use in sets/dicts."""

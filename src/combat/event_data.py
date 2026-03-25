@@ -143,6 +143,8 @@ class DamageDealtData(EventData):
     defender: Entity
     damage_list: List[Damage]
     total: int
+    source: Optional[Entity] = None      # entity that caused the damage
+    action_name: Optional[str] = None    # name of the action that caused the damage
 
 
 

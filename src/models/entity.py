@@ -5,6 +5,7 @@ from typing import Optional, List
 import uuid
 
 from .action_resources import ActionCost, ActionResources
+from .action import Action
 from .stat_block import StatBlock
 from .condition import Condition, ConditionType
 from .damage import Damage
@@ -32,6 +33,7 @@ class Entity:
     concentration_target: Optional["Entity"] = None
     active_effects: dict = field(default_factory=dict)  # {trigger_str: [Rule, ...]}
     stat_modifiers: List[StatModifier] = field(default_factory=list)
+    granted_actions: List[Action] = field(default_factory=list)  # Temporary actions from effects
     resources: Optional[ActionResources] = None
     x: float = 0.0
     y: float = 0.0
@@ -131,12 +133,17 @@ class Entity:
     def remove_effect(self, name: str) -> None:
         """Remove all effects matching this name across all trigger buckets.
 
-        Also removes any :class:`StatModifier` entries tagged with this
-        effect name so that stat bonuses are cleaned up automatically.
+        Also removes any :class:`StatModifier` entries and granted actions
+        tagged with this effect name so that all bonuses are cleaned up automatically.
         """
         for bucket in self.active_effects.values():
             bucket[:] = [e for e in bucket if e.name != name]
         self.stat_modifiers = [m for m in self.stat_modifiers if m.effect_name != name]
+        self.granted_actions = [a for a in self.granted_actions if a.source_effect != name]
+
+    def grant_action(self, action: Action) -> None:
+        """Attach a temporary action granted by an entity effect."""
+        self.granted_actions.append(action)
 
     def get_effects_for_trigger(self, trigger: str) -> list:
         """Get all effects for a given trigger string."""

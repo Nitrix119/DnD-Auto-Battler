@@ -621,5 +621,202 @@ class TestNewSpellsCombat:
         assert wizard.hp == wizard.max_hp
 
 
+class TestVampiricTouch:
+    """Vampiric Touch — concentration, melee spell attack, heals caster for half damage."""
+
+    @pytest.fixture
+    def wizard(self) -> Entity:
+        sb = StatBlockLoader.load_from_json(str(CHARACTERS_DIR / "wizard.json"))
+        return Entity(sb, is_player_controlled=True)
+
+    @pytest.fixture
+    def goblin(self):
+        sb = StatBlockLoader.load_from_json(str(EXAMPLES_DIR / "creatures/goblin.json"))
+        return Entity(sb)
+
+    @pytest.fixture
+    def combat(self, wizard, goblin) -> CombatSystem:
+        wizard.x, wizard.y, wizard.z = 0.0, 0.0, 0.0
+        goblin.x, goblin.y, goblin.z = 5.0, 0.0, 0.0
+        cs = CombatSystem()
+        cs.add_combatant(wizard)
+        cs.add_combatant(goblin)
+        effect_registry = EffectRegistry()
+        effect_registry.scan_directory("rules/entity_effects")
+        cs.rule_engine = RuleEngine(
+            cs.event_bus,
+            entities_getter=lambda: cs.combatants,
+            damage_processor=cs._damage_processor,
+            effect_registry=effect_registry,
+        )
+        cs.start_combat()
+        for i, entry in enumerate(cs.initiative_tracker.initiative_order):
+            if entry.entity is wizard:
+                cs.initiative_tracker.current_turn_index = i
+                break
+        return cs
+
+    def test_vampiric_touch_loads(self):
+        """Vampiric Touch loads correctly from JSON."""
+        spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "vampiric_touch.json"))
+        assert spell.name == "Vampiric Touch"
+        assert spell.spell_level == 3
+        assert spell.duration.concentration
+        assert len(spell.damage) == 1
+        assert spell.damage[0].damage_type == DamageType.NECROTIC
+        assert spell.damage[0].formula == "3d6"
+
+    def test_vampiric_touch_grants_action_on_hit(self, wizard, goblin, combat):
+        """After a successful cast, the wizard has a granted Vampiric Touch attack action."""
+        spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "vampiric_touch.json"))
+
+        # Damage goblin enough to survive at least one hit (goblin has ~7 HP)
+        goblin.current_hp = 100
+
+        combat.resolve_spell(wizard, [goblin], spell)
+
+        # If hit: wizard should have concentration and a granted attack action.
+        if wizard.concentrating_on == "vampiric_touch":
+            assert any(a.name == "Vampiric Touch" for a in wizard.granted_actions)
+        else:
+            # Missed — nothing to verify about the ongoing effect
+            pytest.skip("Spell missed; rerun to test on-hit behaviour")
+
+    def test_vampiric_touch_heals_on_hit(self, wizard, goblin, combat):
+        """Caster heals for half the necrotic damage dealt when Vampiric Touch hits."""
+        spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "vampiric_touch.json"))
+        goblin.current_hp = 200  # Ensure goblin survives
+
+        wizard.take_damage(Damage(DamageType.BLUDGEONING, 10))
+        hp_before = wizard.hp
+
+        healing_events = []
+        combat.event_bus.subscribe(
+            EventType.HEALING_APPLIED, lambda e: healing_events.append(e)
+        )
+
+        combat.resolve_spell(wizard, [goblin], spell)
+
+        if not wizard.concentrating_on:
+            pytest.skip("Spell missed; rerun to test healing")
+
+        # Healed for floor(damage // 2) — at minimum 1 (since 3d6 minimum is 3)
+        assert len(healing_events) >= 1
+        heal_amount = healing_events[0].data.amount
+        assert heal_amount >= 1
+        assert wizard.hp == min(wizard.max_hp, hp_before + heal_amount)
+
+    def test_vampiric_touch_concentration_removal_revokes_granted_action(self, wizard, goblin, combat):
+        """Breaking concentration removes the granted Vampiric Touch attack."""
+        spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "vampiric_touch.json"))
+        goblin.current_hp = 200
+
+        combat.resolve_spell(wizard, [goblin], spell)
+
+        if not wizard.concentrating_on:
+            pytest.skip("Spell missed; rerun to test concentration removal")
+
+        assert any(a.name == "Vampiric Touch" for a in wizard.granted_actions)
+
+        # Break concentration manually
+        wizard.concentration_target.remove_effect(wizard.concentrating_on)
+        wizard.concentrating_on = None
+        wizard.concentration_target = None
+
+        assert not any(a.name == "Vampiric Touch" for a in wizard.granted_actions)
+
+    def test_vampiric_touch_repeat_attack_heals(self, wizard, goblin, combat):
+        """Using the granted Vampiric Touch attack on a repeat turn also heals the caster."""
+        from src.models.action import AttackAction
+
+        spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "vampiric_touch.json"))
+        goblin.current_hp = 200
+        wizard.take_damage(Damage(DamageType.BLUDGEONING, 10))
+
+        # Initial cast
+        combat.resolve_spell(wizard, [goblin], spell)
+
+        if not wizard.concentrating_on:
+            pytest.skip("Spell missed; rerun to test repeat attack")
+
+        granted = next((a for a in wizard.granted_actions if a.name == "Vampiric Touch"), None)
+        assert isinstance(granted, AttackAction)
+
+        # Simulate next turn: refill action resource and resolve the granted attack
+        wizard.resources.actions = 1
+        hp_before = wizard.hp
+
+        healing_events = []
+        combat.event_bus.subscribe(
+            EventType.HEALING_APPLIED, lambda e: healing_events.append(e)
+        )
+
+        hit, damage, _ = combat.resolve_attack(wizard, goblin, granted)
+
+        if hit:
+            assert len(healing_events) >= 1
+            assert wizard.hp >= hp_before  # healed by at least something
+
+
+    def test_vampiric_touch_healing_uses_floor_division(self, wizard, goblin, combat):
+        """D&D rounding: 9 damage should heal for 4 (9 // 2 = 4), not 5."""
+        from unittest.mock import patch
+        from src.models.action import AttackAction
+
+        spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "vampiric_touch.json"))
+        goblin.current_hp = 200
+        wizard.take_damage(Damage(DamageType.BLUDGEONING, 30))
+        hp_before = wizard.hp
+
+        # Force the spell attack to hit (natural 20) and damage to be exactly 9
+        with patch("src.combat.attack_resolver.roll_d20", return_value=20), \
+             patch("src.combat.spell_resolver.roll_d20", return_value=20), \
+             patch("src.models.action.roll_formula", return_value=9):
+            results = combat.resolve_spell(wizard, [goblin], spell)
+
+        # Verify the hit actually landed
+        _, hit, damage, _, healing, _ = results[0]
+        assert hit is True
+        assert damage == 9
+        # Floor division: 9 // 2 = 4
+        assert healing == 4
+        assert wizard.hp == hp_before + 4
+
+    def test_vampiric_touch_recast_while_active(self, wizard, goblin, combat):
+        """Re-casting Vampiric Touch while already concentrating still heals on hit."""
+        from unittest.mock import patch
+
+        spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "vampiric_touch.json"))
+        goblin.current_hp = 200
+        wizard.take_damage(Damage(DamageType.BLUDGEONING, 30))
+
+        # First cast — force hit
+        with patch("src.combat.attack_resolver.roll_d20", return_value=20), \
+             patch("src.combat.spell_resolver.roll_d20", return_value=20), \
+             patch("src.models.action.roll_formula", return_value=6):
+            combat.resolve_spell(wizard, [goblin], spell)
+
+        assert wizard.concentrating_on == "vampiric_touch"
+        hp_after_first = wizard.hp
+
+        # Second cast (re-cast while concentration is active) — force hit
+        wizard.resources.actions = 1
+        wizard.take_damage(Damage(DamageType.BLUDGEONING, 10))
+        hp_before_second = wizard.hp
+
+        with patch("src.combat.attack_resolver.roll_d20", return_value=20), \
+             patch("src.combat.spell_resolver.roll_d20", return_value=20), \
+             patch("src.models.action.roll_formula", return_value=8):
+            results = combat.resolve_spell(wizard, [goblin], spell)
+
+        _, hit, damage, _, healing, _ = results[0]
+        assert hit is True
+        assert damage == 8
+        # Healing should still trigger: 8 // 2 = 4
+        assert healing == 4
+        assert wizard.concentrating_on == "vampiric_touch"
+        assert any(a.name == "Vampiric Touch" for a in wizard.granted_actions)
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

@@ -70,6 +70,7 @@ function createToken(x = 0.5, y = 0.5, creatureData = null, team = 0, creaturePa
         actions:   creatureData?.actions        ?? [],
         spells:    creatureData?.known_spells   ?? [],  // raw name list
         spellData: [],                                  // resolved spell objects (populated async)
+        grantedActions: [],                             // temporary actions from active effects
     };
 }
 
@@ -811,9 +812,10 @@ const targetingCancelBtn = document.getElementById("targeting-cancel");
 
 function setTargetingAction(action) {
     targetingAction = action;
-    // Toggle active class on all action buttons
+    // Toggle active class on all action buttons — use the stashed reference
+    // so that identically-named actions in different sections don't collide.
     for (const btn of actionListEl.querySelectorAll(".action-btn")) {
-        btn.classList.toggle("active", btn.dataset.actionName === action?.name);
+        btn.classList.toggle("active", btn._actionRef === action && action != null);
     }
     if (action) {
         targetingLabelEl.textContent = `Targeting: ${action.name}`;
@@ -867,8 +869,9 @@ function openActionPanel(token) {
                 btn.className = "action-btn";
                 btn.textContent = action.name;
                 btn.dataset.actionName = action.name;
+                btn._actionRef = action;
                 btn.addEventListener("click", () => {
-                    setTargetingAction(targetingAction?.name === action.name ? null : action);
+                    setTargetingAction(targetingAction === action ? null : action);
                 });
                 body.appendChild(btn);
             }
@@ -887,6 +890,7 @@ function openActionPanel(token) {
                 btn.className = "action-btn action-btn-spell";
                 btn.textContent = spell.name;
                 btn.dataset.actionName = spell.name;
+                btn._actionRef = spell;
 
                 if (spell.spell_range?.type === "self") {
                     // Self-targeting: fires instantly at the caster
@@ -903,7 +907,7 @@ function openActionPanel(token) {
                     });
                 } else {
                     btn.addEventListener("click", () => {
-                        setTargetingAction(targetingAction?.name === spell.name ? null : spell);
+                        setTargetingAction(targetingAction === spell ? null : spell);
                     });
                 }
 
@@ -912,10 +916,24 @@ function openActionPanel(token) {
         }
     }));
 
-    // ── Other ─────────────────────────────────────────────────────────────────
-    actionListEl.appendChild(makeActionSection("Other", (body) => {
-        body.appendChild(makeEmptyNote("None."));
-    }));
+    // ── Active Abilities ──────────────────────────────────────────────────────
+    // Actions granted by concentration spells (e.g. Vampiric Touch repeat attack).
+    // Only shown when at least one granted action is present.
+    if (token.grantedActions.length > 0) {
+        actionListEl.appendChild(makeActionSection("Active Abilities", (body) => {
+            for (const action of token.grantedActions) {
+                const btn = document.createElement("button");
+                btn.className = "action-btn";
+                btn.textContent = action.name;
+                btn.dataset.actionName = action.name;
+                btn._actionRef = action;
+                btn.addEventListener("click", () => {
+                    setTargetingAction(targetingAction === action ? null : action);
+                });
+                body.appendChild(btn);
+            }
+        }));
+    }
 
     actionPanel.classList.add("visible");
 }
@@ -1338,6 +1356,7 @@ function updateFromCombatState(state) {
         token.resources      = es.resources;
         token.alive          = es.alive;
         token.statBreakdowns = es.stat_breakdowns ?? {};
+        token.grantedActions = es.granted_actions ?? [];
     }
     // Refresh stat panels if their token data just changed
     if (infoHoveredToken) updateInfoPanel(infoHoveredToken);
@@ -1380,22 +1399,34 @@ async function handleActionResult(msg) {
     updateFromCombatState(msg.combat_state);
 
     for (const r of (msg.results ?? [])) {
-        if (!r.roll) continue;
         const target = tokens.find(t => t.id === r.target_id);
         if (!target) continue;
-        let text, success;
-        if (r.roll.dc != null) {
-            // Saving throw — green = saved (success for defender), red = failed
-            text = `SAVE ${r.roll.total} vs ${r.roll.dc} DC`;
-            success = r.roll.save_success;
-        } else {
-            // Attack roll — green = hit, red = miss
-            text = `ATK ${r.roll.total} vs ${r.roll.ac} AC`;
-            success = r.hit;
-        }
         const baseY = target.y - target.radius - 0.15;
-        spawnFloatingLabel(target.x, baseY,        text,                   success);
-        spawnFloatingLabel(target.x, baseY - 0.55, "-" + String(r.damage),  success, 1.45);
+
+        if (r.roll) {
+            let text, success;
+            if (r.roll.dc != null) {
+                // Saving throw — green = saved (success for defender), red = failed
+                text = `SAVE ${r.roll.total} vs ${r.roll.dc} DC`;
+                success = r.roll.save_success;
+            } else {
+                // Attack roll — green = hit, red = miss
+                text = `ATK ${r.roll.total} vs ${r.roll.ac} AC`;
+                success = r.hit;
+            }
+            spawnFloatingLabel(target.x, baseY,        text,                    success);
+            spawnFloatingLabel(target.x, baseY - 0.55, "-" + String(r.damage),  success, 1.45);
+        }
+
+        if (r.healing > 0) {
+            // Healing may go to target (e.g. Cure Wounds) or caster (e.g. Vampiric Touch).
+            // Use healed_id if provided, otherwise fall back to target.
+            const healedToken = tokens.find(t => t.id === (r.healed_id ?? r.target_id));
+            if (healedToken) {
+                const healY = healedToken.y - healedToken.radius - 0.15;
+                spawnFloatingLabel(healedToken.x, healY, "+" + String(r.healing), true, 1.45);
+            }
+        }
     }
 
     for (const line of (msg.log || [])) {
