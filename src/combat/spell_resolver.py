@@ -123,32 +123,9 @@ class SpellResolver:
         healing_total = 0
         healed_entity: Optional[Entity] = None
         if hit:
-            save_roll, save_success = roll_saving_throw(
-                defender, action.save_ability, effective_dc,
-            ) if effective_dc > 0 and action.save_ability else (None, True)
-
-            self._event_bus.emit(
-                EventType.SPELL_HIT,
-                SpellHitData(
-                    caster=caster, defender=defender, action=action,
-                    roll=attack_total, save_success=save_success, save_roll=save_roll,
-                ),
+            damage_dealt, healing_total, healed_entity, _, _ = self._execute_spell_hit(
+                caster, defender, action, rolled_damages, effective_dc, attack_total,
             )
-            subscribe_heal, unsubscribe_heal = self._make_healing_listener()
-            subscribe_heal()
-            try:
-                self._apply_spell_effects(
-                    caster, defender, action, attack_total, save_success, save_roll,
-                )
-                target_damages = [Damage(d.damage_type, d.amount) for d in rolled_damages]
-                target_damages = self._process_save_outcomes(
-                    caster, defender, action, save_success, save_roll, attack_total, target_damages,
-                )
-                damage_dealt = self._damage_processor.apply_damage(
-                    defender, target_damages, source=caster, action_name=action.name,
-                )
-            finally:
-                healing_total, healed_entity = unsubscribe_heal()
 
         hit_str = f"Hit! Damage: {damage_dealt}" if hit else "Miss!"
         log_msg = (
@@ -173,32 +150,12 @@ class SpellResolver:
         effective_dc: int,
     ) -> Tuple[bool, int, str, None]:
         """Spell with no attack roll — auto-hit, saving throw if applicable."""
-        save_roll, save_success = roll_saving_throw(
-            defender, action.save_ability, effective_dc,
-        ) if effective_dc > 0 and action.save_ability else (None, True)
-
-        self._event_bus.emit(
-            EventType.SPELL_HIT,
-            SpellHitData(
-                caster=caster, defender=defender, action=action,
-                roll=None, save_success=save_success, save_roll=save_roll,
-            ),
+        damage_dealt, healing_total, healed_entity, save_roll, save_success = (
+            self._execute_spell_hit(
+                caster, defender, action, rolled_damages, effective_dc, attack_roll=None,
+            )
         )
-        subscribe_heal, unsubscribe_heal = self._make_healing_listener()
-        subscribe_heal()
-        try:
-            self._apply_spell_effects(
-                caster, defender, action, None, save_success, save_roll,
-            )
-            target_damages = [Damage(d.damage_type, d.amount) for d in rolled_damages]
-            target_damages = self._process_save_outcomes(
-                caster, defender, action, save_success, save_roll, None, target_damages,
-            )
-            damage_dealt = self._damage_processor.apply_damage(
-                defender, target_damages, source=caster, action_name=action.name,
-            )
-        finally:
-            healing_total, healed_entity = unsubscribe_heal()
+
         save_str = ""
         if save_roll is not None:
             result_word = "success" if save_success else "failure"
@@ -212,6 +169,54 @@ class SpellResolver:
             if save_roll is not None else None
         )
         return True, damage_dealt, log_msg, save_detail, healing_total, healed_entity
+
+    def _execute_spell_hit(
+        self,
+        caster: Entity,
+        defender: Entity,
+        action: SpellAction,
+        rolled_damages: List[Damage],
+        effective_dc: int,
+        attack_roll: Optional[int],
+    ) -> Tuple[int, int, Optional[Entity], Optional[int], bool]:
+        """Shared hit pipeline: saving throw → SPELL_HIT event → effects → damage.
+
+        Used by both attack-roll spells (after the hit is confirmed) and
+        auto-hit spells.  ``attack_roll`` is None for the auto-hit path.
+
+        Returns:
+            (damage_dealt, healing_total, healed_entity, save_roll, save_success)
+        """
+        save_roll, save_success = (
+            roll_saving_throw(defender, action.save_ability, effective_dc)
+            if effective_dc > 0 and action.save_ability
+            else (None, True)
+        )
+
+        self._event_bus.emit(
+            EventType.SPELL_HIT,
+            SpellHitData(
+                caster=caster, defender=defender, action=action,
+                roll=attack_roll, save_success=save_success, save_roll=save_roll,
+            ),
+        )
+        subscribe_heal, unsubscribe_heal = self._make_healing_listener()
+        subscribe_heal()
+        try:
+            self._apply_spell_effects(
+                caster, defender, action, attack_roll, save_success, save_roll,
+            )
+            target_damages = [Damage(d.damage_type, d.amount) for d in rolled_damages]
+            target_damages = self._process_save_outcomes(
+                caster, defender, action, save_success, save_roll, attack_roll, target_damages,
+            )
+            damage_dealt = self._damage_processor.apply_damage(
+                defender, target_damages, source=caster, action_name=action.name,
+            )
+        finally:
+            healing_total, healed_entity = unsubscribe_heal()
+
+        return damage_dealt, healing_total, healed_entity, save_roll, save_success
 
     # ------------------------------------------------------------------
     # Internal helpers
