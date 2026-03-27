@@ -38,6 +38,7 @@ class PipelineResult:
     healing_total: int = 0
     healed_entity: Optional[Entity] = None
     save_roll: Optional[int] = None
+    save_dc: Optional[int] = None
     save_success: bool = True
     attack_roll: Optional[int] = None
     attack_total: Optional[int] = None
@@ -89,6 +90,7 @@ class EffectPipeline:
             "save_success": True,
             "save_roll": None,
             "attack_roll": None,
+            "save_dc": None,
             "attack_total": None,
             "damage_dealt": 0,
             "damage_rolled": 0,
@@ -153,6 +155,7 @@ class EffectPipeline:
             healing_total=healing_total,
             healed_entity=healed_entity,
             save_roll=context["save_roll"],
+            save_dc=context["save_dc"],
             save_success=context["save_success"],
             attack_roll=context["attack_roll"],
             attack_total=context["attack_total"],
@@ -223,6 +226,7 @@ class EffectPipeline:
             save_roll, save_success = None, True
 
         context["save_roll"] = save_roll
+        context["save_dc"] = effective_dc
         context["save_success"] = save_success
         logger.debug(
             "saving_throw step: %s DC %d → roll=%s success=%s",

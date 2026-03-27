@@ -119,6 +119,9 @@ class SpellResolver:
                 "total": result.attack_total,
                 "ac": defender.ac,
             }
+
+            logger.info("DC set as:", result.save_dc)
+
         elif result.save_roll is not None:
             result_word = "success" if result.save_success else "failure"
             log_msg = (
@@ -127,6 +130,7 @@ class SpellResolver:
             )
             roll_detail = {
                 "total": result.save_roll,
+                "dc": result.save_dc,
                 "save_success": result.save_success,
             }
         else:

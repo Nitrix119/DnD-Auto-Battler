@@ -45,10 +45,11 @@
   "animation": [
     [
       {
-        "type": "expanding_ring",
+        "type": "expanding_cone",
         "color": "#aaeeff",
-        "at": "caster",
-        "radius": 60,
+        "from": "caster",
+        "to": "target_point",
+        "distance_ft": 60,
         "speed": 10,
         "fill": true,
         "opacity": 0.35

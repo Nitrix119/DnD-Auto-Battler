@@ -126,6 +126,33 @@ A circle that expands outward from a point at a fixed speed, typically used for 
 
 ---
 
+### `expanding_cone`
+
+A triangular cone that expands outward from an origin point toward a target direction, fading as it reaches full length. Matches D&D's official cone geometry: at any point the width equals the distance to the origin (tan of the half-angle = 0.5, ≈ 26.6°). Used for breath attacks, Cone of Cold, and other directional AOE spells.
+
+```json
+{"type": "expanding_cone", "color": "#aaeeff", "from": "caster", "to": "target_point", "distance_ft": 60, "speed": 10, "fill": true, "opacity": 0.35}
+```
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `color` | hex string | — | Color of the cone outline and optional fill |
+| `from` | location ref | `"caster"` | Tip of the cone — where it originates |
+| `to` | location ref | `"target_point"` | Used **only for direction**. The cone always starts at `from`; `to` determines which way it points. |
+| `distance_ft` | number | `30` | Length of the cone in **feet**. Converted to cells internally (1 cell = 5 ft). |
+| `speed` | number | `3` | Expansion speed in **cells per second**. Duration is computed from `distance_ft / 5 / speed`. |
+| `line_width` | number | `3` | Stroke width of the cone outline in pixels at zoom 1 |
+| `fill` | boolean | `false` | If true, fills the interior with the color at 20% opacity |
+| `opacity` | number | `1.0` | Master opacity that fades to 50% of its initial value as the cone reaches full length |
+
+**Notes:**
+- Duration is automatic — computed from `distance_ft` and `speed`. You do not set `duration`.
+- The `to` field is consumed only for its angle. The cone extends exactly `distance_ft` feet, not to the position of `to`.
+- Use `"from": "caster_edge"` for large tokens so the tip starts at the token's edge rather than the center.
+- Combine with a `particles` effect at `"at": "caster"` to reinforce the burst-from-hands feel.
+
+---
+
 ### `flash`
 
 A bright filled circle at a location that fades out over a fixed duration. Used to mark a hit, an impact, or a magical effect landing on a token.
@@ -249,11 +276,11 @@ Layering a wide colored beam under a thin white core is the standard technique f
 
 | Field | Effects that use it | Type | Notes |
 |---|---|---|---|
-| `type` | all | string | Required. One of the six types above. |
+| `type` | all | string | Required. One of the seven types above. |
 | `color` | all | hex string | Required. `"#RRGGBB"` |
 | `at` | `flash`, `aura`, `particles`, `expanding_ring` | location ref | Point-effect anchor. Supports `"each_target"`. |
-| `from` | `projectile`, `beam` | location ref | Start point |
-| `to` | `projectile`, `beam` | location ref | End point. `beam` accepts `"direction_endpoint"`. |
+| `from` | `projectile`, `beam`, `expanding_cone` | location ref | Start / tip point |
+| `to` | `projectile`, `beam`, `expanding_cone` | location ref | End point. `beam` accepts `"direction_endpoint"`. `expanding_cone` uses it for direction only. |
 | `duration` | `flash`, `aura`, `particles`, `beam` | seconds | How long the effect is visible |
 | `speed` | `projectile`, `expanding_ring`, `particles` | varies | Cells/sec for projectile and ring; distance multiplier for particles |
 | `size` | `projectile`, `flash`, `aura` | multiplier | Visual scale relative to a half-cell radius |
@@ -267,7 +294,7 @@ Layering a wide colored beam under a thin white core is the standard technique f
 | `count` | `particles` | number | Number of particles |
 | `spread` | `particles` | feet | Maximum scatter radius |
 | `opacity` | all | number (0–1) | Master opacity |
-| `distance_ft` | `beam` | feet | Length for `"direction_endpoint"` beams |
+| `distance_ft` | `beam`, `expanding_cone` | feet | Length for `"direction_endpoint"` beams; cone length for `expanding_cone` |
 
 ---
 
@@ -291,12 +318,24 @@ Beam appears → Flash on hit.
 ]
 ```
 
-### Cone / AoE from caster
-Expanding ring from caster → Per-target flash.
+### Cone / AoE from caster (directional)
+Expanding cone from caster in the direction of the target → Per-target flash.
 ```json
 "animation": [
-  [{"type": "expanding_ring", "color": "#FF6600", "at": "caster", "radius": 15, "speed": 8, "fill": true}],
+  [
+    {"type": "expanding_cone", "color": "#FF6600", "from": "caster", "to": "target_point", "distance_ft": 30, "speed": 8, "fill": true},
+    {"type": "particles", "color": "#FF4400", "at": "caster", "count": 20, "spread": 30, "duration": 0.4, "speed": 3.0}
+  ],
   [{"type": "flash", "color": "#FF4400", "at": "each_target", "duration": 0.3}]
+]
+```
+
+### Cone / AoE from caster (non-directional, circular)
+Use `expanding_ring` when the spell has no meaningful direction (e.g. Thunderwave).
+```json
+"animation": [
+  [{"type": "expanding_ring", "color": "#AACCFF", "at": "caster", "radius": 15, "speed": 8, "fill": true}],
+  [{"type": "flash", "color": "#BBDDFF", "at": "each_target", "duration": 0.3}]
 ]
 ```
 

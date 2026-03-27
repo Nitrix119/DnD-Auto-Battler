@@ -168,6 +168,73 @@ registerEffect("expanding_ring", (def, ctx) => {
     };
 });
 
+// Expanding Cone: a triangle that expands outward from a point in a direction,
+// matching D&D's 1:2 width-to-length cone ratio (tan(half_angle) = 0.5).
+// Direction is derived from `from` → `to`, like beam.
+registerEffect("expanding_cone", (def, ctx) => {
+    const from = resolveLocation(def.from || "caster", ctx);
+    const dirTarget = def.to
+        ? resolveLocation(def.to, ctx)
+        : (ctx.targetPoint || ctx.targets[0] || from);
+
+    const distanceFt = def.distance_ft || 30;
+    const distanceCells = distanceFt / 5;
+    const speed = def.speed || 3;            // cells per second
+    const lineWidth = def.line_width || 3;
+    const fill = def.fill || false;
+    const baseOpacity = def.opacity ?? 1.0;
+    const durationMs = (distanceCells / speed) * 1000;
+
+    // D&D cone: at any distance d, the half-width is d/2, so tan(half_angle) = 0.5
+    const TAN_HALF = 0.5;
+
+    const ddx = dirTarget.x - from.x;
+    const ddy = dirTarget.y - from.y;
+    const len = Math.sqrt(ddx * ddx + ddy * ddy);
+    const dirAngle = len > 0.0001 ? Math.atan2(ddy, ddx) : 0;
+
+    return {
+        _startTime: null,
+        _progress: 0,
+        update(ts) {
+            this._progress = Math.min(1, (ts - this._startTime) / Math.max(durationMs, 1));
+        },
+        render(c) {
+            const currentLenPx = distanceCells * this._progress * CELL_PX * camera.zoom;
+            const halfWidthPx = currentLenPx * TAN_HALF;
+            const { x: ox, y: oy } = worldToScreen(from.x, from.y);
+            const cosD = Math.cos(dirAngle);
+            const sinD = Math.sin(dirAngle);
+
+            // Front-centre of the cone face
+            const fx = ox + cosD * currentLenPx;
+            const fy = oy + sinD * currentLenPx;
+            // Left and right far corners (perpendicular to direction)
+            const lx = fx - sinD * halfWidthPx;
+            const ly = fy + cosD * halfWidthPx;
+            const rx = fx + sinD * halfWidthPx;
+            const ry = fy - cosD * halfWidthPx;
+
+            const fadeAlpha = baseOpacity * (1 - this._progress * 0.5);
+
+            c.beginPath();
+            c.moveTo(ox, oy);
+            c.lineTo(lx, ly);
+            c.lineTo(rx, ry);
+            c.closePath();
+
+            if (fill) {
+                c.fillStyle = rgba(def.color, fadeAlpha * 0.2);
+                c.fill();
+            }
+            c.strokeStyle = rgba(def.color, fadeAlpha);
+            c.lineWidth = lineWidth * camera.zoom;
+            c.stroke();
+        },
+        isComplete() { return this._progress >= 1; },
+    };
+});
+
 // Flash: bright circle that fades out on a target
 registerEffect("flash", (def, ctx) => {
     const at = resolveLocation(def.at || "target", ctx);

@@ -592,23 +592,23 @@ async def combat_websocket(websocket: WebSocket) -> None:
             _prune_sessions()
 
             # ── Reconnection: rejoin existing session ──────────────────────
-            if msg_type == "rejoin_combat":
-                token = msg.get("session_token", "")
-                session = _sessions.get(token)
-                if session:
-                    combat, id_map, entity_lookup, _ = session
-                    _sessions[token] = (combat, id_map, entity_lookup, time.monotonic())
-                    await _send(websocket, {
-                        "type": "rejoin_combat_ok",
-                        "seq": seq,
-                        "id_map": id_map,
-                        "initiative_order": serialize_initiative_order(combat),
-                        "combat_state": serialize_combat_state(combat),
-                    })
-                else:
-                    await _send_error(websocket, seq, "rejoin_combat",
-                                      "Session not found or expired")
-                continue
+            # if msg_type == "rejoin_combat":
+            #     token = msg.get("session_token", "")
+            #     session = _sessions.get(token)
+            #     if session:
+            #         combat, id_map, entity_lookup, _ = session
+            #         _sessions[token] = (combat, id_map, entity_lookup, time.monotonic())
+            #         await _send(websocket, {
+            #             "type": "rejoin_combat_ok",
+            #             "seq": seq,
+            #             "id_map": id_map,
+            #             "initiative_order": serialize_initiative_order(combat),
+            #             "combat_state": serialize_combat_state(combat),
+            #         })
+            #     else:
+            #         await _send_error(websocket, seq, "rejoin_combat",
+            #                           "Session not found or expired")
+            #     continue
 
             handler = _HANDLERS.get(msg_type)
             if handler is None:
