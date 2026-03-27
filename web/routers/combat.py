@@ -19,6 +19,7 @@ from src.rules.rule_engine import RuleEngine
 from src.spatial.geometry import Point3D
 
 _RULES_DIR = Path(__file__).parent.parent.parent / "rules"
+_GLOBAL_RULES_DIR = _RULES_DIR / "global"
 
 logger = logging.getLogger(__name__)
 
@@ -271,8 +272,7 @@ async def handle_start_combat(
         damage_processor=combat._damage_processor,
         effect_registry=effect_registry,
     )
-    rule_engine.load_from_file(str(_RULES_DIR / "concentration.json"))
-    rule_engine.load_from_file(str(_RULES_DIR / "action_economy_refill.json"))
+    rule_engine.load_from_directory(_GLOBAL_RULES_DIR)
     combat.rule_engine = rule_engine
 
     combat.start_combat()

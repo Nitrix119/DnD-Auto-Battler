@@ -1,0 +1,10 @@
+{
+  "name": "critical_miss_on_nat_1",
+  "triggers": ["ATTACK_ROLLED"],
+  "condition": "event.roll == 1",
+  "effects": [
+    {
+      "action": "ForceCriticalMiss"
+    }
+  ]
+}

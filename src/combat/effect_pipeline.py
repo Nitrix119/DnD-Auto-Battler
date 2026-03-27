@@ -15,12 +15,12 @@ from typing import Any, Dict, List, Optional, TYPE_CHECKING
 from src.models.entity import Entity
 from src.models.action import SpellAction
 from src.models.damage import Damage, DamageType
-from src.utils.dice import roll_formula
+from src.utils.dice import roll_formula, multiply_formula
 from src.utils.saving_throw import roll_saving_throw
 from src.rules.expressions import build_context, evaluate, resolve
 from .attack_resolver import AttackResolver
 from .event_bus import CombatEvent, EventBus
-from .event_data import AttackDeclaredData, SpellHitData, HealingAppliedData
+from .event_data import AttackDeclaredData, AttackRolledData, SpellHitData, HealingAppliedData
 from .events import EventType
 
 if TYPE_CHECKING:
@@ -42,6 +42,8 @@ class PipelineResult:
     save_success: bool = True
     attack_roll: Optional[int] = None
     attack_total: Optional[int] = None
+    critical_hit: bool = False
+    critical_miss: bool = False
 
 
 class EffectPipeline:
@@ -87,6 +89,8 @@ class EffectPipeline:
         # never raises AttributeError for uninitialised keys.
         context: Dict[str, Any] = {
             "hit": True,
+            "critical_hit": False,
+            "critical_miss": False,
             "save_success": True,
             "save_roll": None,
             "attack_roll": None,
@@ -159,6 +163,8 @@ class EffectPipeline:
             save_success=context["save_success"],
             attack_roll=context["attack_roll"],
             attack_total=context["attack_total"],
+            critical_hit=context["critical_hit"],
+            critical_miss=context["critical_miss"],
         )
 
     # ------------------------------------------------------------------
@@ -192,10 +198,27 @@ class EffectPipeline:
 
         roll = AttackResolver._resolve_attack_roll(spell_declared)
         total = roll + effective_bonus
-        hit = total >= defender.ac
 
         context["attack_roll"] = roll
         context["attack_total"] = total
+
+        spell_rolled = self._event_bus.emit(
+            EventType.ATTACK_ROLLED,
+            AttackRolledData(attacker=caster, defender=defender, action=action, roll=roll, total=total),
+        )
+        
+        # Check if ATTACK_ROLLED event has returned a critical hit or miss being noted
+        # Handling is done this way for more flexibility (like an effect to let fighters crit on 19)
+        critical_hit = spell_rolled.data.get("critical_hit", False)
+        critical_miss = spell_rolled.data.get("critical_miss", False)
+        context["critical_hit"] = critical_hit
+        context["critical_miss"] = critical_miss
+
+        hit = (
+            True if critical_hit else 
+            False if critical_miss else 
+            total >= defender.ac
+        )
         context["hit"] = hit
 
         roll_mode = AttackResolver._roll_mode_label(spell_declared)
@@ -259,6 +282,8 @@ class EffectPipeline:
             amount = context[pre_rolled_key]
         else:
             formula = step.get("formula", "")
+            if context["critical_hit"] and formula:
+                formula = multiply_formula(formula, 2)
             amount = roll_formula(formula) if formula else 0
 
         context["damage_rolled"] = context.get("damage_rolled", 0) + amount

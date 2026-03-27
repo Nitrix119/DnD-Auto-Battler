@@ -709,6 +709,8 @@ class TestVampiricTouch:
 
     def test_vampiric_touch_heals_on_hit(self, wizard, goblin, combat):
         """Caster heals for half the necrotic damage dealt when Vampiric Touch hits."""
+        from unittest.mock import patch
+        
         spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "vampiric_touch.json"))
         goblin.current_hp = 200  # Ensure goblin survives
 
@@ -720,7 +722,8 @@ class TestVampiricTouch:
             EventType.HEALING_APPLIED, lambda e: healing_events.append(e)
         )
 
-        combat.resolve_spell(wizard, [goblin], spell)
+        with patch("src.combat.attack_resolver.roll_d20", return_value=20):
+            combat.resolve_spell(wizard, [goblin], spell)
 
         if not wizard.concentrating_on:
             pytest.skip("Spell missed; rerun to test healing")
@@ -752,6 +755,7 @@ class TestVampiricTouch:
 
     def test_vampiric_touch_repeat_attack_heals(self, wizard, goblin, combat):
         """Using the granted Vampiric Touch attack on a repeat turn also heals the caster."""
+        from unittest.mock import patch
         from src.models.action import AttackAction
 
         spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "vampiric_touch.json"))
@@ -759,7 +763,8 @@ class TestVampiricTouch:
         wizard.take_damage(Damage(DamageType.BLUDGEONING, 10))
 
         # Initial cast
-        combat.resolve_spell(wizard, [goblin], spell)
+        with patch("src.combat.attack_resolver.roll_d20", return_value=20):
+         combat.resolve_spell(wizard, [goblin], spell)
 
         if not wizard.concentrating_on:
             pytest.skip("Spell missed; rerun to test repeat attack")
@@ -776,7 +781,8 @@ class TestVampiricTouch:
             EventType.HEALING_APPLIED, lambda e: healing_events.append(e)
         )
 
-        hit, damage, _ = combat.resolve_attack(wizard, goblin, granted)
+        with patch("src.combat.attack_resolver.roll_d20", return_value=20):
+            hit, damage, _ = combat.resolve_attack(wizard, goblin, granted)
 
         if hit:
             assert len(healing_events) >= 1

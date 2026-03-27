@@ -83,6 +83,25 @@ def roll_formula(formula: str) -> int:
     return total
 
 
+def multiply_formula(formula: str, multiplier: int) -> str:
+    """Multiply the dice counts in a formula by a multiplier.
+
+    Args:
+        formula: Dice formula string, e.g. "6d8" or "2d6+3"
+        multiplier: Factor to multiply dice counts by
+
+    Returns:
+        New formula string with dice counts multiplied, e.g. "12d8" or "4d6+3"
+    """
+    def replace_token(m: re.Match) -> str:
+        sign, number, sides = m.group(1), m.group(2), m.group(3)
+        if sides:
+            return f"{sign}{int(number) * multiplier}d{sides}"
+        return f"{sign}{number}"
+
+    return _TOKEN_RE.sub(replace_token, formula.strip().replace(" ", ""))
+
+
 def roll_with_advantage() -> int:
     """Roll with advantage (roll twice, take highest).
     

@@ -15,8 +15,8 @@ from src.rules.effects import (
     cancel_event, heal_target,
 )
 
-RULES_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "rules")
-CONCENTRATION_JSON = os.path.join(RULES_DIR, "concentration.json")
+GLOBAL_RULES_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "rules", "global")
+CONCENTRATION_JSON = os.path.join(GLOBAL_RULES_DIR, "concentration.json")
 
 
 # ── Shared helpers ────────────────────────────────────────────────────────────

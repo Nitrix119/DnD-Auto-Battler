@@ -14,7 +14,7 @@ from src.rules.rule_engine import RuleEngine
 from src.rules.rule_loader import RuleLoader
 
 LONGSTRIDER_RULE_PATH = "rules/entity_effects/longstrider.json"
-REFILL_RULE_PATH = "rules/action_economy_refill.json"
+REFILL_RULE_PATH = "rules/global/action_economy_refill.json"
 
 
 # -- Helpers ------------------------------------------------------------------

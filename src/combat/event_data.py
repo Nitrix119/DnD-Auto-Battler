@@ -87,6 +87,14 @@ class AttackDeclaredData(EventData):
     advantage: bool = False
     disadvantage: bool = False
 
+@dataclass
+class AttackRolledData(EventData):
+    """Data for ATTACK_ROLLED events."""
+    attacker: Entity
+    defender: Entity
+    action: Action
+    roll: int
+    total: int
 
 @dataclass
 class AttackHitData(EventData):

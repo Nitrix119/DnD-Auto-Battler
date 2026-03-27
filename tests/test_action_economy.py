@@ -294,7 +294,7 @@ class TestRefillRule:
         """Resources are refilled when TURN_START fires with the refill rule loaded."""
         bus = EventBus()
         engine = RuleEngine(bus)
-        engine.load_from_file("rules/action_economy_refill.json")
+        engine.load_from_file("rules/global/action_economy_refill.json")
 
         entity = Entity(_make_stat_block())
         entity.spend_resources(ACTION_COST)

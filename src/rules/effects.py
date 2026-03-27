@@ -261,6 +261,28 @@ def grant_disadvantage(effect: dict, ctx: dict, event: CombatEvent, event_bus: E
     event.data["disadvantage"] = True
 
 
+def force_critical_hit(effect: dict, ctx: dict, event: CombatEvent, event_bus: EventBus) -> None:
+    """Force the triggering attack to resolve as a critical hit.
+
+    Meaningful for ATTACK_DECLARED and ATTACK_ROLLED events. Sets event.data["critical_hit"] = True,
+    which CombatSystem checks after emitting both.
+
+    No required keys.
+    """
+    event.data["critical_hit"] = True
+
+
+def force_critical_miss(effect: dict, ctx: dict, event: CombatEvent, event_bus: EventBus) -> None:
+    """Force the triggering attack to resolve as a critical miss.
+
+    Meaningful for ATTACK_DECLARED and ATTACK_ROLLED events events. Sets event.data["critical_miss"] = True,
+    which CombatSystem checks after emitting both.
+
+    No required keys.
+    """
+    event.data["critical_miss"] = True
+
+
 def add_damage_to_attack_hit(effect: dict, ctx: dict, event: CombatEvent, event_bus: EventBus) -> None:
     """Add a bonus damage die to the triggering attack's roll_damage() call.
 
@@ -432,6 +454,8 @@ BUILTIN_EFFECTS = {
     "AddDamageToAttackHit": add_damage_to_attack_hit,
     "GrantAdvantage": grant_advantage,
     "GrantDisadvantage": grant_disadvantage,
+    "ForceCriticalHit": force_critical_hit,
+    "ForceCriticalMiss": force_critical_miss,
     "ModifyDamage": modify_damage,
     "GrantTemporaryHP": grant_temporary_hp,
     "RemoveEffect": remove_effect,

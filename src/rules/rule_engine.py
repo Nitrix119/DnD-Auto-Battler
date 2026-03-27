@@ -109,7 +109,7 @@ class RuleEngine:
     Usage::
 
         engine = RuleEngine(combat.event_bus)
-        engine.load_from_file("rules/concentration.json")
+        engine.load_from_file("rules/global/concentration.json")
 
     Custom effects can be registered before loading rules::
 
@@ -165,6 +165,23 @@ class RuleEngine:
                 self._subscribed_triggers.add(trigger)
                 self.event_bus.subscribe(trigger, lambda e, t=trigger: self._dispatch_trigger(t, e))
             self._rules[trigger].append(rule)
+
+    def load_from_directory(self, path: str) -> List[Rule]:
+        """Recursively load all JSON rule files from a directory.
+
+        Args:
+            path: Path to the directory to search.
+
+        Returns:
+            List of loaded Rules.
+        """
+        import os
+        rules = []
+        for dirpath, _, filenames in os.walk(path):
+            for filename in filenames:
+                if filename.endswith(".json"):
+                    rules.append(self.load_from_file(os.path.join(dirpath, filename)))
+        return rules
 
     def load_from_file(self, path: str) -> Rule:
         """Load a JSON rule file and register it.

@@ -419,7 +419,7 @@ class TestShieldOfFaithEffect:
         bus, engine, resolver = setup_engine_and_resolver(cleric, goblin)
 
         # Load concentration rule so the engine enforces it
-        engine.load_from_file("rules/concentration.json")
+        engine.load_from_file("rules/global/concentration.json")
 
         spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "shield_of_faith.json"))
         base_ac = cleric.ac
@@ -476,7 +476,7 @@ class TestLongstriderSpellEffects:
         wizard = load_wizard()
         goblin = load_goblin()
         bus, engine, resolver = setup_engine_and_resolver(wizard, goblin)
-        engine.load_from_file("rules/action_economy_refill.json")
+        engine.load_from_file("rules/global/action_economy_refill.json")
 
         spell = longstrider_spell()
         resolver.resolve(wizard, [goblin], spell)
@@ -495,7 +495,7 @@ class TestLongstriderSpellEffects:
         goblin_a = load_goblin()
         goblin_b = load_goblin()
         bus, engine, resolver = setup_engine_and_resolver(wizard, goblin_a, goblin_b)
-        engine.load_from_file("rules/action_economy_refill.json")
+        engine.load_from_file("rules/global/action_economy_refill.json")
 
         spell = longstrider_spell()
         resolver.resolve(wizard, [goblin_a, goblin_b], spell)

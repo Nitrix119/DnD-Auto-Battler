@@ -8,6 +8,7 @@ These tests are written TDD-style and are expected to FAIL until the
 nat-1/nat-20 logic is implemented in AttackResolver and EffectPipeline.
 """
 
+import os
 from unittest.mock import patch
 
 import pytest
@@ -18,6 +19,9 @@ from src.combat.event_bus import EventBus
 from src.combat.damage_processor import DamageProcessor
 from src.combat.attack_resolver import AttackResolver
 from src.combat.effect_pipeline import EffectPipeline
+from src.rules import RuleEngine
+
+GLOBAL_RULES_DIR = os.path.join(os.path.dirname(__file__), "..", "rules", "global")
 
 
 # ---------------------------------------------------------------------------
@@ -37,13 +41,17 @@ def _make_entity(name: str, ac: int = 10, hp: int = 100) -> Entity:
 def _make_resolver():
     bus = EventBus()
     dp = DamageProcessor(bus)
+    engine = RuleEngine(bus)
+    engine.load_from_directory(GLOBAL_RULES_DIR)
     return AttackResolver(bus, dp), dp
 
 
 def _make_pipeline():
     bus = EventBus()
     dp = DamageProcessor(bus)
-    return EffectPipeline(bus, dp), dp
+    engine = RuleEngine(bus)
+    engine.load_from_directory(GLOBAL_RULES_DIR)
+    return EffectPipeline(bus, dp, rule_engine=engine), dp
 
 
 def _sword(bonus_to_hit: int = 0, die_sides: int = 8) -> AttackAction:
@@ -251,7 +259,7 @@ class TestNatural20SpellAttack:
         spell = _attack_spell(die_sides=8)
 
         with patch("src.combat.attack_resolver.roll_d20", return_value=20), \
-             patch("src.utils.dice.roll_dice", return_value=4):
+             patch("src.utils.dice.roll_dice", side_effect=lambda n, _s: n * 4):
             result = pipeline.run(caster, defender, spell)
 
         assert result.damage_dealt == 8, (

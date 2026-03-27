@@ -10,6 +10,7 @@ class EventType(Enum):
 
     # Attack flow
     ATTACK_DECLARED = "attack_declared"  # before roll; can be cancelled
+    ATTACK_ROLLED = "attack_rolled" # after rolling to hit, before evaluating hit/miss
     ATTACK_HIT = "attack_hit"
     ATTACK_MISS = "attack_miss"
 
