@@ -280,10 +280,7 @@ class StatBlockLoader:
                 name=name,
                 description=description,
                 spell_level=action_data.get("spell_level", 0),
-                save_dc=action_data.get("save_dc", 0),
-                save_ability=action_data.get("save_ability", ""),
-                spell_attack_bonus=action_data.get("spell_attack_bonus", 0),
-                damage=damage,
+                pipeline_effects=action_data.get("effects", []),
                 recharge=recharge,
                 spell_range=spell_range,
                 targeting_type=targeting_type,
@@ -295,9 +292,6 @@ class StatBlockLoader:
                 can_target_self=action_data.get("can_target_self", False),
                 cannot_cause_self_damage=action_data.get("cannot_cause_self_damage", False),
                 animation=action_data.get("animation", []),
-                spell_effects=action_data.get("effects", []),
-                on_successful_save=action_data.get("on_successful_save", []),
-                on_failed_save=action_data.get("on_failed_save", []),
                 legendary_action_cost=legendary_action_cost,
                 **cost_kwargs,
             )
@@ -366,17 +360,8 @@ class StatBlockLoader:
 
         elif isinstance(action, SpellAction):
             base["spell_level"] = action.spell_level
-            base["save_dc"] = action.save_dc
-            base["spell_attack_bonus"] = action.spell_attack_bonus
-            if action.damage:
-                base["damage"] = [
-                    {
-                        "type": d.damage_type.name,
-                        "amount": d.amount,
-                        **({"formula": d.formula} if d.formula else {}),
-                    }
-                    for d in action.damage
-                ]
+            if action.pipeline_effects:
+                base["effects"] = action.pipeline_effects
 
             # spell_range
             sr = action.spell_range

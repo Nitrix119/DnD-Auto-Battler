@@ -85,16 +85,19 @@ class TestArmorOfAgathysLoading:
 
     def test_loads_spell_effects(self):
         spell = _load_spell()
-        assert len(spell.spell_effects) == 1
-        entry = spell.spell_effects[0]
-        assert entry["effect"] == "armor_of_agathys"
-        assert len(entry["on_apply"]) == 1
-        assert entry["on_apply"][0]["action"] == "GrantTemporaryHP"
+        effect_steps = [s for s in spell.pipeline_effects if s.get("type") == "add_entity_effect"]
+        assert len(effect_steps) == 1
+        step = effect_steps[0]
+        assert step["entity_effect_name"] == "armor_of_agathys"
+        assert len(step["on_apply"]) == 1
+        assert step["on_apply"][0]["action"] == "GrantTemporaryHP"
 
     def test_no_save_no_attack_roll(self):
         spell = _load_spell()
-        assert spell.save_dc == 0
-        assert spell.spell_attack_bonus == 0
+        save_steps = [s for s in spell.pipeline_effects if s.get("type") == "saving_throw"]
+        attack_steps = [s for s in spell.pipeline_effects if s.get("type") == "attack_roll"]
+        assert len(save_steps) == 0
+        assert len(attack_steps) == 0
 
     def test_spell_level_1_no_concentration(self):
         spell = _load_spell()

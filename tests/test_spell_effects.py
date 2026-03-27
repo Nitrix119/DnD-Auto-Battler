@@ -55,9 +55,11 @@ def setup_engine_and_resolver(*entities):
 
 
 def charm_person_spell(save_dc: int = 13) -> SpellAction:
-    """Load Charm Person from the example spell file."""
+    """Load Charm Person from the example spell file, overriding the save DC."""
     spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "charm_person.json"))
-    spell.save_dc = save_dc
+    for step in spell.pipeline_effects:
+        if step.get("type") == "saving_throw":
+            step["dc"] = save_dc
     return spell
 
 
@@ -66,28 +68,32 @@ def charm_person_spell(save_dc: int = 13) -> SpellAction:
 class TestSpellEffectLoading:
 
     def test_charm_person_loads_effects(self):
-        """charm_person.json should parse its effects list into spell_effects."""
+        """charm_person.json should parse its effects list into pipeline_effects."""
         spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "charm_person.json"))
-        assert len(spell.spell_effects) == 1
-        entry = spell.spell_effects[0]
-        assert "effect" in entry
-        assert "condition" in entry
-        assert "instance_fields" in entry
-        assert entry["instance_fields"].get("charmer") == "event.caster"
+        effect_steps = [s for s in spell.pipeline_effects if s.get("type") == "add_entity_effect"]
+        assert len(effect_steps) == 1
+        step = effect_steps[0]
+        assert step.get("entity_effect_name") == "charmed"
+        assert step.get("condition") == "not context.save_success"
+        assert step.get("instance_fields", {}).get("charmer") == "event.caster"
 
     def test_charm_person_save_ability(self):
         spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "charm_person.json"))
-        assert spell.save_ability == "wisdom"
-        # charm_person uses the caster's spell save DC rather than a hard-coded value
-        assert spell.save_dc == "use_caster_dc"
+        save_steps = [s for s in spell.pipeline_effects if s.get("type") == "saving_throw"]
+        assert save_steps[0]["attribute"] == "wisdom"
+        assert save_steps[0]["dc"] == "use_caster_dc"
 
-    def test_spell_without_effects_has_empty_list(self):
+    def test_spell_without_effects_has_no_entity_effect_steps(self):
+        """Firebolt has no add_entity_effect steps in the pipeline."""
         spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "firebolt.json"))
-        assert spell.spell_effects == []
+        effect_steps = [s for s in spell.pipeline_effects if s.get("type") == "add_entity_effect"]
+        assert effect_steps == []
 
-    def test_spell_without_save_ability_defaults_empty(self):
+    def test_spell_without_save_has_no_saving_throw_step(self):
+        """Firebolt has no saving_throw step in the pipeline."""
         spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "firebolt.json"))
-        assert spell.save_ability == ""
+        save_steps = [s for s in spell.pipeline_effects if s.get("type") == "saving_throw"]
+        assert save_steps == []
 
 
 # ── Saving throws ─────────────────────────────────────────────────────────────
@@ -438,17 +444,17 @@ def longstrider_spell() -> SpellAction:
 class TestLongstriderSpellEffects:
 
     def test_longstrider_loads_effects(self):
-        """longstrider.json should parse its effects list into spell_effects."""
+        """longstrider.json should parse its effects list into pipeline_effects."""
         spell = longstrider_spell()
-        assert len(spell.spell_effects) == 1
-        entry = spell.spell_effects[0]
-        assert entry["effect"] == "longstrider"
+        effect_steps = [s for s in spell.pipeline_effects if s.get("type") == "add_entity_effect"]
+        assert len(effect_steps) == 1
+        assert effect_steps[0]["entity_effect_name"] == "longstrider"
 
     def test_longstrider_no_save(self):
-        """Longstrider has no saving throw."""
+        """Longstrider has no saving throw step in the pipeline."""
         spell = longstrider_spell()
-        assert spell.save_dc == 0
-        assert spell.save_ability == ""
+        save_steps = [s for s in spell.pipeline_effects if s.get("type") == "saving_throw"]
+        assert save_steps == []
 
     def test_longstrider_applies_effect_on_cast(self):
         """Casting Longstrider should apply the longstrider movement effect."""

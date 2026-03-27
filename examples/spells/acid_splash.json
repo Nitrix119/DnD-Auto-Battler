@@ -3,17 +3,6 @@
   "description": "You hurl a bubble of acid. Choose one creature within range, or choose two creatures within range that are within 5 feet of each other. A target must succeed on a Dexterity saving throw or take 1d6 acid damage.",
   "type": "spell",
   "spell_level": 0,
-  "spell_attack_bonus": 0,
-  "save_dc": "use_caster_dc",
-  "save_ability": "dexterity",
-  "on_successful_save": [{"action": "NoDamage"}],
-  "damage": [
-    {
-      "type": "ACID",
-      "amount": 3,
-      "formula": "1d6"
-    }
-  ],
   "spell_range": {
     "type": "feet",
     "distance_ft": 60
@@ -31,6 +20,21 @@
     "somatic": true,
     "material": []
   },
+  "effects": [
+    {
+      "type": "saving_throw",
+      "attribute": "dexterity",
+      "dc": "use_caster_dc",
+      "target": "defender"
+    },
+    {
+      "type": "damage",
+      "target": "defender",
+      "damage_type": "ACID",
+      "formula": "1d6",
+      "save_result": {"on_success": "no_damage"}
+    }
+  ],
   "animation": [
     [{"type": "projectile", "color": "#AADD00", "from": "caster", "to": "target", "speed": 6, "size": 4, "trail": true}],
     [

@@ -249,8 +249,10 @@ class TestCombatSystemResourceEnforcement:
         spell = SpellAction(
             name="Fire Bolt",
             description="Cantrip",
-            spell_attack_bonus=5,
-            damage=[Damage(DamageType.FIRE, 5, formula="1d10")],
+            pipeline_effects=[
+                {"type": "attack_roll", "attack_bonus": "use_caster_bonus", "target": "defender"},
+                {"type": "damage", "target": "defender", "damage_type": "FIRE", "formula": "1d10", "requires_hit": True},
+            ],
         )
         combat.resolve_spell(fighter, [goblin], spell)
         assert fighter.resources.actions == 0
@@ -260,7 +262,9 @@ class TestCombatSystemResourceEnforcement:
         spell = SpellAction(
             name="Fire Bolt",
             description="Cantrip",
-            spell_attack_bonus=5,
+            pipeline_effects=[
+                {"type": "attack_roll", "attack_bonus": "use_caster_bonus", "target": "defender"},
+            ],
         )
         fighter.spend_resources(ACTION_COST)
         with pytest.raises(ValueError, match="cannot afford"):

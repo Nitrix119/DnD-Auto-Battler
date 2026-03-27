@@ -3,15 +3,6 @@
   "description": "You hurl a mote of fire at a creature or object within range. Make a ranged spell attack against the target. On a hit, the target takes 1d10 fire damage.",
   "type": "spell",
   "spell_level": 0,
-  "spell_attack_bonus": "use_caster_bonus",
-  "save_dc": 0,
-  "damage": [
-    {
-      "type": "FIRE",
-      "amount": 5,
-      "formula": "1d10"
-    }
-  ],
   "spell_range": {
     "type": "feet",
     "distance_ft": 120
@@ -29,6 +20,20 @@
     "somatic": true,
     "material": []
   },
+  "effects": [
+    {
+      "type": "attack_roll",
+      "attack_bonus": "use_caster_bonus",
+      "target": "defender"
+    },
+    {
+      "type": "damage",
+      "target": "defender",
+      "damage_type": "FIRE",
+      "formula": "1d10",
+      "requires_hit": true
+    }
+  ],
   "animation": [
     [{"type": "projectile", "color": "#FF4400", "from": "caster", "to": "target", "speed": 8, "size": 3}],
     [{"type": "flash", "color": "#FF6600", "at": "target", "duration": 0.25}]

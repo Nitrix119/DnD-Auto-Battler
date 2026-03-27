@@ -3,15 +3,6 @@
   "description": "You create three glowing darts of magical force. Each dart hits a creature of your choice that you can see within range. A dart deals 1d4 + 1 force damage to its target. The darts all strike simultaneously.",
   "type": "spell",
   "spell_level": 1,
-  "spell_attack_bonus": 0,
-  "save_dc": 0,
-  "damage": [
-    {
-      "type": "FORCE",
-      "amount": 10,
-      "formula": "3d4+3"
-    }
-  ],
   "spell_range": {
     "type": "feet",
     "distance_ft": 120
@@ -30,6 +21,14 @@
     "material": []
   },
   "higher_level_scaling": "When you cast this spell using a spell slot of 2nd level or higher, the spell creates one more dart for each slot level above 1st.",
+  "effects": [
+    {
+      "type": "damage",
+      "target": "defender",
+      "damage_type": "FORCE",
+      "formula": "3d4+3"
+    }
+  ],
   "animation": [
     [
       {"type": "projectile", "color": "#9999FF", "from": "caster", "to": "target", "speed": 10, "size": 2, "trail": true},

@@ -3,9 +3,6 @@
   "description": "A creature you touch regains a number of hit points equal to 1d8 + your spellcasting ability modifier. This spell has no effect on undead or constructs.",
   "type": "spell",
   "spell_level": 1,
-  "spell_attack_bonus": 0,
-  "save_dc": 0,
-  "damage": [],
   "spell_range": {
     "type": "touch"
   },
@@ -23,19 +20,15 @@
     "somatic": true,
     "material": []
   },
+  "higher_level_scaling": "When you cast this spell using a spell slot of 2nd level or higher, the healing increases by 1d8 for each slot level above 1st.",
   "effects": [
     {
-      "on_apply": [
-        {
-          "action": "HealTarget",
-          "target": "event.defender",
-          "formula": "1d8",
-          "bonus": "event.caster.spellcasting_modifier"
-        }
-      ]
+      "type": "healing",
+      "target": "defender",
+      "formula": "1d8",
+      "bonus": "event.caster.spellcasting_modifier"
     }
   ],
-  "higher_level_scaling": "When you cast this spell using a spell slot of 2nd level or higher, the healing increases by 1d8 for each slot level above 1st.",
   "animation": [
     [{"type": "aura", "color": "#44FF88", "at": "target", "duration": 1.0, "size": 1.4, "pulses": 3}],
     [{"type": "particles", "color": "#66FFAA", "at": "target", "count": 15, "spread": 4, "duration": 0.6, "speed": -1.0}]

@@ -3,9 +3,6 @@
   "description": "A shimmering field appears and surrounds a creature of your choice within range, granting it a +2 bonus to AC for the duration.",
   "type": "spell",
   "spell_level": 1,
-  "spell_attack_bonus": 0,
-  "save_dc": 0,
-  "damage": [],
   "spell_range": {
     "type": "feet",
     "distance_ft": 60
@@ -28,7 +25,10 @@
   },
   "effects": [
     {
-      "effect": "shield_of_faith",
+      "type": "add_entity_effect",
+      "entity_effect_name": "shield_of_faith",
+      "target": "defender",
+      "concentration": true,
       "on_apply": [
         {
           "action": "AddModifier",

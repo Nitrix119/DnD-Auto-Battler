@@ -3,20 +3,30 @@
   "description": "You touch a creature. The target's speed increases by 10 feet until the spell ends. When you cast this spell using a spell slot of 2nd level or higher, you can target one additional creature for each slot level above 1st.",
   "type": "spell",
   "spell_level": 1,
-  "save_dc": 0,
-  "save_ability": "",
-  "damage": [],
   "spell_range": {
     "type": "touch"
   },
   "can_target_self": true,
   "targeting_type": "single_target",
-  "casting_time": { "type": "action", "count": 1 },
-  "duration": { "unit": "hour", "count": 1, "concentration": false },
-  "components": { "verbal": true, "somatic": true, "material": ["a pinch of dirt"] },
+  "casting_time": {
+    "type": "action",
+    "count": 1
+  },
+  "duration": {
+    "unit": "hour",
+    "count": 1,
+    "concentration": false
+  },
+  "components": {
+    "verbal": true,
+    "somatic": true,
+    "material": ["a pinch of dirt"]
+  },
   "effects": [
     {
-      "effect": "longstrider"
+      "type": "add_entity_effect",
+      "entity_effect_name": "longstrider",
+      "target": "defender"
     }
   ],
   "animation": [

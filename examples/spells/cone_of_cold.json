@@ -3,18 +3,7 @@
   "description": "A blast of cold air erupts from your hands. Each creature in a 60-foot cone must make a Constitution saving throw. A creature takes 8d8 cold damage on a failed save, or half as much damage on a successful one.",
   "type": "spell",
   "spell_level": 5,
-  "spell_attack_bonus": 0,
-  "save_dc": "use_caster_dc",
-  "save_ability": "constitution",
-  "on_successful_save": [{"action": "HalfDamage"}],
   "cannot_cause_self_damage": true,
-  "damage": [
-    {
-      "type": "COLD",
-      "amount": 36,
-      "formula": "8d8"
-    }
-  ],
   "spell_range": {
     "type": "feet",
     "distance_ft": 60
@@ -37,6 +26,22 @@
     "material": ["a small crystal or glass cone"]
   },
   "higher_level_scaling": "When you cast this spell using a spell slot of 6th level or higher, the damage increases by 1d8 for each slot level above 5th.",
+  "effects": [
+    {
+      "type": "saving_throw",
+      "attribute": "constitution",
+      "dc": "use_caster_dc",
+      "target": "for_each_defender"
+    },
+    {
+      "type": "damage",
+      "target": "for_each_defender",
+      "damage_type": "COLD",
+      "formula": "8d8",
+      "roll_once": true,
+      "save_result": {"on_success": "half_damage"}
+    }
+  ],
   "animation": [
     [
       {

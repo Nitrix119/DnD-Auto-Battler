@@ -3,15 +3,6 @@
   "description": "Make a melee spell attack against a creature you can reach. On a hit, the target takes 3d10 necrotic damage.",
   "type": "spell",
   "spell_level": 1,
-  "spell_attack_bonus": "use_caster_bonus",
-  "save_dc": 0,
-  "damage": [
-    {
-      "type": "NECROTIC",
-      "amount": 16,
-      "formula": "3d10"
-    }
-  ],
   "spell_range": {
     "type": "touch"
   },
@@ -29,6 +20,20 @@
     "material": []
   },
   "higher_level_scaling": "When you cast this spell using a spell slot of 2nd level or higher, the damage increases by 1d10 for each slot level above 1st.",
+  "effects": [
+    {
+      "type": "attack_roll",
+      "attack_bonus": "use_caster_bonus",
+      "target": "defender"
+    },
+    {
+      "type": "damage",
+      "target": "defender",
+      "damage_type": "NECROTIC",
+      "formula": "3d10",
+      "requires_hit": true
+    }
+  ],
   "animation": [
     [
       {"type": "beam", "color": "#7700AA", "from": "caster", "to": "target", "duration": 0.3, "width": 4},

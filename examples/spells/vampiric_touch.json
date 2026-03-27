@@ -3,15 +3,6 @@
   "description": "The touch of your shadow-wreathed hand can siphon life force from others to heal your wounds. Make a melee spell attack against a creature within your reach. On a hit, the target takes 3d6 necrotic damage, and you regain hit points equal to half the amount of necrotic damage dealt. Until the spell ends, you can make the attack again on each of your turns as an action.",
   "type": "spell",
   "spell_level": 3,
-  "spell_attack_bonus": "use_caster_bonus",
-  "save_dc": 0,
-  "save_ability": "",
-  "damage": [
-    {
-      "type": "NECROTIC",
-      "formula": "3d6"
-    }
-  ],
   "spell_range": {
     "type": "touch"
   },
@@ -33,8 +24,28 @@
   },
   "effects": [
     {
-      "effect": "vampiric_touch",
-      "effect_on": "caster",
+      "type": "attack_roll",
+      "attack_bonus": "use_caster_bonus",
+      "target": "defender"
+    },
+    {
+      "type": "damage",
+      "target": "defender",
+      "damage_type": "NECROTIC",
+      "formula": "3d6",
+      "requires_hit": true
+    },
+    {
+      "type": "healing",
+      "target": "caster",
+      "amount": "context.damage_dealt // 2",
+      "condition": "context.damage_dealt > 0"
+    },
+    {
+      "type": "add_entity_effect",
+      "entity_effect_name": "vampiric_touch",
+      "on_caster": true,
+      "concentration": true,
       "on_apply": [
         {
           "action": "GrantAction",

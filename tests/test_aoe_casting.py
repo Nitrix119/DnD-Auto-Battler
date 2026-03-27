@@ -5,7 +5,7 @@ import pytest
 from unittest.mock import patch
 
 from src.combat import CombatSystem
-from src.models import Entity, SpellAction, Damage, DamageType
+from src.models import Entity, SpellAction
 from src.models.ability import AbilityScores
 from src.models.action_resources import ACTION_COST, BONUS_ACTION_COST
 from src.models.creature_size import CreatureSize
@@ -56,16 +56,17 @@ def _fireball(
         name="Fireball",
         description="",
         spell_level=3,
-        save_dc=save_dc,
-        save_ability="dexterity",
-        spell_attack_bonus=0,
-        damage=[Damage(DamageType.FIRE, 28, formula="8d6")],
         spell_range=SpellRange(RangeType.FEET, distance_ft=range_ft),
         targeting_type=TargetingType.AOE,
         aoe=AOEProperties(AOEShape.SPHERE, size_ft=radius_ft),
         casting_time=CastingTime(CastingTimeType.ACTION),
         duration=Duration(DurationUnit.INSTANTANEOUS),
         components=SpellComponents(verbal=True, somatic=True),
+        pipeline_effects=[
+            {"type": "saving_throw", "attribute": "dexterity", "dc": save_dc, "target": "for_each_defender"},
+            {"type": "damage", "target": "for_each_defender", "damage_type": "FIRE", "formula": "8d6",
+             "roll_once": True, "save_result": {"on_success": "half_damage"}},
+        ],
     )
 
 
@@ -74,16 +75,17 @@ def _cone_spell(range_type: RangeType = RangeType.SELF, length_ft: int = 15) -> 
         name="Burning Hands",
         description="",
         spell_level=1,
-        save_dc=13,
-        save_ability="dexterity",
-        spell_attack_bonus=0,
-        damage=[Damage(DamageType.FIRE, 10, formula="3d6")],
         spell_range=SpellRange(range_type),
         targeting_type=TargetingType.AOE,
         aoe=AOEProperties(AOEShape.CONE, size_ft=length_ft),
         casting_time=CastingTime(CastingTimeType.ACTION),
         duration=Duration(DurationUnit.INSTANTANEOUS),
         components=SpellComponents(verbal=True, somatic=True),
+        pipeline_effects=[
+            {"type": "saving_throw", "attribute": "dexterity", "dc": 13, "target": "for_each_defender"},
+            {"type": "damage", "target": "for_each_defender", "damage_type": "FIRE", "formula": "3d6",
+             "roll_once": True, "save_result": {"on_success": "half_damage"}},
+        ],
     )
 
 
@@ -92,16 +94,17 @@ def _line_spell(range_type: RangeType = RangeType.SELF, length_ft: int = 60) -> 
         name="Lightning Bolt",
         description="",
         spell_level=3,
-        save_dc=15,
-        save_ability="dexterity",
-        spell_attack_bonus=0,
-        damage=[Damage(DamageType.LIGHTNING, 28, formula="8d6")],
         spell_range=SpellRange(range_type),
         targeting_type=TargetingType.AOE,
         aoe=AOEProperties(AOEShape.LINE, size_ft=length_ft),
         casting_time=CastingTime(CastingTimeType.ACTION),
         duration=Duration(DurationUnit.INSTANTANEOUS),
         components=SpellComponents(verbal=True, somatic=True),
+        pipeline_effects=[
+            {"type": "saving_throw", "attribute": "dexterity", "dc": 15, "target": "for_each_defender"},
+            {"type": "damage", "target": "for_each_defender", "damage_type": "LIGHTNING", "formula": "8d6",
+             "roll_once": True, "save_result": {"on_success": "half_damage"}},
+        ],
     )
 
 
@@ -110,16 +113,16 @@ def _touch_spell() -> SpellAction:
         name="Inflict Wounds",
         description="",
         spell_level=1,
-        save_dc=0,
-        save_ability="",
-        spell_attack_bonus=5,
-        damage=[Damage(DamageType.NECROTIC, 15, formula="3d10")],
         spell_range=SpellRange(RangeType.TOUCH),
         targeting_type=TargetingType.SINGLE_TARGET,
-        aoe=None,
         casting_time=CastingTime(CastingTimeType.ACTION),
         duration=Duration(DurationUnit.INSTANTANEOUS),
         components=SpellComponents(verbal=True, somatic=True),
+        pipeline_effects=[
+            {"type": "attack_roll", "attack_bonus": "use_caster_bonus", "target": "defender"},
+            {"type": "damage", "target": "defender", "damage_type": "NECROTIC", "formula": "3d10",
+             "requires_hit": True},
+        ],
     )
 
 
@@ -128,16 +131,16 @@ def _ranged_spell(range_ft: int = 120) -> SpellAction:
         name="Fire Bolt",
         description="",
         spell_level=0,
-        save_dc=0,
-        save_ability="",
-        spell_attack_bonus=7,
-        damage=[Damage(DamageType.FIRE, 5, formula="1d10")],
         spell_range=SpellRange(RangeType.FEET, distance_ft=range_ft),
         targeting_type=TargetingType.SINGLE_TARGET,
-        aoe=None,
         casting_time=CastingTime(CastingTimeType.ACTION),
         duration=Duration(DurationUnit.INSTANTANEOUS),
         components=SpellComponents(verbal=True, somatic=True),
+        pipeline_effects=[
+            {"type": "attack_roll", "attack_bonus": "use_caster_bonus", "target": "defender"},
+            {"type": "damage", "target": "defender", "damage_type": "FIRE", "formula": "1d10",
+             "requires_hit": True},
+        ],
     )
 
 
@@ -146,16 +149,14 @@ def _sight_spell() -> SpellAction:
         name="Scrying",
         description="",
         spell_level=5,
-        save_dc=15,
-        save_ability="wisdom",
-        spell_attack_bonus=0,
-        damage=[],
         spell_range=SpellRange(RangeType.SIGHT),
         targeting_type=TargetingType.SINGLE_TARGET,
-        aoe=None,
         casting_time=CastingTime(CastingTimeType.ACTION),
         duration=Duration(DurationUnit.INSTANTANEOUS),
         components=SpellComponents(verbal=True, somatic=True),
+        pipeline_effects=[
+            {"type": "saving_throw", "attribute": "wisdom", "dc": 15, "target": "defender"},
+        ],
     )
 
 

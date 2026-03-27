@@ -3,9 +3,6 @@
   "description": "Choose a willing creature that you can see within range. Until the spell ends, the target's speed is doubled, it gains a +2 bonus to AC, it has advantage on Dexterity saving throws, and it gains an additional action on each of its turns.",
   "type": "spell",
   "spell_level": 3,
-  "spell_attack_bonus": 0,
-  "save_dc": 0,
-  "damage": [],
   "spell_range": {
     "type": "feet",
     "distance_ft": 30
@@ -26,6 +23,14 @@
     "somatic": true,
     "material": ["a shaving of licorice root"]
   },
+  "effects": [
+    {
+      "type": "add_entity_effect",
+      "entity_effect_name": "haste",
+      "target": "defender",
+      "concentration": true
+    }
+  ],
   "animation": [
     [{"type": "projectile", "color": "#FFDD44", "from": "caster", "to": "target", "speed": 6, "size": 2, "trail": false}],
     [{"type": "aura", "color": "#FFDD44", "at": "target", "duration": 1.0, "size": 1.5, "pulses": 3}]

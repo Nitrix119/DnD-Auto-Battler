@@ -1,19 +1,17 @@
 """Spell resolution."""
 
 import logging
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from src.models.entity import Entity
 from src.models.action import SpellAction
-from src.models.damage import Damage
-from src.utils.dice import roll_d20
-from src.utils.saving_throw import roll_saving_throw
-from src.rules.expressions import build_context, evaluate, resolve
-from .event_bus import CombatEvent, EventBus
-from .event_data import AttackDeclaredData, SpellCastData, SpellHitData, HealingAppliedData
+from src.utils.dice import roll_formula
+from .event_bus import EventBus
+from .event_data import SpellCastData
 from .events import EventType
 from .damage_processor import DamageProcessor
 from .attack_resolver import AttackResolver
+from .effect_pipeline import EffectPipeline
 
 logger = logging.getLogger(__name__)
 
@@ -68,365 +66,71 @@ class SpellResolver:
             SpellCastData(caster=caster, defenders=defenders, action=action, origin=origin),
         )
 
-        # Roll damage once — the same total applies to every target
-        rolled_damages = action.roll_damage()
-
-        # Resolve sentinel strings to concrete values using the caster's stats
-        effective_dc = (
-            caster.spell_save_dc if action.save_dc == "use_caster_dc" else action.save_dc
-        )
-        effective_attack_bonus = (
-            caster.spell_attack_bonus
-            if action.spell_attack_bonus == "use_caster_bonus"
-            else action.spell_attack_bonus
-        )
-
+        seed_damages = self._preroll_pipeline_damage(action)
         results: List[Tuple[bool, int, str, Optional[dict]]] = []
         for defender in defenders:
-            if effective_attack_bonus != 0 and effective_dc == 0:
-                result = self._resolve_spell_attack(
-                    caster, defender, action, rolled_damages,
-                    effective_attack_bonus, effective_dc,
-                )
-            else:
-                result = self._resolve_auto_hit(
-                    caster, defender, action, rolled_damages,
-                    effective_dc,
-                )
-            results.append(result)
-
+            results.append(
+                self._run_pipeline_spell(caster, defender, action, seed_damages)
+            )
         return results
 
-    def _resolve_spell_attack(
-        self,
-        caster: Entity,
-        defender: Entity,
-        action: SpellAction,
-        rolled_damages: List[Damage],
-        effective_attack_bonus: int,
-        effective_dc: int,
-    ) -> Tuple[bool, int, str, Optional[dict]]:
-        """Spell with attack roll (e.g. Fire Bolt, Chromatic Orb)."""
-        spell_declared = self._event_bus.emit(
-            EventType.ATTACK_DECLARED,
-            AttackDeclaredData(attacker=caster, defender=defender, action=action),
-        )
-        if spell_declared.cancelled:
-            return False, 0, ""
+    def _preroll_pipeline_damage(self, action: SpellAction) -> Dict[int, int]:
+        """Pre-roll damage for any ``roll_once: true`` steps before the target loop.
 
-        attack_roll = AttackResolver._resolve_attack_roll(spell_declared)
-        attack_total = attack_roll + effective_attack_bonus
-        hit = attack_total >= defender.ac
-        roll_mode = AttackResolver._roll_mode_label(spell_declared)
-
-        damage_dealt = 0
-        healing_total = 0
-        healed_entity: Optional[Entity] = None
-        if hit:
-            damage_dealt, healing_total, healed_entity, _, _ = self._execute_spell_hit(
-                caster, defender, action, rolled_damages, effective_dc, attack_total,
-            )
-
-        hit_str = f"Hit! Damage: {damage_dealt}" if hit else "Miss!"
-        log_msg = (
-            f"cast {action.name} at {defender.name}. "
-            f"Spell attack{roll_mode}: {attack_roll}+{effective_attack_bonus}"
-            f"={attack_total} vs AC {defender.ac}. {hit_str}"
-        )
-        roll_detail = {
-            "d20":   attack_roll,
-            "bonus": effective_attack_bonus,
-            "total": attack_total,
-            "ac":    defender.ac,
-        }
-        return hit, damage_dealt, log_msg, roll_detail, healing_total, healed_entity
-
-    def _resolve_auto_hit(
-        self,
-        caster: Entity,
-        defender: Entity,
-        action: SpellAction,
-        rolled_damages: List[Damage],
-        effective_dc: int,
-    ) -> Tuple[bool, int, str, None]:
-        """Spell with no attack roll — auto-hit, saving throw if applicable."""
-        damage_dealt, healing_total, healed_entity, save_roll, save_success = (
-            self._execute_spell_hit(
-                caster, defender, action, rolled_damages, effective_dc, attack_roll=None,
-            )
-        )
-
-        save_str = ""
-        if save_roll is not None:
-            result_word = "success" if save_success else "failure"
-            save_str = f" (save {save_roll}: {result_word})"
-        log_msg = (
-            f"cast {action.name} at {defender.name}. "
-            f"Damage: {damage_dealt}{save_str}"
-        )
-        save_detail = (
-            {"total": save_roll, "dc": effective_dc, "save_success": save_success}
-            if save_roll is not None else None
-        )
-        return True, damage_dealt, log_msg, save_detail, healing_total, healed_entity
-
-    def _execute_spell_hit(
-        self,
-        caster: Entity,
-        defender: Entity,
-        action: SpellAction,
-        rolled_damages: List[Damage],
-        effective_dc: int,
-        attack_roll: Optional[int],
-    ) -> Tuple[int, int, Optional[Entity], Optional[int], bool]:
-        """Shared hit pipeline: saving throw → SPELL_HIT event → effects → damage.
-
-        Used by both attack-roll spells (after the hit is confirmed) and
-        auto-hit spells.  ``attack_roll`` is None for the auto-hit path.
+        This ensures all targets of an AoE spell receive the same damage total,
+        matching D&D 5e rules (e.g. Fireball rolls 8d6 once for every creature
+        in the blast).
 
         Returns:
-            (damage_dealt, healing_total, healed_entity, save_roll, save_success)
+            Dict mapping step index → pre-rolled amount.
         """
-        save_roll, save_success = (
-            roll_saving_throw(defender, action.save_ability, effective_dc)
-            if effective_dc > 0 and action.save_ability
-            else (None, True)
-        )
+        seed: Dict[int, int] = {}
+        for i, step in enumerate(action.pipeline_effects):
+            if step.get("type") == "damage" and step.get("roll_once"):
+                seed[i] = roll_formula(step["formula"])
+        return seed
 
-        self._event_bus.emit(
-            EventType.SPELL_HIT,
-            SpellHitData(
-                caster=caster, defender=defender, action=action,
-                roll=attack_roll, save_success=save_success, save_roll=save_roll,
-            ),
-        )
-        subscribe_heal, unsubscribe_heal = self._make_healing_listener()
-        subscribe_heal()
-        try:
-            self._apply_spell_effects(
-                caster, defender, action, attack_roll, save_success, save_roll,
-            )
-            target_damages = [Damage(d.damage_type, d.amount) for d in rolled_damages]
-            target_damages = self._process_save_outcomes(
-                caster, defender, action, save_success, save_roll, attack_roll, target_damages,
-            )
-            damage_dealt = self._damage_processor.apply_damage(
-                defender, target_damages, source=caster, action_name=action.name,
-            )
-        finally:
-            healing_total, healed_entity = unsubscribe_heal()
-
-        return damage_dealt, healing_total, healed_entity, save_roll, save_success
-
-    # ------------------------------------------------------------------
-    # Internal helpers
-    # ------------------------------------------------------------------
-
-    def _process_save_outcomes(
+    def _run_pipeline_spell(
         self,
         caster: Entity,
         defender: Entity,
         action: SpellAction,
-        save_success: bool,
-        save_roll: Optional[int],
-        attack_roll: Optional[int],
-        target_damages: List[Damage],
-    ) -> List[Damage]:
-        """Apply ``on_successful_save`` or ``on_failed_save`` entries for a single target.
+        seed_damages: Dict[int, int],
+    ) -> Tuple[bool, int, str, Optional[dict], int, Optional[Entity]]:
+        """Execute the effect pipeline for one caster/defender pair and format the result."""
+        pipeline = EffectPipeline(self._event_bus, self._damage_processor, self.rule_engine)
+        result = pipeline.run(caster, defender, action, seed_damages=seed_damages)
 
-        Returns the (possibly modified) damage list.  If no save was rolled
-        (``save_roll is None``), the damage list is returned unchanged.
+        damage_dealt = result.damage_dealt
+        hit = result.hit
+        healing_total = result.healing_total
+        healed_entity = result.healed_entity
 
-        Each entry in the list may contain:
-          ``{"action": "HalfDamage"}``  — floor-halve every damage amount.
-          ``{"action": "NoDamage"}``    — zero out all damage amounts.
-          ``{"effect": "<name>", "instance_fields": {...}}``
-                                        — apply a named entity effect via the
-                                          rule engine (same as spell_effects).
-          ``{"on_apply": [...]}``       — execute immediate effect actions
-                                          (same handlers as spell_effects).
-        """
-        if save_roll is None:
-            return target_damages  # no save was rolled; nothing to process
+        if result.attack_roll is not None:
+            hit_str = f"Hit! Damage: {damage_dealt}" if hit else "Miss!"
+            roll_mode = ""  # advantage/disadvantage label already logged by pipeline
+            log_msg = (
+                f"cast {action.name} at {defender.name}. "
+                f"Spell attack{roll_mode}: {result.attack_roll}+...={result.attack_total}"
+                f" vs AC {defender.ac}. {hit_str}"
+            )
+            roll_detail: Optional[dict] = {
+                "d20": result.attack_roll,
+                "total": result.attack_total,
+                "ac": defender.ac,
+            }
+        elif result.save_roll is not None:
+            result_word = "success" if result.save_success else "failure"
+            log_msg = (
+                f"cast {action.name} at {defender.name}. "
+                f"Damage: {damage_dealt} (save {result.save_roll}: {result_word})"
+            )
+            roll_detail = {
+                "total": result.save_roll,
+                "save_success": result.save_success,
+            }
+        else:
+            log_msg = f"cast {action.name} at {defender.name}. Damage: {damage_dealt}"
+            roll_detail = None
 
-        entries = action.on_successful_save if save_success else action.on_failed_save
-        if not entries:
-            return target_damages
-
-        ctx = build_context(
-            dict(caster=caster, defender=defender, action=action,
-                 roll=attack_roll, save_success=save_success, save_roll=save_roll),
-            save_success=save_success,
-            save_roll=save_roll,
-        )
-
-        for entry in entries:
-            act = entry.get("action")
-            if act == "HalfDamage":
-                target_damages = [
-                    Damage(d.damage_type, d.amount // 2) for d in target_damages
-                ]
-            elif act == "NoDamage":
-                target_damages = [Damage(d.damage_type, 0) for d in target_damages]
-            elif "effect" in entry and self.rule_engine is not None:
-                effect_name = entry["effect"]
-                rule = self.rule_engine.effect_registry.get(effect_name)
-                instance_fields: Dict[str, Any] = {}
-                for field_name, expr in entry.get("instance_fields", {}).items():
-                    try:
-                        instance_fields[field_name] = resolve(expr, ctx)
-                    except Exception as exc:
-                        logger.debug(
-                            "save_outcome instance_field '%s' failed (%s: %s)",
-                            field_name, type(exc).__name__, exc,
-                        )
-                self.rule_engine.apply_effect(defender, rule, instance_fields=instance_fields)
-                logger.info(
-                    "Applied save-outcome effect '%s' to %s (save_success=%s)",
-                    effect_name, defender.name, save_success,
-                )
-            elif "on_apply" in entry and self.rule_engine is not None:
-                for on_apply_effect in entry["on_apply"]:
-                    action_name = on_apply_effect.get("action")
-                    handler = self.rule_engine._effect_registry.get(action_name)
-                    if handler is None:
-                        logger.warning(
-                            "save_outcome on_apply: unknown action '%s'", action_name,
-                        )
-                        continue
-                    stub_event = CombatEvent(
-                        event_type=EventType.SPELL_HIT,
-                        data=SpellHitData(
-                            caster=caster, defender=defender, action=action,
-                            roll=attack_roll, save_success=save_success, save_roll=save_roll,
-                        ),
-                    )
-                    handler(on_apply_effect, ctx, stub_event, self._event_bus)
-
-        return target_damages
-
-    def _make_healing_listener(self) -> tuple:
-        """Create a HEALING_APPLIED listener and return (subscribe, unsubscribe).
-
-        unsubscribe() returns (total_healing, healed_entity_or_None).
-        """
-        healing_total = 0
-        healed_entity: Optional[Entity] = None
-
-        def _on_healing(event: CombatEvent) -> None:
-            nonlocal healing_total, healed_entity
-            if isinstance(event.data, HealingAppliedData):
-                healing_total += event.data.amount
-                healed_entity = event.data.target
-
-        def subscribe() -> None:
-            self._event_bus.subscribe(EventType.HEALING_APPLIED, _on_healing)
-
-        def unsubscribe() -> tuple:
-            self._event_bus.unsubscribe(EventType.HEALING_APPLIED, _on_healing)
-            return healing_total, healed_entity
-
-        return subscribe, unsubscribe
-
-    def _apply_spell_effects(
-        self,
-        caster: Entity,
-        defender: Entity,
-        action: SpellAction,
-        attack_roll: Optional[int],
-        save_success: bool,
-        save_roll: Optional[int],
-    ) -> None:
-        """Apply entity effects declared in the spell's ``effects`` list.
-
-        Evaluates each entry's optional ``condition`` in a sandboxed context,
-        then evaluates each ``instance_fields`` expression and calls
-        ``rule_engine.apply_effect`` on the defender.
-
-        Context available in expressions:
-          ``event``         — SimpleNamespace with caster, defender, action,
-                             roll, save_success, save_roll.
-          ``save_success``  — bool shorthand.
-          ``save_roll``     — int | None shorthand.
-          plus SAFE_BUILTINS (max, min, abs, int, round, bool, len, hasattr).
-        """
-        if not action.spell_effects or self.rule_engine is None:
-            return
-
-        ctx = build_context(
-            dict(caster=caster, defender=defender, action=action,
-                 roll=attack_roll, save_success=save_success, save_roll=save_roll),
-            save_success=save_success,
-            save_roll=save_roll,
-        )
-
-        for entry in action.spell_effects:
-            # Evaluate optional guard condition
-            condition_expr = entry.get("condition")
-            if condition_expr:
-                try:
-                    if not evaluate(condition_expr, ctx):
-                        continue
-                except Exception as exc:
-                    logger.debug(
-                        "Spell effect condition skipped (%s: %s)", type(exc).__name__, exc
-                    )
-                    continue
-
-            # Look up the entity effect rule by name (optional — some
-            # entries only carry on_apply actions with no persistent effect).
-            effect_name = entry.get("effect")
-            if effect_name:
-                rule = self.rule_engine.effect_registry.get(effect_name)
-
-                # "effect_on": "caster" attaches the effect to the caster instead of the
-                # defender (e.g. Vampiric Touch, where the ongoing ability belongs to the
-                # caster).  Concentration cleanup targets the same entity.
-                effect_entity = caster if entry.get("effect_on") == "caster" else defender
-
-                # Evaluate instance_fields expressions
-                instance_fields: Dict[str, Any] = {}
-                for field_name, expr in entry.get("instance_fields", {}).items():
-                    try:
-                        instance_fields[field_name] = resolve(expr, ctx)
-                    except Exception as exc:
-                        logger.debug(
-                            "Spell effect instance_field '%s' evaluation failed (%s: %s)",
-                            field_name, type(exc).__name__, exc,
-                        )
-
-                # Remove old concentration effect BEFORE applying the new one,
-                # otherwise remove_effect() would also nuke the just-applied effect
-                # (both share the same name).
-                if action.duration.concentration:
-                    if caster.concentrating_on and caster.concentration_target:
-                        caster.concentration_target.remove_effect(caster.concentrating_on)
-
-                self.rule_engine.apply_effect(effect_entity, rule, instance_fields=instance_fields)
-                logger.info(
-                    "Applied spell effect '%s' to %s (save_success=%s)",
-                    rule.name, effect_entity.name, save_success,
-                )
-
-                # Track concentration: link this caster to the entity holding the effect
-                # so that breaking concentration removes the effect from the right entity.
-                if action.duration.concentration:
-                    caster.concentrating_on = effect_name
-                    caster.concentration_target = effect_entity
-
-            # Execute immediate on-apply effects (e.g. granting temp HP, healing)
-            for on_apply_effect in entry.get("on_apply", []):
-                action_name = on_apply_effect.get("action")
-                handler = self.rule_engine._effect_registry.get(action_name)
-                if handler is None:
-                    logger.warning("on_apply: unknown action '%s'", action_name)
-                    continue
-                stub_event = CombatEvent(
-                    event_type=EventType.SPELL_HIT,
-                    data=SpellHitData(
-                        caster=caster, defender=defender, action=action,
-                        roll=attack_roll, save_success=save_success,
-                        save_roll=save_roll,
-                    ),
-                )
-                handler(on_apply_effect, ctx, stub_event, self._event_bus)
+        return hit, damage_dealt, log_msg, roll_detail, healing_total, healed_entity

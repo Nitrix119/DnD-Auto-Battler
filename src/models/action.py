@@ -1,7 +1,7 @@
 """Combat actions available to entities."""
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional
 from enum import Enum
 
 from .action_resources import ActionCost, ACTION_COST, BONUS_ACTION_COST, REACTION_COST
@@ -93,9 +93,6 @@ class SpellAction(Action):
 
     Attributes:
         spell_level: The spell slot level (0 for cantrip, 1-9 for levelled spells)
-        save_dc: DC for saving throws against the spell
-        damage: List of damage instances the spell deals
-        spell_attack_bonus: Bonus for spell attack rolls (if applicable)
         spell_range: How far the spell can reach
         targeting_type: Whether the spell hits a single target, an area, or special
         aoe: Area dimensions; required when targeting_type is AOE
@@ -104,13 +101,15 @@ class SpellAction(Action):
         components: Verbal, somatic, and/or material requirements
         higher_level_scaling: Placeholder description of upcast scaling (structured
                               rules will be added in a future task)
+        pipeline_effects: Sequential effect steps processed by EffectPipeline.
+            Each entry is a dict with a ``type`` key (e.g. ``"attack_roll"``,
+            ``"saving_throw"``, ``"damage"``, ``"healing"``, ``"add_entity_effect"``)
+            and type-specific fields. Steps run in order; each may write keys into
+            an ephemeral ``context`` dict readable by subsequent steps.
     """
 
     action_type: ActionType = ActionType.SPELL
     spell_level: int = 0
-    save_dc: Union[int, str] = 0          # int, or "use_caster_dc" to derive at cast time
-    save_ability: str = ""               # ability used for saving throws (e.g. "wisdom", "charisma")
-    spell_attack_bonus: Union[int, str] = 0  # int, or "use_caster_bonus" to derive at cast time
     spell_range: SpellRange = field(default_factory=lambda: SpellRange(RangeType.TOUCH))
     targeting_type: TargetingType = TargetingType.SINGLE_TARGET
     aoe: Optional[AOEProperties] = None
@@ -121,20 +120,7 @@ class SpellAction(Action):
     can_target_self: bool = False
     cannot_cause_self_damage: bool = False
     animation: List[Any] = field(default_factory=list)
-    spell_effects: List[Dict[str, Any]] = field(default_factory=list)
-    on_successful_save: List[Dict[str, Any]] = field(default_factory=list)
-    on_failed_save: List[Dict[str, Any]] = field(default_factory=list)
-    """Entity effects applied to the defender on spell hit.
-
-    Each entry is a dict with:
-      ``effect``         (str)  — name of the entity effect (looked up via EffectRegistry)
-      ``condition``      (str, optional) — expression evaluated at spell hit time;
-                         skipped if falsy.  Context includes ``event`` (SpellHitData
-                         fields), ``save_success`` (bool), ``save_roll`` (int | None).
-      ``instance_fields`` (dict, optional) — mapping of field name → expression
-                         string, each evaluated at spell hit time and passed to
-                         ``apply_effect`` as ``instance_fields``.
-    """
+    pipeline_effects: List[Dict[str, Any]] = field(default_factory=list)
 
     _CASTING_TIME_COST_MAP = {
         CastingTimeType.ACTION: ACTION_COST,

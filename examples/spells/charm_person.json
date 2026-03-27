@@ -3,21 +3,37 @@
   "description": "You attempt to charm a humanoid you can see within range. It must make a Wisdom saving throw. On a failed save, it is charmed by you until the spell ends or until you or your companions do anything harmful to it.",
   "type": "spell",
   "spell_level": 1,
-  "save_dc": "use_caster_dc",
-  "save_ability": "wisdom",
-  "damage": [],
   "spell_range": {
     "type": "feet",
     "distance_ft": 30
   },
   "targeting_type": "single_target",
-  "casting_time": { "type": "action", "count": 1 },
-  "duration": { "unit": "hour", "count": 1, "concentration": false },
-  "components": { "verbal": true, "somatic": true, "material": [] },
+  "casting_time": {
+    "type": "action",
+    "count": 1
+  },
+  "duration": {
+    "unit": "hour",
+    "count": 1,
+    "concentration": false
+  },
+  "components": {
+    "verbal": true,
+    "somatic": true,
+    "material": []
+  },
   "effects": [
     {
-      "effect": "charmed",
-      "condition": "not save_success",
+      "type": "saving_throw",
+      "attribute": "wisdom",
+      "dc": "use_caster_dc",
+      "target": "defender"
+    },
+    {
+      "type": "add_entity_effect",
+      "entity_effect_name": "charmed",
+      "target": "defender",
+      "condition": "not context.save_success",
       "instance_fields": {
         "charmer": "event.caster"
       }

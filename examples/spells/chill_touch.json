@@ -3,15 +3,6 @@
   "description": "You create a ghostly, skeletal hand in the space of a creature within range. Make a ranged spell attack against the creature to assail it with the chill of the grave. On a hit, the target takes 1d8 necrotic damage, and it can't regain hit points until the start of your next turn.",
   "type": "spell",
   "spell_level": 0,
-  "spell_attack_bonus": "use_caster_bonus",
-  "save_dc": 0,
-  "damage": [
-    {
-      "type": "NECROTIC",
-      "amount": 4,
-      "formula": "1d8"
-    }
-  ],
   "spell_range": {
     "type": "feet",
     "distance_ft": 120
@@ -30,6 +21,20 @@
     "somatic": true,
     "material": []
   },
+  "effects": [
+    {
+      "type": "attack_roll",
+      "attack_bonus": "use_caster_bonus",
+      "target": "defender"
+    },
+    {
+      "type": "damage",
+      "target": "defender",
+      "damage_type": "NECROTIC",
+      "formula": "1d8",
+      "requires_hit": true
+    }
+  ],
   "animation": [
     [{"type": "projectile", "color": "#44CC88", "from": "caster", "to": "target", "speed": 7, "size": 3, "trail": true}],
     [{"type": "flash", "color": "#33BB77", "at": "target", "duration": 0.4, "size": 1.2}]

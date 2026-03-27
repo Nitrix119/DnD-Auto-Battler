@@ -3,17 +3,6 @@
   "description": "As you hold your hands with thumbs touching and fingers spread, a thin sheet of flames shoots forth from your outstretched fingertips. Each creature in a 15-foot cone must make a Dexterity saving throw. A creature takes 3d6 fire damage on a failed save, or half as much damage on a successful one.",
   "type": "spell",
   "spell_level": 1,
-  "spell_attack_bonus": 0,
-  "save_dc": "use_caster_dc",
-  "save_ability": "dexterity",
-  "on_successful_save": [{"action": "HalfDamage"}],
-  "damage": [
-    {
-      "type": "FIRE",
-      "amount": 10,
-      "formula": "3d6"
-    }
-  ],
   "spell_range": {
     "type": "self"
   },
@@ -35,6 +24,22 @@
     "material": []
   },
   "higher_level_scaling": "When you cast this spell using a spell slot of 2nd level or higher, the damage increases by 1d6 for each slot level above 1st.",
+  "effects": [
+    {
+      "type": "saving_throw",
+      "attribute": "dexterity",
+      "dc": "use_caster_dc",
+      "target": "for_each_defender"
+    },
+    {
+      "type": "damage",
+      "target": "for_each_defender",
+      "damage_type": "FIRE",
+      "formula": "3d6",
+      "roll_once": true,
+      "save_result": {"on_success": "half_damage"}
+    }
+  ],
   "animation": [
     [{"type": "expanding_ring", "color": "#FF6600", "at": "caster", "radius": 15, "speed": 8, "fill": true}],
     [
