@@ -286,20 +286,21 @@ class CombatSystem:
             (defenders[i], hit, damage, roll_detail, healing, healed)
             for i, (hit, damage, _, roll_detail, healing, healed) in enumerate(results)
         ]
+    
+    # Depreciated - now handled as part of effect pipeline. See effect_pipeline.py:EffectPipeline._handle_saving_throw
+    # def resolve_saving_throw(self, defender: Entity, ability: str,
+    #                         dc: int) -> Tuple[int, bool]:
+    #     """Resolve a saving throw.
 
-    def resolve_saving_throw(self, defender: Entity, ability: str,
-                            dc: int) -> Tuple[int, bool]:
-        """Resolve a saving throw.
+    #     Args:
+    #         defender: Entity making the save
+    #         ability: The ability for the save
+    #         dc: The DC of the save
 
-        Args:
-            defender: Entity making the save
-            ability: The ability for the save
-            dc: The DC of the save
-
-        Returns:
-            Tuple of (save_roll_total, success)
-        """
-        return roll_saving_throw(defender, ability, dc)
+    #     Returns:
+    #         Tuple of (save_roll_total, success)
+    #     """
+    #     return roll_saving_throw(defender, ability, dc)
 
     def resolve_legendary_action(
         self,
