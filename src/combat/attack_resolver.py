@@ -1,51 +1,37 @@
-"""Attack roll resolution."""
+"""Attack roll resolution via EffectPipeline."""
 
-from typing import Optional, Tuple
+import copy
+from typing import Optional, Tuple, List, Dict, Any
 
 from src.models.entity import Entity
 from src.models.action import AttackAction
-from src.utils.dice import roll_d20, roll_with_advantage, roll_with_disadvantage
-from .event_bus import EventBus, CombatEvent
-from .event_data import AttackDeclaredData, AttackHitData, AttackMissData
-from .events import EventType
+from .event_bus import EventBus
 from .damage_processor import DamageProcessor
+from .effect_pipeline import EffectPipeline
+
+
+def _build_pipeline_effects(action: AttackAction) -> List[Dict[str, Any]]:
+    """Convert a weapon attack's flat damage/bonus_to_hit into pipeline_effects steps."""
+    steps: List[Dict[str, Any]] = [
+        {"type": "attack_roll", "attack_bonus": action.bonus_to_hit}
+    ]
+    for d in action.damage:
+        steps.append({
+            "type": "damage",
+            "formula": d.formula or str(d.amount),
+            "damage_type": d.damage_type.name,
+            "requires_hit": True,
+        })
+    return steps
 
 
 class AttackResolver:
-    """Resolves melee/ranged attack actions."""
+    """Resolves melee/ranged attack actions via EffectPipeline."""
 
-    def __init__(self, event_bus: EventBus, damage_processor: DamageProcessor) -> None:
+    def __init__(self, event_bus: EventBus, damage_processor: DamageProcessor, rule_engine=None) -> None:
         self._event_bus = event_bus
         self._damage_processor = damage_processor
-
-    @staticmethod
-    def _roll_mode_label(declared: CombatEvent) -> str:
-        """Return a log-friendly label like ' (advantage)' from event flags."""
-        has_adv = declared.data.get("advantage", False)
-        has_dis = declared.data.get("disadvantage", False)
-        if has_adv and not has_dis:
-            return " (advantage)"
-        if has_dis and not has_adv:
-            return " (disadvantage)"
-        return ""
-
-    @staticmethod
-    def _resolve_attack_roll(declared: CombatEvent) -> int:
-        """Roll d20 with advantage/disadvantage based on event flags.
-
-        Entity effects (e.g. Blinded) set ``advantage`` / ``disadvantage``
-        flags on the ATTACK_DECLARED event data.  Per D&D 5e, if both are
-        present they cancel out to a normal roll.
-        """
-        has_adv = declared.data.get("advantage", False)
-        has_dis = declared.data.get("disadvantage", False)
-        if has_adv and has_dis:
-            return roll_d20()
-        if has_adv:
-            return roll_with_advantage()
-        if has_dis:
-            return roll_with_disadvantage()
-        return roll_d20()
+        self.rule_engine = rule_engine
 
     def resolve(
         self,
@@ -53,62 +39,42 @@ class AttackResolver:
         defender: Entity,
         action: AttackAction,
     ) -> Tuple[bool, int, str, Optional[dict]]:
-        """Resolve an attack roll and damage.
+        """Resolve an attack roll and damage via EffectPipeline.
 
         Returns:
             Tuple of (hit, total_damage, log_message, roll_detail).
-            ``roll_detail`` is a dict with keys ``d20``, ``bonus``, ``total``,
-            and ``ac`` — or ``None`` when the attack was cancelled.
             log_message is empty string if the attack was cancelled.
+            roll_detail is None when the attack was cancelled.
         """
-        declared = self._event_bus.emit(
-            EventType.ATTACK_DECLARED,
-            AttackDeclaredData(attacker=attacker, defender=defender, action=action),
-        )
-        if declared.cancelled:
+        action_copy = copy.copy(action)
+        action_copy.pipeline_effects = _build_pipeline_effects(action)
+
+        pipeline = EffectPipeline(self._event_bus, self._damage_processor, self.rule_engine)
+        result = pipeline.run(attacker, defender, action_copy)
+
+        if result.attack_cancelled:
             return False, 0, "", None
 
-        attack_roll = self._resolve_attack_roll(declared)
-        attack_total = attack_roll + action.bonus_to_hit
-        roll_mode = self._roll_mode_label(declared)
+        roll_mode = ""
+        if result.had_advantage and not result.had_disadvantage:
+            roll_mode = " (advantage)"
+        elif result.had_disadvantage and not result.had_advantage:
+            roll_mode = " (disadvantage)"
 
-        hit = attack_total >= defender.ac
-
-        total_damage = 0
-        if hit:
-            # ATTACK_HIT fires *before* roll_damage() so that handlers like
-            # AddDamage can append to action.bonus_damage (consumed by
-            # roll_damage).  Do not reorder these calls.
-            self._event_bus.emit(
-                EventType.ATTACK_HIT,
-                AttackHitData(attacker=attacker, defender=defender,
-                              action=action, roll=attack_total),
-            )
-            rolled_damages = action.roll_damage()
-            total_damage = self._damage_processor.apply_damage(
-                defender, rolled_damages, source=attacker, action_name=action.name,
-            )
-            log_msg = (
-                f"attacked {defender.name} with {action.name}. "
-                f"Attack{roll_mode}: {attack_roll}+{action.bonus_to_hit}={attack_total} "
-                f"vs AC {defender.ac}. Hit! Damage: {total_damage}"
-            )
+        if result.hit:
+            hit_str = f"Hit! Damage: {result.damage_dealt}"
         else:
-            self._event_bus.emit(
-                EventType.ATTACK_MISS,
-                AttackMissData(attacker=attacker, defender=defender,
-                               action=action, roll=attack_total),
-            )
-            log_msg = (
-                f"attacked {defender.name} with {action.name}. "
-                f"Attack{roll_mode}: {attack_roll}+{action.bonus_to_hit}={attack_total} "
-                f"vs AC {defender.ac}. Miss!"
-            )
+            hit_str = "Miss!"
 
+        log_msg = (
+            f"attacked {defender.name} with {action.name}. "
+            f"Attack{roll_mode}: {result.attack_roll}+{action.bonus_to_hit}={result.attack_total}"
+            f" vs AC {defender.ac}. {hit_str}"
+        )
         roll_detail = {
-            "d20":   attack_roll,
+            "d20": result.attack_roll,
             "bonus": action.bonus_to_hit,
-            "total": attack_total,
-            "ac":    defender.ac,
+            "total": result.attack_total,
+            "ac": defender.ac,
         }
-        return hit, total_damage, log_msg, roll_detail
+        return result.hit, result.damage_dealt, log_msg, roll_detail

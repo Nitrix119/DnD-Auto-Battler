@@ -722,7 +722,7 @@ class TestVampiricTouch:
             EventType.HEALING_APPLIED, lambda e: healing_events.append(e)
         )
 
-        with patch("src.combat.attack_resolver.roll_d20", return_value=20):
+        with patch("src.combat.effect_pipeline.roll_d20", return_value=20):
             combat.resolve_spell(wizard, [goblin], spell)
 
         if not wizard.concentrating_on:
@@ -763,7 +763,7 @@ class TestVampiricTouch:
         wizard.take_damage(Damage(DamageType.BLUDGEONING, 10))
 
         # Initial cast
-        with patch("src.combat.attack_resolver.roll_d20", return_value=20):
+        with patch("src.combat.effect_pipeline.roll_d20", return_value=20):
          combat.resolve_spell(wizard, [goblin], spell)
 
         if not wizard.concentrating_on:
@@ -781,7 +781,7 @@ class TestVampiricTouch:
             EventType.HEALING_APPLIED, lambda e: healing_events.append(e)
         )
 
-        with patch("src.combat.attack_resolver.roll_d20", return_value=20):
+        with patch("src.combat.effect_pipeline.roll_d20", return_value=20):
             hit, damage, _ = combat.resolve_attack(wizard, goblin, granted)
 
         if hit:
@@ -800,7 +800,7 @@ class TestVampiricTouch:
         hp_before = wizard.hp
 
         # Force the spell attack to hit (natural 20) and damage to be exactly 9
-        with patch("src.combat.attack_resolver.roll_d20", return_value=20), \
+        with patch("src.combat.effect_pipeline.roll_d20", return_value=20), \
              patch("src.combat.effect_pipeline.roll_formula", return_value=9):
             results = combat.resolve_spell(wizard, [goblin], spell)
 
@@ -821,7 +821,7 @@ class TestVampiricTouch:
         wizard.take_damage(Damage(DamageType.BLUDGEONING, 30))
 
         # First cast — force hit
-        with patch("src.combat.attack_resolver.roll_d20", return_value=20), \
+        with patch("src.combat.effect_pipeline.roll_d20", return_value=20), \
              patch("src.combat.effect_pipeline.roll_formula", return_value=6):
             combat.resolve_spell(wizard, [goblin], spell)
 
@@ -833,7 +833,7 @@ class TestVampiricTouch:
         wizard.take_damage(Damage(DamageType.BLUDGEONING, 10))
         hp_before_second = wizard.hp
 
-        with patch("src.combat.attack_resolver.roll_d20", return_value=20), \
+        with patch("src.combat.effect_pipeline.roll_d20", return_value=20), \
              patch("src.combat.effect_pipeline.roll_formula", return_value=8):
             results = combat.resolve_spell(wizard, [goblin], spell)
 

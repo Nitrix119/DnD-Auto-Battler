@@ -506,7 +506,7 @@ class TestConcentrationRule:
         )
 
         # Attack roll → 20 (hit); concentration save → 1 (fail)
-        with patch("src.combat.attack_resolver.roll_d20", return_value=20), \
+        with patch("src.combat.effect_pipeline.roll_d20", return_value=20), \
              patch("src.rules.effects.roll_d20", return_value=1):
             combat.resolve_attack(attacker, defender, attack)
 

@@ -158,8 +158,9 @@ class TestEntityEffectDispatch:
         engine.apply_effect(ranger, rule)
 
         action = make_attack_action()
+        original_count = len(action.pipeline_effects)
         bus.emit(EventType.ATTACK_HIT, attacker=ranger, defender=target, action=action)
-        assert len(action.bonus_damage) == 1  # CS bonus die was added
+        assert len(action.pipeline_effects) == original_count + 1  # CS damage step injected
 
     def test_colossus_slayer_does_not_fire_at_full_hp(self):
         ranger = make_entity("Ranger", hp=40)
@@ -173,8 +174,9 @@ class TestEntityEffectDispatch:
         engine.apply_effect(ranger, rule)
 
         action = make_attack_action()
+        original_count = len(action.pipeline_effects)
         bus.emit(EventType.ATTACK_HIT, attacker=ranger, defender=target, action=action)
-        assert len(action.bonus_damage) == 0  # condition not met
+        assert len(action.pipeline_effects) == original_count  # condition not met
 
     def test_colossus_slayer_does_not_fire_for_wrong_attacker(self):
         ranger = make_entity("Ranger", hp=40)
@@ -191,8 +193,9 @@ class TestEntityEffectDispatch:
 
         # The Fighter attacks — ranger's colossus slayer should NOT fire
         action = make_attack_action()
+        original_count = len(action.pipeline_effects)
         bus.emit(EventType.ATTACK_HIT, attacker=other, defender=target, action=action)
-        assert len(action.bonus_damage) == 0
+        assert len(action.pipeline_effects) == original_count
 
 
 # ── Duration ticking ─────────────────────────────────────────────────────────
@@ -371,7 +374,7 @@ class TestDamageIncoming:
             damage=[Damage(DamageType.SLASHING, 20)],
         )
 
-        with patch("src.combat.attack_resolver.roll_d20", return_value=20):
+        with patch("src.combat.effect_pipeline.roll_d20", return_value=20):
             hit, total, _ = combat.resolve_attack(attacker, defender, attack)
 
         assert hit is True
@@ -407,7 +410,7 @@ class TestDamageIncoming:
             damage=[Damage(DamageType.SLASHING, 20)],
         )
 
-        with patch("src.combat.attack_resolver.roll_d20", return_value=20):
+        with patch("src.combat.effect_pipeline.roll_d20", return_value=20):
             hit, total, _ = combat.resolve_attack(attacker, defender, attack)
 
         assert hit is True

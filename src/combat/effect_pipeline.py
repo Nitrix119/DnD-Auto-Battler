@@ -15,12 +15,11 @@ from typing import Any, Dict, List, Optional, TYPE_CHECKING
 from src.models.entity import Entity
 from src.models.action import SpellAction
 from src.models.damage import Damage, DamageType
-from src.utils.dice import roll_formula, multiply_formula
+from src.utils.dice import roll_d20, roll_with_advantage, roll_with_disadvantage, roll_formula, multiply_formula
 from src.utils.saving_throw import roll_saving_throw
 from src.rules.expressions import build_context, evaluate, resolve
-from .attack_resolver import AttackResolver
 from .event_bus import CombatEvent, EventBus
-from .event_data import AttackDeclaredData, AttackRolledData, SpellHitData, HealingAppliedData
+from .event_data import AttackDeclaredData, AttackRolledData, SpellHitData, HealingAppliedData, AttackHitData, DamageDealtData
 from .events import EventType
 
 if TYPE_CHECKING:
@@ -44,6 +43,9 @@ class PipelineResult:
     attack_total: Optional[int] = None
     critical_hit: bool = False
     critical_miss: bool = False
+    attack_cancelled: bool = False
+    had_advantage: bool = False
+    had_disadvantage: bool = False
 
 
 class EffectPipeline:
@@ -54,6 +56,35 @@ class EffectPipeline:
     ``damage`` and ``healing`` can reference results via ``context.<key>`` in
     their condition and amount expressions.
     """
+
+    @staticmethod
+    def _roll_mode_label(declared: CombatEvent) -> str:
+        """Return a log-friendly label like ' (advantage)' from event flags."""
+        has_adv = declared.data.get("advantage", False)
+        has_dis = declared.data.get("disadvantage", False)
+        if has_adv and not has_dis:
+            return " (advantage)"
+        if has_dis and not has_adv:
+            return " (disadvantage)"
+        return ""
+
+    @staticmethod
+    def _resolve_attack_roll(declared: CombatEvent) -> int:
+        """Roll d20 with advantage/disadvantage based on event flags.
+
+        Entity effects (e.g. Blinded) set ``advantage`` / ``disadvantage``
+        flags on the ATTACK_DECLARED event data.  Per D&D 5e, if both are
+        present they cancel out to a normal roll.
+        """
+        has_adv = declared.data.get("advantage", False)
+        has_dis = declared.data.get("disadvantage", False)
+        if has_adv and has_dis:
+            return roll_d20()
+        if has_adv:
+            return roll_with_advantage()
+        if has_dis:
+            return roll_with_disadvantage()
+        return roll_d20()
 
     def __init__(
         self,
@@ -69,7 +100,7 @@ class EffectPipeline:
         self,
         caster: Entity,
         defender: Entity,
-        action: SpellAction,
+        action,
         seed_damages: Optional[Dict[int, int]] = None,
     ) -> PipelineResult:
         """Execute all pipeline_effects steps sequentially.
@@ -108,6 +139,8 @@ class EffectPipeline:
         healing_total = 0
         healed_entity: Optional[Entity] = None
         spell_hit_emitted = False
+        _dealt_damages: List[Damage] = []
+        _damage_dealt_emitted = False
 
         for i, step in enumerate(action.pipeline_effects):
             step_type = step.get("type", "")
@@ -118,6 +151,23 @@ class EffectPipeline:
                 self._emit_spell_hit(caster, defender, action, context)
                 spell_hit_emitted = True
 
+            # Emit DAMAGE_DEALT before the first add_entity_effect step so that
+            # entity effects newly applied in that step do NOT react to this
+            # pipeline's damage (they are intended for future events only).
+            if step_type == "add_entity_effect" and not _damage_dealt_emitted:
+                if context["damage_dealt"] > 0:
+                    self._event_bus.emit(
+                        EventType.DAMAGE_DEALT,
+                        DamageDealtData(
+                            defender=defender,
+                            damage_list=_dealt_damages,
+                            total=context["damage_dealt"],
+                            source=caster,
+                            action_name=action.name,
+                        ),
+                    )
+                _damage_dealt_emitted = True
+
             if step_type == "attack_roll":
                 self._handle_attack_roll(step, caster, defender, action, context)
 
@@ -125,7 +175,7 @@ class EffectPipeline:
                 self._handle_saving_throw(step, caster, defender, context)
 
             elif step_type == "damage":
-                dealt = self._handle_damage(step, i, caster, defender, action, context)
+                dealt = self._handle_damage(step, i, caster, defender, action, context, _dealt_damages)
                 context["damage_dealt"] = context["damage_dealt"] + dealt
 
             elif step_type == "healing":
@@ -153,6 +203,18 @@ class EffectPipeline:
         if not spell_hit_emitted:
             self._emit_spell_hit(caster, defender, action, context)
 
+        if not _damage_dealt_emitted and context["damage_dealt"] > 0:
+            self._event_bus.emit(
+                EventType.DAMAGE_DEALT,
+                DamageDealtData(
+                    defender=defender,
+                    damage_list=_dealt_damages,
+                    total=context["damage_dealt"],
+                    source=caster,
+                    action_name=action.name,
+                ),
+            )
+
         return PipelineResult(
             hit=context["hit"],
             damage_dealt=context["damage_dealt"],
@@ -165,6 +227,9 @@ class EffectPipeline:
             attack_total=context["attack_total"],
             critical_hit=context["critical_hit"],
             critical_miss=context["critical_miss"],
+            attack_cancelled=context.get("attack_cancelled", False),
+            had_advantage=context.get("had_advantage", False),
+            had_disadvantage=context.get("had_disadvantage", False),
         )
 
     # ------------------------------------------------------------------
@@ -188,7 +253,13 @@ class EffectPipeline:
             context["hit"] = False
             context["attack_roll"] = 0
             context["attack_total"] = 0
+            context["attack_cancelled"] = True
             return
+
+        has_adv = spell_declared.data.get("advantage", False)
+        has_dis = spell_declared.data.get("disadvantage", False)
+        context["had_advantage"] = has_adv
+        context["had_disadvantage"] = has_dis
 
         bonus_spec = step.get("attack_bonus", 0)
         if bonus_spec == "use_caster_bonus":
@@ -196,7 +267,7 @@ class EffectPipeline:
         else:
             effective_bonus = int(bonus_spec)
 
-        roll = AttackResolver._resolve_attack_roll(spell_declared)
+        roll = EffectPipeline._resolve_attack_roll(spell_declared)
         total = roll + effective_bonus
 
         context["attack_roll"] = roll
@@ -206,7 +277,7 @@ class EffectPipeline:
             EventType.ATTACK_ROLLED,
             AttackRolledData(attacker=caster, defender=defender, action=action, roll=roll, total=total),
         )
-        
+
         # Check if ATTACK_ROLLED event has returned a critical hit or miss being noted
         # Handling is done this way for more flexibility (like an effect to let fighters crit on 19)
         critical_hit = spell_rolled.data.get("critical_hit", False)
@@ -215,13 +286,19 @@ class EffectPipeline:
         context["critical_miss"] = critical_miss
 
         hit = (
-            True if critical_hit else 
-            False if critical_miss else 
+            True if critical_hit else
+            False if critical_miss else
             total >= defender.ac
         )
         context["hit"] = hit
 
-        roll_mode = AttackResolver._roll_mode_label(spell_declared)
+        if hit:
+            self._event_bus.emit(
+                EventType.ATTACK_HIT,
+                AttackHitData(attacker=caster, defender=defender, action=action, roll=total),
+            )
+
+        roll_mode = EffectPipeline._roll_mode_label(spell_declared)
         logger.debug(
             "attack_roll step: %s%s roll=%d+%d=%d vs AC %d → %s",
             action.name, roll_mode, roll, effective_bonus, total, defender.ac,
@@ -262,8 +339,9 @@ class EffectPipeline:
         step_idx: int,
         caster: Entity,
         defender: Entity,
-        action: SpellAction,
+        action,
         context: dict,
+        dealt_damages: Optional[List[Damage]] = None,
     ) -> int:
         """Apply damage to the defender, respecting hit/save conditions.
 
@@ -301,9 +379,13 @@ class EffectPipeline:
             return 0
 
         damage_type = DamageType[step.get("damage_type", "GENERIC").upper()]
+        dmg_obj = Damage(damage_type, amount)
         dealt = self._damage_processor.apply_damage(
-            defender, [Damage(damage_type, amount)], source=caster, action_name=action.name,
+            defender, [dmg_obj], source=caster, action_name=action.name,
+            emit_dealt=False,
         )
+        if dealt > 0 and dealt_damages is not None:
+            dealt_damages.append(Damage(damage_type, min(amount, dealt)))
         logger.debug(
             "damage step: %s %d %s → dealt %d to %s",
             action.name, amount, damage_type.name, dealt, defender.name,

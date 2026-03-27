@@ -153,7 +153,7 @@ class TestArmorOfAgathysRetaliation:
 
         attacker_hp_before = attacker.hp
         action = attacker.stat_block.actions[0]
-        with patch("src.combat.attack_resolver.roll_d20", return_value=20):
+        with patch("src.combat.effect_pipeline.roll_d20", return_value=20):
             ar.resolve(attacker, caster, action)
 
         assert attacker.hp == attacker_hp_before - 5
@@ -169,7 +169,7 @@ class TestArmorOfAgathysRetaliation:
 
         attacker_hp_before = attacker.hp
         action = attacker.stat_block.actions[0]
-        with patch("src.combat.attack_resolver.roll_d20", return_value=20):
+        with patch("src.combat.effect_pipeline.roll_d20", return_value=20):
             ar.resolve(attacker, caster, action)
 
         assert attacker.hp == attacker_hp_before
@@ -184,7 +184,7 @@ class TestArmorOfAgathysRetaliation:
 
         attacker_hp_before = attacker.hp
         action = attacker.stat_block.actions[0]
-        with patch("src.combat.attack_resolver.roll_d20", return_value=1):
+        with patch("src.combat.effect_pipeline.roll_d20", return_value=1):
             ar.resolve(attacker, caster, action)
 
         assert attacker.hp == attacker_hp_before
@@ -209,7 +209,7 @@ class TestArmorOfAgathysRetaliation:
         attacker.take_damage = spy_take_damage
 
         action = attacker.stat_block.actions[0]
-        with patch("src.combat.attack_resolver.roll_d20", return_value=20):
+        with patch("src.combat.effect_pipeline.roll_d20", return_value=20):
             ar.resolve(attacker, caster, action)
 
         # The cold retaliation damage was dealt while caster still had temp HP
@@ -238,8 +238,9 @@ class TestArmorOfAgathysSelfTermination:
         # effects.deal_damage() use their own imported copies.
         action = attacker.stat_block.actions[0]
         mock_roll = lambda f: 5 if f == "5" else 10
-        with patch("src.combat.attack_resolver.roll_d20", return_value=20), \
+        with patch("src.combat.effect_pipeline.roll_d20", return_value=20), \
              patch("src.models.action.roll_formula", side_effect=mock_roll), \
+             patch("src.combat.effect_pipeline.roll_formula", side_effect=mock_roll), \
              patch("src.rules.effects.roll_formula", side_effect=mock_roll):
             ar.resolve(attacker, caster, action)
 
@@ -289,8 +290,9 @@ class TestArmorOfAgathysSelfTermination:
 
         # Force hit, scimitar deals 8 damage (> 5 temp HP)
         mock_roll = lambda f: 5 if f == "5" else 8
-        with patch("src.combat.attack_resolver.roll_d20", return_value=20), \
+        with patch("src.combat.effect_pipeline.roll_d20", return_value=20), \
              patch("src.models.action.roll_formula", side_effect=mock_roll), \
+             patch("src.combat.effect_pipeline.roll_formula", side_effect=mock_roll), \
              patch("src.rules.effects.roll_formula", side_effect=mock_roll):
             ar.resolve(attacker, caster, action)
 
@@ -307,6 +309,6 @@ class TestArmorOfAgathysSelfTermination:
 
         # Second attack: no retaliation since effect is gone
         attacker_hp_now = attacker.hp
-        with patch("src.combat.attack_resolver.roll_d20", return_value=20):
+        with patch("src.combat.effect_pipeline.roll_d20", return_value=20):
             ar.resolve(attacker, caster, action)
         assert attacker.hp == attacker_hp_now

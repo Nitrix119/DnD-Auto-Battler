@@ -98,7 +98,7 @@ class TestNatural1WeaponAttack:
         resolver, _ = _make_resolver()
         sword = _sword(bonus_to_hit=20)
 
-        with patch("src.combat.attack_resolver.roll_d20", return_value=1):
+        with patch("src.combat.effect_pipeline.roll_d20", return_value=1):
             hit, damage, _log, _detail = resolver.resolve(attacker, defender, sword)
 
         assert not hit, "Natural 1 must always be a miss regardless of attack bonus"
@@ -110,7 +110,7 @@ class TestNatural1WeaponAttack:
         sword = _sword(bonus_to_hit=20)
         initial_hp = defender.hp
 
-        with patch("src.combat.attack_resolver.roll_d20", return_value=1):
+        with patch("src.combat.effect_pipeline.roll_d20", return_value=1):
             resolver.resolve(attacker, defender, sword)
 
         assert defender.hp == initial_hp, "Natural 1 miss must deal no damage"
@@ -130,7 +130,7 @@ class TestNatural20WeaponAttack:
         resolver, _ = _make_resolver()
         sword = _sword(bonus_to_hit=0)
 
-        with patch("src.combat.attack_resolver.roll_d20", return_value=20):
+        with patch("src.combat.effect_pipeline.roll_d20", return_value=20):
             hit, damage, _log, _detail = resolver.resolve(attacker, defender, sword)
 
         assert hit, "Natural 20 must always be a hit regardless of AC"
@@ -141,7 +141,7 @@ class TestNatural20WeaponAttack:
         resolver, _ = _make_resolver()
         sword = _sword(bonus_to_hit=0)
 
-        with patch("src.combat.attack_resolver.roll_d20", return_value=20):
+        with patch("src.combat.effect_pipeline.roll_d20", return_value=20):
             hit, damage, _log, _detail = resolver.resolve(attacker, defender, sword)
 
         assert damage > 0, "Natural 20 hit must deal damage"
@@ -158,8 +158,8 @@ class TestNatural20WeaponAttack:
         resolver, _ = _make_resolver()
         sword = _sword(bonus_to_hit=0, die_sides=8)
 
-        with patch("src.combat.attack_resolver.roll_d20", return_value=20), \
-             patch("src.utils.dice.roll_dice", return_value=4):
+        with patch("src.combat.effect_pipeline.roll_d20", return_value=20), \
+             patch("src.utils.dice.roll_dice", side_effect=lambda n, _s: n * 4):
             _hit, damage, _log, _detail = resolver.resolve(attacker, defender, sword)
 
         assert damage == 8, (
@@ -190,7 +190,7 @@ class TestNatural1SpellAttack:
             ],
         )
 
-        with patch("src.combat.attack_resolver.roll_d20", return_value=1):
+        with patch("src.combat.effect_pipeline.roll_d20", return_value=1):
             result = pipeline.run(caster, defender, spell)
 
         assert not result.hit, "Natural 1 spell attack must always miss"
@@ -210,7 +210,7 @@ class TestNatural1SpellAttack:
             ],
         )
 
-        with patch("src.combat.attack_resolver.roll_d20", return_value=1):
+        with patch("src.combat.effect_pipeline.roll_d20", return_value=1):
             result = pipeline.run(caster, defender, spell)
 
         assert result.damage_dealt == 0, "Natural 1 spell miss must deal no damage"
@@ -230,7 +230,7 @@ class TestNatural20SpellAttack:
         pipeline, _ = _make_pipeline()
         spell = _attack_spell()
 
-        with patch("src.combat.attack_resolver.roll_d20", return_value=20):
+        with patch("src.combat.effect_pipeline.roll_d20", return_value=20):
             result = pipeline.run(caster, defender, spell)
 
         assert result.hit, "Natural 20 spell attack must always hit regardless of AC"
@@ -241,7 +241,7 @@ class TestNatural20SpellAttack:
         pipeline, _ = _make_pipeline()
         spell = _attack_spell()
 
-        with patch("src.combat.attack_resolver.roll_d20", return_value=20):
+        with patch("src.combat.effect_pipeline.roll_d20", return_value=20):
             result = pipeline.run(caster, defender, spell)
 
         assert result.damage_dealt > 0, "Natural 20 spell hit must deal damage"
@@ -258,7 +258,7 @@ class TestNatural20SpellAttack:
         pipeline, _ = _make_pipeline()
         spell = _attack_spell(die_sides=8)
 
-        with patch("src.combat.attack_resolver.roll_d20", return_value=20), \
+        with patch("src.combat.effect_pipeline.roll_d20", return_value=20), \
              patch("src.utils.dice.roll_dice", side_effect=lambda n, _s: n * 4):
             result = pipeline.run(caster, defender, spell)
 

@@ -283,19 +283,23 @@ def force_critical_miss(effect: dict, ctx: dict, event: CombatEvent, event_bus: 
     event.data["critical_miss"] = True
 
 
-def add_damage_to_attack_hit(effect: dict, ctx: dict, event: CombatEvent, event_bus: EventBus) -> None:
-    """Add a bonus damage die to the triggering attack's roll_damage() call.
+def inject_pipeline_damage_step(effect: dict, ctx: dict, event: CombatEvent, event_bus: EventBus) -> None:
+    """Append a damage step to the triggering action's pipeline_effects.
 
-    Meant for ATTACK_HIT handlers.  ``CombatSystem.resolve_attack`` emits
-    ATTACK_HIT *before* calling ``action.roll_damage()``, so bonus damage
-    appended here is included in the same roll.  Do not use this handler on
-    events that fire after ``roll_damage()`` (e.g. DAMAGE_DEALT).
+    Intended for ATTACK_HIT handlers. Because ATTACK_HIT fires mid-pipeline
+    (during the attack_roll step), Python's list iteration picks up the appended
+    step in the same pipeline run. Crit doubling applies automatically.
 
-    Required keys:  attack_action (expr → Action), formula (str), damage_type (str or expr)
+    Required keys: attack_action (expr → Action), formula (str), damage_type (str or expr)
     """
     action = _resolve(effect["attack_action"], ctx)
     dtype = _resolve_damage_type(effect["damage_type"], ctx)
-    action.bonus_damage.append(Damage(dtype, formula=effect["formula"]))
+    action.pipeline_effects.append({
+        "type": "damage",
+        "formula": effect["formula"],
+        "damage_type": dtype.name,
+        "requires_hit": True,
+    })
 
 
 def modify_damage(effect: dict, ctx: dict, event: CombatEvent, event_bus: EventBus) -> None:
@@ -451,7 +455,8 @@ BUILTIN_EFFECTS = {
     "Cancel": cancel_event,
     "HealTarget": heal_target,
     "DealDamage": deal_damage,
-    "AddDamageToAttackHit": add_damage_to_attack_hit,
+    "AddDamageToAttackHit": inject_pipeline_damage_step,  # legacy alias
+    "InjectPipelineDamageStep": inject_pipeline_damage_step,
     "GrantAdvantage": grant_advantage,
     "GrantDisadvantage": grant_disadvantage,
     "ForceCriticalHit": force_critical_hit,

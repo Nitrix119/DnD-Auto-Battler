@@ -41,14 +41,26 @@ class Action:
     action_type: ActionType
     recharge: Optional[str] = None
     damage: List[Damage] = field(default_factory=list)
-    bonus_damage: List[Damage] = field(default_factory=list)
     cost: ActionCost = field(default_factory=lambda: ACTION_COST)
     source_effect: str = ""  # non-empty → revoked when that entity effect is removed
+    pipeline_effects: List[Dict[str, Any]] = field(default_factory=list)
     legendary_action_cost: int = 0  # > 0 → usable only as a legendary action
 
     def __hash__(self) -> int:
         """Make action hashable for use in sets/dicts."""
         return hash(self.name)
+
+    @property
+    def primary_damage_type(self) -> Optional[DamageType]:
+        """Return the DamageType of the first damage step in pipeline_effects, or None."""
+        for step in self.pipeline_effects:
+            if step.get("type") == "damage":
+                type_str = step.get("damage_type", "")
+                try:
+                    return DamageType[type_str.upper()]
+                except KeyError:
+                    return None
+        return None
 
     def roll_damage(self) -> List[Damage]:
         """Roll all damage formulas and return concrete Damage instances.
@@ -64,10 +76,9 @@ class Action:
             List of Damage objects with rolled amounts, one per damage entry.
         """
         rolled = []
-        for d in self.damage + self.bonus_damage:
+        for d in self.damage:
             amount = roll_formula(d.formula) if d.formula else d.amount
             rolled.append(Damage(d.damage_type, amount))
-        self.bonus_damage.clear()
         return rolled
 
 

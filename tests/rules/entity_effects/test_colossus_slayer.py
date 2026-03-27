@@ -1,7 +1,7 @@
 """Tests for Colossus Slayer bonus damage injection.
 
-Verifies that Colossus Slayer adds a 1d8 bonus damage entry to the triggering
-attack's bonus_damage list (using the weapon's primary damage type), rather than
+Verifies that Colossus Slayer injects a pipeline damage step into the triggering
+action's pipeline_effects list (using the weapon's primary damage type), rather than
 firing a separate DAMAGE_DEALT event.
 """
 
@@ -80,7 +80,8 @@ class TestColossusSlayerDamageInheritance:
     def _hit_with_weapon(self, weapon_name: str):
         """
         Pre-wounds the golem, fires an ATTACK_HIT event for the named weapon,
-        and returns (golem, action) with bonus_damage populated by the effect.
+        and returns (golem, action, original_step_count) with pipeline_effects
+        populated by the effect.
         """
         ranger = load_ranger()
         golem = load_golem()
@@ -89,42 +90,38 @@ class TestColossusSlayerDamageInheritance:
 
         bus, _ = setup_engine(ranger, golem)
         action = get_action(ranger, weapon_name)
+        # Build pipeline_effects so CS has somewhere to inject
+        from src.combat.attack_resolver import _build_pipeline_effects
+        action.pipeline_effects = _build_pipeline_effects(action)
+        original_step_count = len(action.pipeline_effects)
         bus.emit(EventType.ATTACK_HIT, attacker=ranger, defender=golem, action=action)
-        return golem, action
+        return golem, action, original_step_count
 
     def test_colossus_slayer_adds_one_bonus_damage_entry(self):
-        """ATTACK_HIT with a wounded target adds exactly one entry to bonus_damage."""
-        _, action = self._hit_with_weapon("Shortbow")
-        assert len(action.damage) == 1       # original weapon die unchanged
-        assert len(action.bonus_damage) == 1  # CS bonus die injected
+        """ATTACK_HIT with a wounded target adds exactly one step to pipeline_effects."""
+        _, action, original_step_count = self._hit_with_weapon("Shortbow")
+        assert len(action.pipeline_effects) == original_step_count + 1
 
     def test_club_produces_bludgeoning(self):
-        _, action = self._hit_with_weapon("Club")
-        assert action.bonus_damage[0].damage_type == DamageType.BLUDGEONING
+        _, action, _ = self._hit_with_weapon("Club")
+        assert action.pipeline_effects[-1]["damage_type"] == "BLUDGEONING"
 
     def test_shortsword_produces_slashing(self):
-        _, action = self._hit_with_weapon("Shortsword")
-        assert action.bonus_damage[0].damage_type == DamageType.SLASHING
+        _, action, _ = self._hit_with_weapon("Shortsword")
+        assert action.pipeline_effects[-1]["damage_type"] == "SLASHING"
 
     def test_shortbow_produces_piercing(self):
-        _, action = self._hit_with_weapon("Shortbow")
-        assert action.bonus_damage[0].damage_type == DamageType.PIERCING
+        _, action, _ = self._hit_with_weapon("Shortbow")
+        assert action.pipeline_effects[-1]["damage_type"] == "PIERCING"
 
     def test_bonus_damage_formula_is_1d8(self):
-        _, action = self._hit_with_weapon("Shortbow")
-        assert action.bonus_damage[0].formula == "1d8"
+        _, action, _ = self._hit_with_weapon("Shortbow")
+        assert action.pipeline_effects[-1]["formula"] == "1d8"
 
-    def test_roll_damage_returns_two_entries(self):
-        """roll_damage() includes both weapon and CS bonus die."""
-        _, action = self._hit_with_weapon("Shortbow")
-        rolled = action.roll_damage()
-        assert len(rolled) == 2
-
-    def test_bonus_damage_consumed_after_roll(self):
-        """bonus_damage is cleared by roll_damage() so it doesn't persist."""
-        _, action = self._hit_with_weapon("Shortbow")
-        action.roll_damage()
-        assert len(action.bonus_damage) == 0
+    def test_injected_step_requires_hit(self):
+        """The injected pipeline step should have requires_hit=True."""
+        _, action, _ = self._hit_with_weapon("Shortbow")
+        assert action.pipeline_effects[-1].get("requires_hit") == True
 
     def test_bonus_damage_only_applies_to_ranger_not_other_attackers(self):
         """Colossus Slayer must not grant bonus damage to a non-ranger attacker."""
@@ -137,10 +134,13 @@ class TestColossusSlayerDamageInheritance:
 
         # Use one of the golem's actions as the attacking action.
         golem_action = golem.stat_block.actions[0]
+        from src.combat.attack_resolver import _build_pipeline_effects
+        golem_action.pipeline_effects = _build_pipeline_effects(golem_action)
+        original_step_count = len(golem_action.pipeline_effects)
         # Golem attacks the (wounded) ranger — CS effect should not apply.
         bus.emit(EventType.ATTACK_HIT, attacker=golem, defender=ranger, action=golem_action)
 
-        assert len(golem_action.bonus_damage) == 0
+        assert len(golem_action.pipeline_effects) == original_step_count
 
     def test_does_not_fire_at_full_hp(self):
         """Colossus Slayer must not fire if the target is at full HP."""
@@ -149,7 +149,10 @@ class TestColossusSlayerDamageInheritance:
         bus, _ = setup_engine(ranger, golem)
 
         action = get_action(ranger, "Shortbow")
+        from src.combat.attack_resolver import _build_pipeline_effects
+        action.pipeline_effects = _build_pipeline_effects(action)
+        original_step_count = len(action.pipeline_effects)
         bus.emit(EventType.ATTACK_HIT, attacker=ranger, defender=golem, action=action)
 
-        assert len(action.bonus_damage) == 0
+        assert len(action.pipeline_effects) == original_step_count
         assert golem.hp == golem.max_hp
