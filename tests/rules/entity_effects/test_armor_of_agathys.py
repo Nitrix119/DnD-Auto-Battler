@@ -71,7 +71,7 @@ def _setup(*entities):
         effect_registry=registry,
     )
     attack_res = AttackResolver(bus, damage_proc)
-    spell_res = SpellResolver(bus, damage_proc, attack_res, rule_engine=engine)
+    spell_res = SpellResolver(bus, damage_proc, rule_engine=engine)
     return bus, engine, damage_proc, attack_res, spell_res
 
 

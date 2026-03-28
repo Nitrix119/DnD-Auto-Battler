@@ -10,7 +10,6 @@ from .event_bus import EventBus
 from .event_data import SpellCastData
 from .events import EventType
 from .damage_processor import DamageProcessor
-from .attack_resolver import AttackResolver
 from .effect_pipeline import EffectPipeline
 
 logger = logging.getLogger(__name__)
@@ -23,12 +22,10 @@ class SpellResolver:
         self,
         event_bus: EventBus,
         damage_processor: DamageProcessor,
-        attack_resolver: AttackResolver,
         rule_engine=None,
     ) -> None:
         self._event_bus = event_bus
         self._damage_processor = damage_processor
-        self._attack_resolver = attack_resolver
         self.rule_engine = rule_engine
 
     def resolve(

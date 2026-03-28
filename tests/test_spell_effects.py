@@ -49,8 +49,7 @@ def setup_engine_and_resolver(*entities):
     registry.scan_directory("rules/entity_effects")
     engine = RuleEngine(bus, entities_getter=lambda: entity_list,
                         damage_processor=damage_proc, effect_registry=registry)
-    attack_res = AttackResolver(bus, damage_proc)
-    resolver = SpellResolver(bus, damage_proc, attack_res, rule_engine=engine)
+    resolver = SpellResolver(bus, damage_proc, rule_engine=engine)
     return bus, engine, resolver
 
 
@@ -234,8 +233,7 @@ class TestSpellEffectsWithoutRuleEngine:
         goblin = load_goblin()
         bus = EventBus()
         damage_proc = DamageProcessor(bus)
-        attack_res = AttackResolver(bus, damage_proc)
-        resolver = SpellResolver(bus, damage_proc, attack_res, rule_engine=None)
+        resolver = SpellResolver(bus, damage_proc, rule_engine=None)
 
         spell = charm_person_spell(save_dc=30)
 

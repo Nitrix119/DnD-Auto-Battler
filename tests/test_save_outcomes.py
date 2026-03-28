@@ -119,8 +119,7 @@ def _plain_resolver(caster, *targets) -> SpellResolver:
     """SpellResolver with no rule engine (damage tests only)."""
     bus = EventBus()
     dp = DamageProcessor(bus)
-    ar = AttackResolver(bus, dp)
-    return SpellResolver(bus, dp, ar)
+    return SpellResolver(bus, dp)
 
 
 # ---------------------------------------------------------------------------
@@ -328,8 +327,7 @@ class TestFireballIntegration:
         target = _make_target(hp=200)
         bus = EventBus()
         dp = DamageProcessor(bus)
-        ar = AttackResolver(bus, dp)
-        resolver = SpellResolver(bus, dp, ar)
+        resolver = SpellResolver(bus, dp)
 
         hit_events = []
         bus.subscribe(EventType.SPELL_HIT, lambda e: hit_events.append(e))
@@ -346,8 +344,7 @@ class TestFireballIntegration:
         target = _make_target(hp=500)
         bus = EventBus()
         dp = DamageProcessor(bus)
-        ar = AttackResolver(bus, dp)
-        resolver = SpellResolver(bus, dp, ar)
+        resolver = SpellResolver(bus, dp)
 
         # Patch roll_formula so the 8d6 roll is deterministic (returns 24)
         # (fireball uses roll_once, so the pre-roll happens in spell_resolver)
@@ -364,8 +361,7 @@ class TestFireballIntegration:
         target = _make_target(hp=500)
         bus = EventBus()
         dp = DamageProcessor(bus)
-        ar = AttackResolver(bus, dp)
-        resolver = SpellResolver(bus, dp, ar)
+        resolver = SpellResolver(bus, dp)
 
         with patch("src.combat.spell_resolver.roll_formula", return_value=24), \
              patch("src.utils.saving_throw.roll_d20", return_value=1):
@@ -380,8 +376,7 @@ class TestFireballIntegration:
         failer = _make_target(hp=500)
         bus = EventBus()
         dp = DamageProcessor(bus)
-        ar = AttackResolver(bus, dp)
-        resolver = SpellResolver(bus, dp, ar)
+        resolver = SpellResolver(bus, dp)
 
         rolls = iter([20, 1])  # saver succeeds, failer fails
         with patch("src.combat.spell_resolver.roll_formula", return_value=24), \
