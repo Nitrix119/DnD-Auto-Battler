@@ -2,8 +2,9 @@
 // Data-driven animation system for spell visual effects.
 // Animations are defined in spell JSON files as arrays of phases,
 // each phase containing effects that play in parallel.
-//
-// Depends on battle.js globals: ctx, camera, CELL_PX, worldToScreen, draw
+
+import { ctx as canvasCtx, camera, CELL_PX } from './state.js';
+import { worldToScreen, draw } from './renderer.js';
 
 // ── Location Resolution ─────────────────────────────────────────────────────
 
@@ -482,7 +483,7 @@ class AnimationManager {
 
     update(timestamp) {
         if (!this._active) return;
-        this._active.update(timestamp, ctx);
+        this._active.update(timestamp, canvasCtx);
         if (this._active.isComplete()) {
             this._active.finish();
             this._active = this._queue.shift() || null;
@@ -521,4 +522,4 @@ function _animationTick(timestamp) {
 
 // ── Export singleton ────────────────────────────────────────────────────────
 
-const animationManager = new AnimationManager();
+export const animationManager = new AnimationManager();
