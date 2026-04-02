@@ -13,6 +13,7 @@ from .ability import AbilityScores
 from .skill import Skill, STANDARD_SKILLS
 from .action import Action
 from .creature_size import CreatureSize
+from .damage import DamageType
 
 DEFAULT_RESOURCE_DEFAULTS: Dict[str, int] = {
     "actions": 1,
@@ -52,6 +53,9 @@ class StatBlock:
     spellcasting_ability: str = ""  # e.g. "intelligence", "wisdom", "charisma"; "" = non-caster
     spell_slot_defaults: Dict[str, int] = field(default_factory=dict)  # {level_str: max_count}; empty = no slots
     legendary_action_count: int = 0  # 0 = not a legendary creature
+    damage_vulnerabilities: List[DamageType] = field(default_factory=list)
+    damage_resistances: List[DamageType] = field(default_factory=list)
+    damage_immunities: List[DamageType] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         """Initialize default skills and validate stats."""

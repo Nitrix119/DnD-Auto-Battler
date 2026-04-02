@@ -1,0 +1,11 @@
+{
+  "name": "damage_immunity_rule",
+  "triggers": ["DAMAGE_INCOMING"],
+  "condition": "event.damage_list[0].damage_type in event.defender.stat_block.damage_immunities",
+  "effects": [
+    {
+      "action": "ModifyDamage",
+      "multiplier": 0
+    }
+  ]
+}

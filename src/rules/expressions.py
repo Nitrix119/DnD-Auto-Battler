@@ -23,7 +23,7 @@ ALLOWED_NODES: frozenset = frozenset({
     ast.Index,    # Python 3.8 compat; never emitted by 3.9+ parser, but harmless
     ast.Load,     # context node on every Name/Attribute/Subscript in read position
     ast.Constant,
-    ast.Compare, ast.Eq, ast.NotEq, ast.Lt, ast.LtE, ast.Gt, ast.GtE,
+    ast.Compare, ast.Eq, ast.NotEq, ast.Lt, ast.LtE, ast.Gt, ast.GtE, ast.In, ast.NotIn,
     ast.BoolOp, ast.And, ast.Or,
     ast.UnaryOp, ast.Not,
     ast.BinOp, ast.FloorDiv, ast.Add, ast.Sub, ast.Mult, ast.Div, ast.Mod,
