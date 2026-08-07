@@ -86,12 +86,14 @@ Run a single test file: `pytest tests/test_spells.py -q`. There is no coverage g
   or `patch("src.utils.dice.roll_d20", side_effect=[...])`.
 - Before finishing, run `pytest tests/ -q` and keep it green.
 
-## Live gotchas (see docs/CODEBASE_REVIEW.md §5 for the full list; P2 items remain open)
+## Live gotchas (see docs/CODEBASE_REVIEW.md §5 for the full list)
 
-- `_FORMULA_RE` in the loader rejects multi-term damage formulas (`2d6+1d8`) that `dice.py` can
-  actually roll (E5).
 - `RuleEngine` swallows `AttributeError` in rule-condition eval and only DEBUG-logs it, so a typo
-  in a rule expression is silently skipped (E6).
-- `RNG` is module-global and not seedable — patch roll functions in tests (E11).
+  in a rule expression is silently skipped (E6 — still open).
+- RNG is a single shared `random.Random` in `dice.py`; call `dice.seed_rng(seed)` for
+  deterministic battles/tests (you can also still patch the roll functions).
 - `resolve_spell`/`resolve_legendary_action` return `SpellTargetResult` namedtuples
   (`entity, hit, damage, roll_detail, healing, healed`) — unpack by name or position.
+- `CELL_FEET` is duplicated in `web/routers/combat.py` and `web/static/js/state.js` — keep in sync.
+- `license` in `pyproject.toml` (MIT) contradicts `README.md` ("all rights reserved") — unresolved
+  owner decision (E13).

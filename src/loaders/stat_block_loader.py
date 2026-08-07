@@ -5,11 +5,15 @@ import re
 from pathlib import Path
 from typing import Dict, Any, Optional
 
-_FORMULA_RE = re.compile(r"^\d+d\d+([+\-]\d+)?$")
+# Full-match validator for damage formulas. Accepts one or more terms, each a
+# dice term (NdM) or flat modifier (N), joined by + / -, e.g. "3d8+6",
+# "2d6+1d8+5", "1d20-2", or "20". Mirrors what dice.roll_formula can roll, so a
+# valid multi-term formula is no longer rejected at load time (E5).
+_FORMULA_RE = re.compile(r"^[+-]?\d+(?:d\d+)?(?:[+-]\d+(?:d\d+)?)*$")
 
 
 def _validate_formula(formula: str) -> str:
-    if not _FORMULA_RE.match(formula):
+    if not _FORMULA_RE.match(formula.replace(" ", "")):
         raise ValueError(f"Invalid damage formula: {formula!r}")
     return formula
 

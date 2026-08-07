@@ -30,12 +30,10 @@
     {
       "type": "saving_throw",
       "attribute": "constitution",
-      "dc": "use_caster_dc",
-      "target": "for_each_defender"
+      "dc": "use_caster_dc"
     },
     {
       "type": "damage",
-      "target": "for_each_defender",
       "damage_type": "COLD",
       "formula": "8d8",
       "roll_once": true,

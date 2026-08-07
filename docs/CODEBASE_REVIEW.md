@@ -132,12 +132,14 @@ parallel effect vocabularies bridged by synthetic stub events (`_handle_apply_co
   file), and every enum lookup (`DamageType`, `RangeType`, `TargetingType`, `AOEShape`,
   `CastingTimeType`, `DurationUnit`) goes through a `_enum_lookup` helper that reports the bad
   value and the valid options. Covered by `tests/test_loader_validation.py`.
-- **E5. Loader regex vs. dice parser mismatch — open.** `_FORMULA_RE` accepts only a single
-  `NdM(+/-K)` term, but `dice.py` rolls multi-term formulas (`2d6+1d8+5`); such damage is
-  rejected at load time.
-- **E6. RuleEngine swallows `AttributeError` — open.** In condition eval it DEBUG-logs and skips
-  — a genuine typo in a rule expression is silently ignored (the code comment admits this "likely
-  indicates a bug").
+- **E5. Loader regex vs. dice parser mismatch — fixed.** `_FORMULA_RE` now full-matches
+  multi-term formulas (`2d6+1d8+5`, `1d20-2`) that `dice.py` can roll, while still rejecting
+  garbage; covered by `tests/test_loader_validation.py`.
+- **E6. RuleEngine swallows `AttributeError` — open (deliberately deferred).** In condition eval
+  it DEBUG-logs and skips, so a genuine typo in a rule expression is silently ignored. Cleanly
+  distinguishing "wrong event type" (expected) from "typo" (bug) needs a per-event field schema
+  to validate expressions against at load time — better done alongside the spell/creature schema
+  linter than as a spot fix.
 
 **MEDIUM:**
 - **E7. Return-shape drift vs. docstrings — fixed.** `resolve_attack`/`parse_dice_formula`
@@ -148,17 +150,20 @@ parallel effect vocabularies bridged by synthetic stub events (`_handle_apply_co
 - **E9. Dead code — fixed.** WebSocket reconnection (commented backend branch + orphaned session
   store, and the matching frontend `rejoin_combat` send/handler) was fully removed; the commented
   `resolve_saving_throw` and the deprecated `ModifyAC` handler are gone.
-- **E10. Decorative/misleading `target: "for_each_defender"` — open.** In AoE spell JSON — the
-  pipeline's
-  `_resolve_target` only distinguishes `"caster"` vs. everything-else, so it silently means
-  "defender."
-- **E11. Non-seedable RNG** — `dice.py` calls module-global `random.*`; no injection/seed, so
-  combat can't be tested deterministically without monkeypatching. Biggest *testability* gap.
-- **E12. Cross-language duplication / process-global state** — `CELL_FEET` defined in both Python
-  (`web/routers/combat.py`) and JS (`state.js`); the spell registry is a process-wide singleton
-  shared across web sessions.
-- **E13. Stale metadata** — `PKG-INFO` "Future Enhancements" lists shipped items as unchecked;
-  `pyproject.toml` says MIT while `README.md` says "All rights reserved."
+- **E10. Misleading `target: "for_each_defender"` — fixed.** The inert field was removed from all
+  AoE spell JSONs and the `SPELL_DEFINITION_GUIDE`; the guide now explains AoE fan-out is
+  automatic and `damage`/`saving_throw` steps take no `target`.
+- **E11. Non-seedable RNG — fixed.** `dice.py` now routes all rolls through a single
+  `random.Random` with a `seed_rng()` helper, so a whole battle is reproducible without
+  monkeypatching; covered by `tests/test_dice_seed.py`.
+- **E12. Cross-language duplication / process-global state — partially addressed.** `CELL_FEET` in
+  Python and JS now carry explicit "keep in sync" comments (no shared source exists across the
+  boundary). Still open: the spell registry is a process-wide singleton shared across web
+  sessions — a concern once more than one battle runs concurrently.
+- **E13. Stale metadata — open (needs a decision).** `pyproject.toml` declares `license = MIT`
+  while `README.md` says "All rights reserved / no license granted yet" — a genuine contradiction
+  that only the owner should resolve. The `egg-info/PKG-INFO` "Future Enhancements" is a
+  regenerated build artifact and will refresh on the next build.
 
 ## 6. Prioritized repair roadmap
 
@@ -166,9 +171,9 @@ parallel effect vocabularies bridged by synthetic stub events (`_handle_apply_co
 - **P1 — done:** E4 friendly loader validation (enum lookups + `json.load`) · E8 logging fix ·
   E7 reconcile return shapes / update docstrings · E9 delete dead code (reconnection removed).
   _Not yet done: a full spell/creature schema linter (deferred to feed the "new spell" skill)._
-- **P2 — hardening (open):** E11 injectable/seedable RNG · E5 unify formula regex with the dice
-  parser · E10 drop or implement `for_each_defender` · E6 stop swallowing rule-expression errors ·
-  E12/E13 shared constants + metadata cleanup.
+- **P2 — mostly done:** E11 seedable RNG · E5 multi-term formula validation · E10 dropped
+  `for_each_defender` · E12 CELL_FEET sync comments. _Still open: E6 (needs a field schema, folded
+  into the linter work), E13 (license — owner decision), and the per-session spell registry._
 - **Then net-new features:** structured upcasting → reactions/OA → multiattack → death saves →
   the AI/auto-battle loop.
 

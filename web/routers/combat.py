@@ -53,6 +53,8 @@ class _RateLimiter:
 # ---------------------------------------------------------------------------
 # Frontend: cell units (cx, cy) — x=east, y=south
 # Backend:  feet       (x, y, z) — x=east, y=UP, z=south
+# NOTE: keep in sync with CELL_FEET in web/static/js/state.js — there is no
+# shared source across the Python/JS boundary (see CODEBASE_REVIEW.md E12).
 CELL_FEET = 5
 
 

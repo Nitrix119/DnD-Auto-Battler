@@ -155,8 +155,10 @@ Controls how far the spell can reach.
 | `aoe.width_ft` | ❌ | int | Line width in feet; must be > 0 if provided (defaults to 5 ft at runtime) |
 
 For AoE spells, the caster must provide a target point at cast time; the engine auto-selects all
-living combatants whose token overlaps the area. Separately, effect steps that target
-`"for_each_defender"` are applied once per entity in the area.
+living combatants whose token overlaps the area, then runs the full effect pipeline once per
+selected defender. This fan-out is automatic — `damage` and `saving_throw` steps always apply to
+the current defender and take no `target` field. (Use `roll_once` on a `damage` step so every
+target in the area takes the same rolled total, per D&D 5e.)
 
 ---
 
@@ -274,8 +276,7 @@ Rolls a saving throw for the defender and writes the result to context. If `dc` 
 {
   "type": "saving_throw",
   "attribute": "dexterity",
-  "dc": "use_caster_dc",
-  "target": "for_each_defender"
+  "dc": "use_caster_dc"
 }
 ```
 
@@ -283,7 +284,9 @@ Rolls a saving throw for the defender and writes the result to context. If `dc` 
 |---|---|---|---|---|
 | `attribute` | ✅ | string | — | Saving throw ability: `"strength"`, `"dexterity"`, `"constitution"`, `"intelligence"`, `"wisdom"`, `"charisma"` |
 | `dc` | ✅ | int or `"use_caster_dc"` | — | Difficulty class. `"use_caster_dc"` uses the caster's computed spell save DC (8 + proficiency + spellcasting modifier) |
-| `target` | ❌ | string | `"defender"` | Use `"for_each_defender"` for AoE spells where each target rolls independently |
+
+The save is always rolled by the current defender; for AoE the pipeline runs once per target
+automatically, so there is no `target` field here.
 
 **Context written:** `save_roll`, `save_success`
 
@@ -297,7 +300,6 @@ a preceding saving throw result.
 ```json
 {
   "type": "damage",
-  "target": "defender",
   "damage_type": "FIRE",
   "formula": "8d6",
   "roll_once": true,
@@ -308,8 +310,7 @@ a preceding saving throw result.
 | Field | Required | Type | Default | Description |
 |---|---|---|---|---|
 | `damage_type` | ✅ | string | — | See [Damage Types](#damage-types) |
-| `formula` | ✅ | string | — | Dice formula: `"NdN"`, `"NdN+N"`, `"NdN-N"`, or a plain integer string `"20"` for a fixed amount |
-| `target` | ❌ | string | `"defender"` | `"defender"` for single-target, `"for_each_defender"` for AoE |
+| `formula` | ✅ | string | — | Dice formula: one or more `NdN` / flat terms joined by `+`/`-` (e.g. `"8d6"`, `"2d6+1d8+5"`, `"1d20-2"`), or a plain integer string `"20"` for a fixed amount |
 | `requires_hit` | ❌ | bool | `false` | If `true`, skips this step entirely when `context.hit` is `false` |
 | `roll_once` | ❌ | bool | `false` | If `true`, the formula is rolled once before the pipeline runs and that result is shared across all AoE targets (set on AoE damage for consistent damage). The pre-roll is seeded by `SpellResolver` |
 | `save_result` | ❌ | object | — | Modifies damage based on a preceding `saving_throw` result |
@@ -645,12 +646,10 @@ private (`_`-prefixed) attributes.
     {
       "type": "saving_throw",
       "attribute": "dexterity",
-      "dc": "use_caster_dc",
-      "target": "for_each_defender"
+      "dc": "use_caster_dc"
     },
     {
       "type": "damage",
-      "target": "for_each_defender",
       "damage_type": "FIRE",
       "formula": "8d6",
       "roll_once": true,

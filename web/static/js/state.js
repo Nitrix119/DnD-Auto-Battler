@@ -9,7 +9,7 @@ export const ctx    = canvas.getContext("2d");
 export const camera = { x: 0, y: 0, zoom: 1.0 };
 
 export const CELL_PX    = 50;    // base cell size in pixels at zoom 1 (1 cell = 5 ft)
-export const CELL_FEET  = 5;     // feet per grid cell
+export const CELL_FEET  = 5;     // feet per grid cell — keep in sync with CELL_FEET in web/routers/combat.py
 export const ZOOM_MIN   = 0.10;
 export const ZOOM_MAX   = 8.0;
 export const ZOOM_SPEED = 0.001;

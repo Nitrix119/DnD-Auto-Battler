@@ -54,6 +54,28 @@ class TestFriendlyEnumErrors:
         assert "blob" in str(exc.value)
 
 
+class TestDamageFormulaValidation:
+    def _attack_with_formula(self, formula):
+        return _creature(actions=[{
+            "name": "Hit", "type": "attack",
+            "damage": [{"type": "SLASHING", "formula": formula}],
+        }])
+
+    def test_multi_term_formula_accepted(self):
+        # E5: previously rejected by the single-term regex.
+        sb = StatBlockLoader.from_dict(self._attack_with_formula("2d6+1d8+5"))
+        assert sb.actions[0].damage[0].formula == "2d6+1d8+5"
+
+    def test_simple_formula_still_accepted(self):
+        sb = StatBlockLoader.from_dict(self._attack_with_formula("3d8+6"))
+        assert sb.actions[0].damage[0].formula == "3d8+6"
+
+    def test_garbage_formula_still_rejected(self):
+        with pytest.raises(ValueError) as exc:
+            StatBlockLoader.from_dict(self._attack_with_formula("2d6+garbage"))
+        assert "formula" in str(exc.value).lower()
+
+
 class TestFriendlyJsonErrors:
     def test_malformed_creature_json_names_the_file(self, tmp_path):
         bad = tmp_path / "broken.json"

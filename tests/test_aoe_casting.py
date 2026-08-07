@@ -63,8 +63,8 @@ def _fireball(
         duration=Duration(DurationUnit.INSTANTANEOUS),
         components=SpellComponents(verbal=True, somatic=True),
         pipeline_effects=[
-            {"type": "saving_throw", "attribute": "dexterity", "dc": save_dc, "target": "for_each_defender"},
-            {"type": "damage", "target": "for_each_defender", "damage_type": "FIRE", "formula": "8d6",
+            {"type": "saving_throw", "attribute": "dexterity", "dc": save_dc},
+            {"type": "damage", "damage_type": "FIRE", "formula": "8d6",
              "roll_once": True, "save_result": {"on_success": "half_damage"}},
         ],
     )
@@ -82,8 +82,8 @@ def _cone_spell(range_type: RangeType = RangeType.SELF, length_ft: int = 15) -> 
         duration=Duration(DurationUnit.INSTANTANEOUS),
         components=SpellComponents(verbal=True, somatic=True),
         pipeline_effects=[
-            {"type": "saving_throw", "attribute": "dexterity", "dc": 13, "target": "for_each_defender"},
-            {"type": "damage", "target": "for_each_defender", "damage_type": "FIRE", "formula": "3d6",
+            {"type": "saving_throw", "attribute": "dexterity", "dc": 13},
+            {"type": "damage", "damage_type": "FIRE", "formula": "3d6",
              "roll_once": True, "save_result": {"on_success": "half_damage"}},
         ],
     )
@@ -101,8 +101,8 @@ def _line_spell(range_type: RangeType = RangeType.SELF, length_ft: int = 60) -> 
         duration=Duration(DurationUnit.INSTANTANEOUS),
         components=SpellComponents(verbal=True, somatic=True),
         pipeline_effects=[
-            {"type": "saving_throw", "attribute": "dexterity", "dc": 15, "target": "for_each_defender"},
-            {"type": "damage", "target": "for_each_defender", "damage_type": "LIGHTNING", "formula": "8d6",
+            {"type": "saving_throw", "attribute": "dexterity", "dc": 15},
+            {"type": "damage", "damage_type": "LIGHTNING", "formula": "8d6",
              "roll_once": True, "save_result": {"on_success": "half_damage"}},
         ],
     )
