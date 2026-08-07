@@ -127,29 +127,29 @@ parallel effect vocabularies bridged by synthetic stub events (`_handle_apply_co
   advantage/disadvantage; `restrained` grants disadvantage on DEX saves; covered by
   `tests/test_save_advantage.py`.
 
-**HIGH — open:**
-- **E4. Loader is brittle on bad content.** No try/except around `json.load`; several enum
-  lookups (`RangeType[...]`, `CastingTimeType[...]`, `DurationUnit[...]`) still throw a bare
-  `KeyError` on a typo with no "valid values are…" hint — bad for a hand/LLM-authored-JSON
-  workflow. (Damage-type lookups now give friendly errors; extend the same treatment.)
-- **E5. Loader regex vs. dice parser mismatch** — `_FORMULA_RE` accepts only a single
+**HIGH:**
+- **E4. Loader brittleness on bad content — fixed.** `json.load` is now wrapped (naming the
+  file), and every enum lookup (`DamageType`, `RangeType`, `TargetingType`, `AOEShape`,
+  `CastingTimeType`, `DurationUnit`) goes through a `_enum_lookup` helper that reports the bad
+  value and the valid options. Covered by `tests/test_loader_validation.py`.
+- **E5. Loader regex vs. dice parser mismatch — open.** `_FORMULA_RE` accepts only a single
   `NdM(+/-K)` term, but `dice.py` rolls multi-term formulas (`2d6+1d8+5`); such damage is
   rejected at load time.
-- **E6. RuleEngine swallows `AttributeError`** in condition eval and DEBUG-logs it — a genuine
-  typo in a rule expression is silently skipped (the code comment admits this "likely indicates
-  a bug").
+- **E6. RuleEngine swallows `AttributeError` — open.** In condition eval it DEBUG-logs and skips
+  — a genuine typo in a rule expression is silently ignored (the code comment admits this "likely
+  indicates a bug").
 
-**MEDIUM — open:**
-- **E7. Return-shape drift vs. docstrings.** `CombatSystem.resolve_attack` docstring says
-  2-tuple, returns 3-tuple; `resolve_spell`/`resolve_legendary_action` thread fragile positional
-  **6-tuples**; `parse_dice_formula` doc disagrees with its 3-element return.
-- **E8. Broken logging call** — `spell_resolver.py` `logger.info("DC set as:", result.save_dc)`
-  (no `%s`); drops the value / mis-logs.
-- **E9. Dead code shipped:** WebSocket **reconnection is fully commented out** in
-  `web/routers/combat.py` yet the frontend still sends `rejoin_combat` and keeps an orphaned
-  session store; commented `resolve_saving_throw` in `CombatSystem`; deprecated-but-registered
-  `ModifyAC`.
-- **E10. Decorative/misleading `target: "for_each_defender"`** in AoE spell JSON — the pipeline's
+**MEDIUM:**
+- **E7. Return-shape drift vs. docstrings — fixed.** `resolve_attack`/`parse_dice_formula`
+  docstrings now match; the fragile per-target spell 6-tuple is a `NamedTuple`
+  (`SpellTargetResult`) — still positionally unpackable, now self-documenting.
+- **E8. Broken logging call — fixed.** The stray `logger.info("DC set as:", …)` in
+  `spell_resolver.py` was removed.
+- **E9. Dead code — fixed.** WebSocket reconnection (commented backend branch + orphaned session
+  store, and the matching frontend `rejoin_combat` send/handler) was fully removed; the commented
+  `resolve_saving_throw` and the deprecated `ModifyAC` handler are gone.
+- **E10. Decorative/misleading `target: "for_each_defender"` — open.** In AoE spell JSON — the
+  pipeline's
   `_resolve_target` only distinguishes `"caster"` vs. everything-else, so it silently means
   "defender."
 - **E11. Non-seedable RNG** — `dice.py` calls module-global `random.*`; no injection/seed, so
@@ -163,12 +163,12 @@ parallel effect vocabularies bridged by synthetic stub events (`_handle_apply_co
 ## 6. Prioritized repair roadmap
 
 - **P0 — done:** E1 resistance loader · E2 `grant_temporary_hp` · E3 save advantage/disadvantage.
-- **P1 — next:** E4 friendly loader validation (finish wrapping enum lookups + `json.load`; a
-  spell/creature schema linter) · E8 logging fix · E7 reconcile return shapes / update docstrings ·
-  E9 delete dead code (or finish reconnection).
-- **P2 — hardening:** E11 injectable/seedable RNG · E5 unify formula regex with the dice parser ·
-  E10 drop or implement `for_each_defender` · E6 stop swallowing rule-expression errors · E12/E13
-  shared constants + metadata cleanup.
+- **P1 — done:** E4 friendly loader validation (enum lookups + `json.load`) · E8 logging fix ·
+  E7 reconcile return shapes / update docstrings · E9 delete dead code (reconnection removed).
+  _Not yet done: a full spell/creature schema linter (deferred to feed the "new spell" skill)._
+- **P2 — hardening (open):** E11 injectable/seedable RNG · E5 unify formula regex with the dice
+  parser · E10 drop or implement `for_each_defender` · E6 stop swallowing rule-expression errors ·
+  E12/E13 shared constants + metadata cleanup.
 - **Then net-new features:** structured upcasting → reactions/OA → multiattack → death saves →
   the AI/auto-battle loop.
 

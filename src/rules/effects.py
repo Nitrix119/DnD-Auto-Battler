@@ -376,23 +376,6 @@ def add_modifier(effect: dict, ctx: dict, event: CombatEvent, event_bus: EventBu
     target.add_stat_modifier(mod)
 
 
-def modify_ac(effect: dict, ctx: dict, event: CombatEvent, event_bus: EventBus) -> None:
-    """Modify a target's AC.
-
-    Deprecated — prefer ``AddModifier`` with ``"stat": "ac"`` so that the
-    change is labeled and tracked in the breakdown.  This shim delegates to
-    ``add_modifier`` with source "Unknown" and no owning effect so that
-    existing rule JSON continues to work.
-
-    Required keys:  target (expr), amount (int or expr)
-    """
-    add_modifier(
-        {**effect, "stat": "ac", "value": effect["amount"],
-         "source": effect.get("source", "Unknown"), "effect_name": ""},
-        ctx, event, event_bus,
-    )
-
-
 def add_resource(effect: dict, ctx: dict, event: CombatEvent, event_bus: EventBus) -> None:
     """Add bonus resources to an entity (can exceed defaults).
 
@@ -467,6 +450,5 @@ BUILTIN_EFFECTS = {
     "RefillResources": refill_resources,
     "AddResource": add_resource,
     "AddModifier": add_modifier,
-    "ModifyAC": modify_ac,  # deprecated — use AddModifier
     "GrantAction": grant_action,
 }

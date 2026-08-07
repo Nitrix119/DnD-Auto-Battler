@@ -86,11 +86,12 @@ Run a single test file: `pytest tests/test_spells.py -q`. There is no coverage g
   or `patch("src.utils.dice.roll_d20", side_effect=[...])`.
 - Before finishing, run `pytest tests/ -q` and keep it green.
 
-## Live gotchas (see docs/CODEBASE_REVIEW.md §5 for the full list)
+## Live gotchas (see docs/CODEBASE_REVIEW.md §5 for the full list; P2 items remain open)
 
-- Loader still throws bare `KeyError` on some bad enum strings (range/casting-time/duration) — no
-  friendly message yet.
 - `_FORMULA_RE` in the loader rejects multi-term damage formulas (`2d6+1d8`) that `dice.py` can
-  actually roll.
-- WebSocket reconnection is commented out but the frontend still sends `rejoin_combat`.
-- `resolve_spell`/`resolve_legendary_action` return fragile positional 6-tuples; unpack carefully.
+  actually roll (E5).
+- `RuleEngine` swallows `AttributeError` in rule-condition eval and only DEBUG-logs it, so a typo
+  in a rule expression is silently skipped (E6).
+- `RNG` is module-global and not seedable — patch roll functions in tests (E11).
+- `resolve_spell`/`resolve_legendary_action` return `SpellTargetResult` namedtuples
+  (`entity, hit, damage, roll_detail, healing, healed`) — unpack by name or position.

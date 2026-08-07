@@ -40,11 +40,6 @@ export function connectWS() {
         wsStatusEl.className = "ws-connected";
         wsStatusEl.title = "Connected";
         _wsBackoffMs = 250;
-
-        const sessionToken = sessionStorage.getItem("session_token");
-        if (sessionToken) {
-            wsSend({ type: "rejoin_combat", seq: nextSeq(), session_token: sessionToken });
-        }
     };
 
     ws.onmessage = (e) => {
@@ -54,7 +49,6 @@ export function connectWS() {
         switch (msg.type) {
             case "connected":          break;
             case "combat_started":     handleCombatStarted(msg);    break;
-            case "rejoin_combat_ok":   handleRejoinCombatOk(msg);   break;
             case "action_result":      handleActionResult(msg);     break;
             case "move_result":        handleMoveResult(msg);       break;
             case "turn_changed":       handleTurnChanged(msg);      break;
@@ -113,9 +107,6 @@ function updateFromCombatState(combatState) {
 }
 
 function handleCombatStarted(msg) {
-    if (msg.session_token) {
-        sessionStorage.setItem("session_token", msg.session_token);
-    }
     const idMap = msg.id_map;
     for (const token of tokens) {
         if (idMap[token.id]) {
@@ -124,17 +115,6 @@ function handleCombatStarted(msg) {
     }
     updateFromCombatState(msg.combat_state);
     console.log("[combat] started — initiative:", msg.initiative_order);
-}
-
-function handleRejoinCombatOk(msg) {
-    const idMap = msg.id_map ?? {};
-    for (const token of tokens) {
-        if (idMap[token.id]) {
-            token.backendId = idMap[token.id];
-        }
-    }
-    updateFromCombatState(msg.combat_state);
-    console.log("[combat] rejoined session — initiative:", msg.initiative_order);
 }
 
 async function handleActionResult(msg) {

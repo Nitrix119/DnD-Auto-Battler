@@ -2,7 +2,6 @@
 
 import json
 import logging
-import secrets
 import time
 from pathlib import Path
 from typing import Any
@@ -48,23 +47,6 @@ class _RateLimiter:
             return True
         return False
 
-
-# ---------------------------------------------------------------------------
-# Session store for WebSocket reconnection
-# ---------------------------------------------------------------------------
-
-_SESSION_TTL = 600  # seconds before an inactive session is pruned
-
-# session_token → (combat, id_map, entity_lookup, last_active_ts)
-_sessions: dict[str, tuple] = {}
-
-
-def _prune_sessions() -> None:
-    """Remove sessions that have been inactive for longer than _SESSION_TTL."""
-    cutoff = time.monotonic() - _SESSION_TTL
-    stale = [k for k, v in _sessions.items() if v[3] < cutoff]
-    for k in stale:
-        del _sessions[k]
 
 # ---------------------------------------------------------------------------
 # Coordinate conversion
@@ -230,7 +212,6 @@ async def handle_start_combat(
     seq: int | None,
     id_map: dict[str, str],
     entity_lookup: dict[str, Entity],
-    session_token: str = "",
 ) -> None:
     combatants_data = msg.get("combatants", [])
     if len(combatants_data) < 2:
@@ -280,7 +261,6 @@ async def handle_start_combat(
     await _send(ws, {
         "type": "combat_started",
         "seq": seq,
-        "session_token": session_token,
         "id_map": id_map,
         "initiative_order": serialize_initiative_order(combat),
         "combat_state": serialize_combat_state(combat),
@@ -589,46 +569,16 @@ async def combat_websocket(websocket: WebSocket) -> None:
                 await _send_error(websocket, seq, msg_type, "Rate limit exceeded")
                 continue
 
-            _prune_sessions()
-
-            # ── Reconnection: rejoin existing session ──────────────────────
-            # if msg_type == "rejoin_combat":
-            #     token = msg.get("session_token", "")
-            #     session = _sessions.get(token)
-            #     if session:
-            #         combat, id_map, entity_lookup, _ = session
-            #         _sessions[token] = (combat, id_map, entity_lookup, time.monotonic())
-            #         await _send(websocket, {
-            #             "type": "rejoin_combat_ok",
-            #             "seq": seq,
-            #             "id_map": id_map,
-            #             "initiative_order": serialize_initiative_order(combat),
-            #             "combat_state": serialize_combat_state(combat),
-            #         })
-            #     else:
-            #         await _send_error(websocket, seq, "rejoin_combat",
-            #                           "Session not found or expired")
-            #     continue
-
             handler = _HANDLERS.get(msg_type)
             if handler is None:
                 await _send_error(websocket, seq, msg_type, f"Unknown command: {msg_type}")
                 continue
 
             try:
-                if handler in (handle_start_combat,):
-                    session_token = secrets.token_urlsafe(16)
-                    await handler(websocket, combat, msg, seq, id_map, entity_lookup,
-                                  session_token)
-                    _sessions[session_token] = (combat, id_map, entity_lookup, time.monotonic())
+                if handler is handle_start_combat:
+                    await handler(websocket, combat, msg, seq, id_map, entity_lookup)
                 else:
                     await handler(websocket, combat, msg, seq, entity_lookup)
-                    # Refresh last-active for any session referencing this combat
-                    for tok, (sc, _, _, _) in list(_sessions.items()):
-                        if sc is combat:
-                            _sessions[tok] = (_sessions[tok][0], _sessions[tok][1],
-                                              _sessions[tok][2], time.monotonic())
-                            break
             except (ValueError, RuntimeError, KeyError) as exc:
                 logger.warning("Command %s failed: %s", msg_type, exc)
                 await _send_error(websocket, seq, msg_type, str(exc))

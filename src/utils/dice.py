@@ -31,18 +31,20 @@ def roll_dice(num_dice: int, num_sides: int) -> int:
 _TOKEN_RE = re.compile(r"([+-]?)(\d+)(?:d(\d+))?", re.IGNORECASE)
 
 
-def parse_dice_formula(formula: str) -> List[Tuple[int, int, int]]:
+def parse_dice_formula(formula: str) -> List[Tuple[int, int, bool]]:
     """Parse an arbitrary dice formula like "2d6+1d8+5".
 
-    Each token is returned as (sign, num_dice, num_sides) where num_sides=0
-    means a flat modifier (num_dice holds the value).
+    Each token is returned as ``(signed_count, num_sides, is_dice)``:
+      - Dice term (e.g. ``-2d6``): ``is_dice`` is True, ``signed_count`` is the
+        signed number of dice, ``num_sides`` is the die size.
+      - Flat modifier (e.g. ``+5``): ``is_dice`` is False, ``signed_count`` is
+        the signed modifier value, and ``num_sides`` is 0.
 
     Args:
         formula: Dice formula string, e.g. "2d6+1d8-3" or "1d20+5"
 
     Returns:
-        List of (signed_count, num_dice, num_sides) tuples.
-        For flat modifiers num_sides is 0 and signed_count is the modifier value.
+        List of ``(signed_count, num_sides, is_dice)`` tuples.
 
     Raises:
         ValueError: If the formula contains no valid tokens.
