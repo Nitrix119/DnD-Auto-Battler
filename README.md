@@ -149,6 +149,6 @@ pytest tests/ -v
 
 ## License
 
-No license is granted at this time. All rights reserved.
+Licensed under the [PolyForm Noncommercial License 1.0.0](LICENSE).
 
-This project is actively being developed and is not yet open for general use, modification, or redistribution. The intent is to release it under an open source license once it reaches a more complete state.
+You may use, modify, and share this project for any **noncommercial** purpose — personal, hobby, research, and educational use are all welcome. **Commercial use (monetizing this work) is not permitted.** See the [LICENSE](LICENSE) file for the full terms.

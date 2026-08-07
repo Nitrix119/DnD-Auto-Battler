@@ -160,10 +160,11 @@ parallel effect vocabularies bridged by synthetic stub events (`_handle_apply_co
   Python and JS now carry explicit "keep in sync" comments (no shared source exists across the
   boundary). Still open: the spell registry is a process-wide singleton shared across web
   sessions — a concern once more than one battle runs concurrently.
-- **E13. Stale metadata — open (needs a decision).** `pyproject.toml` declares `license = MIT`
-  while `README.md` says "All rights reserved / no license granted yet" — a genuine contradiction
-  that only the owner should resolve. The `egg-info/PKG-INFO` "Future Enhancements" is a
-  regenerated build artifact and will refresh on the next build.
+- **E13. License contradiction — resolved.** The project is now licensed under
+  **PolyForm Noncommercial 1.0.0** (`LICENSE`); `pyproject.toml` (`license = { file = "LICENSE" }`)
+  and the README agree — free for any noncommercial use, no monetization. The
+  `egg-info/PKG-INFO` "Future Enhancements" note is a regenerated build artifact and refreshes on
+  the next build.
 
 ## 6. Prioritized repair roadmap
 
@@ -173,7 +174,8 @@ parallel effect vocabularies bridged by synthetic stub events (`_handle_apply_co
   _Not yet done: a full spell/creature schema linter (deferred to feed the "new spell" skill)._
 - **P2 — mostly done:** E11 seedable RNG · E5 multi-term formula validation · E10 dropped
   `for_each_defender` · E12 CELL_FEET sync comments. _Still open: E6 (needs a field schema, folded
-  into the linter work), E13 (license — owner decision), and the per-session spell registry._
+  into the linter work) and the per-session spell registry. E13 (license) resolved:
+  PolyForm Noncommercial._
 - **Then net-new features:** structured upcasting → reactions/OA → multiattack → death saves →
   the AI/auto-battle loop.
 
