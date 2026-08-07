@@ -19,7 +19,7 @@ from src.utils.dice import roll_d20, roll_with_advantage, roll_with_disadvantage
 from src.utils.saving_throw import roll_saving_throw
 from src.rules.expressions import build_context, evaluate, resolve
 from .event_bus import CombatEvent, EventBus
-from .event_data import AttackDeclaredData, AttackRolledData, SpellHitData, HealingAppliedData, AttackHitData, DamageDealtData
+from .event_data import AttackDeclaredData, AttackRolledData, SpellHitData, HealingAppliedData, AttackHitData, DamageDealtData, SavingThrowDeclaredData
 from .events import EventType
 
 if TYPE_CHECKING:
@@ -321,7 +321,19 @@ class EffectPipeline:
             effective_dc = int(dc_spec)
 
         if effective_dc > 0 and attribute:
-            save_roll, save_success = roll_saving_throw(defender, attribute, effective_dc)
+            # Emit SAVING_THROW_DECLARED so entity effects (e.g. Restrained →
+            # disadvantage on DEX saves) can set advantage/disadvantage flags
+            # before the roll, mirroring the ATTACK_DECLARED path.
+            declared = self._event_bus.emit(
+                EventType.SAVING_THROW_DECLARED,
+                SavingThrowDeclaredData(defender=defender, ability=attribute, dc=effective_dc),
+            )
+            has_adv = declared.data.get("advantage", False)
+            has_dis = declared.data.get("disadvantage", False)
+            save_roll, save_success = roll_saving_throw(
+                defender, attribute, effective_dc,
+                advantage=has_adv, disadvantage=has_dis,
+            )
         else:
             save_roll, save_success = None, True
 
@@ -517,7 +529,7 @@ class EffectPipeline:
             amount = 0
 
         if amount > 0:
-            target.gain_temporary_hp(amount)
+            target.add_temporary_hp(amount)
             context["temp_hp_granted"] = amount
             logger.debug("grant_temporary_hp: %s gains %d temp HP", target.name, amount)
 

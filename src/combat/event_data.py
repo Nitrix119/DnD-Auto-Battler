@@ -136,6 +136,24 @@ class SpellHitData(EventData):
     save_roll: Optional[int] = None  # d20 total for the saving throw, if one was made
 
 
+# ── Saving throw flow ─────────────────────────────────────────────────────────
+
+@dataclass
+class SavingThrowDeclaredData(EventData):
+    """Data for SAVING_THROW_DECLARED events.
+
+    Emitted just before a saving throw is rolled.  ``advantage`` and
+    ``disadvantage`` default to False and may be set True by effect handlers
+    (e.g. a Restrained creature has disadvantage on Dexterity saving throws).
+    Per D&D 5e, if both are set they cancel to a normal roll.
+    """
+    defender: Entity
+    ability: str
+    dc: int
+    advantage: bool = False
+    disadvantage: bool = False
+
+
 # ── Damage flow ───────────────────────────────────────────────────────────────
 
 @dataclass

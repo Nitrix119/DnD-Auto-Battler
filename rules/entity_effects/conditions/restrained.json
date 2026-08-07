@@ -1,10 +1,10 @@
 {
   "name": "restrained",
-  "triggers": ["ATTACK_DECLARED"],
-  "condition": "event.attacker == entity or event.defender == entity",
+  "triggers": ["ATTACK_DECLARED", "SAVING_THROW_DECLARED"],
   "effects": [
-    { "action": "GrantDisadvantage", "when": "event.attacker == entity" },
-    { "action": "GrantAdvantage", "when": "event.defender == entity" }
+    { "action": "GrantDisadvantage", "on": "ATTACK_DECLARED", "when": "event.attacker == entity" },
+    { "action": "GrantAdvantage", "on": "ATTACK_DECLARED", "when": "event.defender == entity" },
+    { "action": "GrantDisadvantage", "on": "SAVING_THROW_DECLARED", "when": "event.defender == entity and event.ability == 'dexterity'" }
   ],
-  "_note": "TODO: Speed becomes 0 and cannot benefit from any bonus to speed (pending movement system). Disadvantage on DEX saving throws (pending save system)."
+  "_note": "TODO: Speed becomes 0 and cannot benefit from any bonus to speed (pending movement system). Attack disadvantage (self), attack advantage (attackers), and disadvantage on DEX saving throws are implemented. Per-effect 'on' gates route attack vs. save effects; no rule-level condition so both event types dispatch."
 }

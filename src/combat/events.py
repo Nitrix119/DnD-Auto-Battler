@@ -18,6 +18,9 @@ class EventType(Enum):
     SPELL_CAST = "spell_cast"
     SPELL_HIT = "spell_hit"
 
+    # Saving throw flow
+    SAVING_THROW_DECLARED = "saving_throw_declared"  # before roll; handlers can set advantage/disadvantage
+
     # Damage flow
     DAMAGE_INCOMING = "damage_incoming"  # before HP reduction; handlers can modify damage
     DAMAGE_DEALT = "damage_dealt"  # after damage is applied to the target

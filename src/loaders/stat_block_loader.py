@@ -13,6 +13,25 @@ def _validate_formula(formula: str) -> str:
         raise ValueError(f"Invalid damage formula: {formula!r}")
     return formula
 
+
+def _parse_damage_types(values: Any, field_name: str) -> list:
+    """Parse a list of damage-type strings into DamageType members.
+
+    Accepts case-insensitive names (e.g. ``"fire"`` or ``"FIRE"``).  Raises a
+    descriptive ValueError naming the offending value and the valid options,
+    rather than the bare ``KeyError`` a raw ``DamageType[...]`` lookup produces.
+    """
+    result = []
+    for raw in values or []:
+        try:
+            result.append(DamageType[str(raw).upper()])
+        except KeyError:
+            valid = ", ".join(dt.name for dt in DamageType)
+            raise ValueError(
+                f"Unknown damage type {raw!r} in {field_name!r}; valid types: {valid}"
+            )
+    return result
+
 from src.models import (
     AbilityScores, StatBlock, AttackAction, SpellAction, Damage, DamageType,
     Action, ActionType, ActionCost,
@@ -129,6 +148,12 @@ class StatBlockLoader:
             spellcasting_ability=data.get("spellcasting_ability", ""),
             spell_slot_defaults=dict(data.get("spell_slots", {})),
             legendary_action_count=data.get("legendary_actions", {}).get("count_per_round", 0),
+            damage_vulnerabilities=_parse_damage_types(
+                data.get("damage_vulnerabilities"), "damage_vulnerabilities"),
+            damage_resistances=_parse_damage_types(
+                data.get("damage_resistances"), "damage_resistances"),
+            damage_immunities=_parse_damage_types(
+                data.get("damage_immunities"), "damage_immunities"),
         )
 
         # Add saving throws if provided
@@ -432,7 +457,7 @@ class StatBlockLoader:
         Returns:
             Dictionary representation
         """
-        return {
+        result: Dict[str, Any] = {
             "name": stat_block.name,
             "abilities": {
                 "strength": stat_block.ability_scores.strength,
@@ -455,3 +480,12 @@ class StatBlockLoader:
                 for action in stat_block.actions
             ],
         }
+        # Damage modifiers — only emit when present to keep output clean.
+        for key, members in (
+            ("damage_vulnerabilities", stat_block.damage_vulnerabilities),
+            ("damage_resistances", stat_block.damage_resistances),
+            ("damage_immunities", stat_block.damage_immunities),
+        ):
+            if members:
+                result[key] = [dt.name for dt in members]
+        return result
