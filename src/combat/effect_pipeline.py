@@ -142,7 +142,19 @@ class EffectPipeline:
         _dealt_damages: List[Damage] = []
         _damage_dealt_emitted = False
 
-        for i, step in enumerate(action.pipeline_effects):
+        # Iterate a run-local copy of the steps. Some ATTACK_HIT handlers
+        # (e.g. InjectPipelineDamageStep / Colossus Slayer) append a damage step
+        # to the *shared* action.pipeline_effects so the bonus damage lands in the
+        # same run. We must (a) still execute those injected steps this run, but
+        # (b) never let them persist on the shared SpellAction — otherwise a second
+        # cast, or a later AoE target, would re-run and compound them. So we snapshot
+        # the base length, work from a local copy, and after each step move any
+        # freshly-injected steps into the local copy and truncate the shared list
+        # back to its original contents.
+        base_len = len(action.pipeline_effects)
+        steps: List[Dict[str, Any]] = list(action.pipeline_effects)
+
+        for i, step in enumerate(steps):
             step_type = step.get("type", "")
 
             # Emit SPELL_HIT before the first effect/damage step, so that entity
@@ -199,6 +211,13 @@ class EffectPipeline:
 
             else:
                 logger.warning("EffectPipeline: unknown step type %r (skipping)", step_type)
+
+            # Drain steps a handler injected into the shared action during this
+            # step (see the note where `steps` is built) into our local copy, then
+            # restore the shared list so nothing leaks to the next cast/target.
+            if len(action.pipeline_effects) > base_len:
+                steps.extend(action.pipeline_effects[base_len:])
+                del action.pipeline_effects[base_len:]
 
         if not spell_hit_emitted:
             self._emit_spell_hit(caster, defender, action, context)
