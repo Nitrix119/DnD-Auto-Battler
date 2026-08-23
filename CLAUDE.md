@@ -40,17 +40,6 @@ The ambition (see [the vision doc](docs/SPELL_SYSTEM_VISION.md)): a **massively
 flexible, generic engine** that can express the vast, messy diversity of D&D combat
 through composable, data-defined effects rather than per-spell special-casing.
 
-**The runtime, as distinct concerns:**
-
-1. **Model** — immutable creature templates (`StatBlock`) + mutable per-battle state
-   (`Entity`).
-2. **Resolve** — one `EffectPipeline` of typed steps executes both spells and weapon
-   attacks over a shared context.
-3. **React** — cross-cutting behaviour (resistances, conditions, concentration, crits)
-   rides a typed `EventBus`, decoupled from resolution.
-4. **Drive** — `CombatSystem` orchestrates turns; the web layer streams state to the
-   client. _(There is no autonomous AI turn loop yet — combat is client-driven.)_
-
 **Domain boundaries / principles:**
 
 - **Data-driven first.** A new spell should be a JSON file; a new *mechanic* a small,
@@ -124,13 +113,6 @@ Non-negotiable. Every change should be justifiable against these.
 TDD is the default workflow, not an afterthought. The suite is a genuine strength
 (550+ tests) — keep it that way.
 
-**Red → Green → Refactor:**
-
-1. **Red.** Write the smallest test that expresses the next behaviour. Run it; watch it
-   fail (proves the test is real).
-2. **Green.** Write the minimum code to pass. Resist gold-plating.
-3. **Refactor.** Clean code *and* tests while green; re-run.
-
 **Testing rules:**
 
 - **Bug fixes start with a failing test that reproduces the bug** _(why: proves the fix,
@@ -186,10 +168,6 @@ TDD is the default workflow, not an afterthought. The suite is a genuine strengt
 
 ## 7. Stack & commands
 
-**Stack: Python engine + browser JS client.** The game logic is pure Python under
-`src/` (zero core dependencies). JavaScript exists only in `web/static/js/` as a
-reactive rendering/input client — no build step, served as raw ES modules.
-
 | Task | Command |
 |---|---|
 | Install (core + web + dev) | `pip install -e ".[web,dev]"` |
@@ -200,9 +178,6 @@ reactive rendering/input client — no build step, served as raw ES modules.
 | Lint | `flake8 src/ web/` |
 | Type-check | `mypy src/` |
 
-- **Runtime:** Python ≥ 3.9. **Test framework:** `pytest`. Dev tooling
-  (`black`/`flake8`/`mypy`) is the `[dev]` extra; web (`fastapi`/`uvicorn`/`jinja2`) the
-  `[web]` extra.
 - **RNG:** one shared `random.Random` in `src/utils/dice.py`; call `dice.seed_rng(seed)`
   for reproducible battles. `dice.py` is the only module that touches `random`.
 
@@ -210,31 +185,9 @@ reactive rendering/input client — no build step, served as raw ES modules.
 
 ## 8. Project structure
 
-An agent should know where a new file belongs without guessing.
-
-```
-src/                         # THE ENGINE (pure Python, no web deps)
-  models/       # data structures: StatBlock (immutable), Entity (mutable state),
-                #   Action/AttackAction/SpellAction, Damage/DamageType, Condition, SpellSlots
-  combat/       # simulation:
-    effect_pipeline.py  # EffectPipeline — the generic step engine (the heart)
-    combat_system.py    # CombatSystem — orchestrator/facade; SpellTargetResult
-    attack_resolver.py  # compiles weapon attacks into pipeline steps
-    spell_resolver.py   # runs a spell's pipeline per target
-    damage_processor.py # applies typed damage; emits DAMAGE_INCOMING/DEALT
-    turn_manager.py initiative.py event_bus.py events.py event_data.py spell_registry.py
-  rules/        # data-driven rules: rule_engine.py, effects.py (BUILTIN_EFFECTS),
-                #   expressions.py (sandbox), rule.py, rule_loader.py
-  loaders/      # StatBlockLoader — JSON <-> model, with boundary validation
-  spatial/      # 3D geometry, AoE volumes, range checks
-  utils/        # dice.py (seedable RNG), saving_throw.py
-web/            # FastAPI app.py + routers/ (combat.py: HTTP + /ws/combat) + static/js/
-examples/       # creatures/**, spells/*.json (auto-scanned), + three *_GUIDE.md guides
-rules/          # JSON rule content: global/ (crits, concentration, damage mods),
-                #   entity_effects/ (named buffs/debuffs + conditions/)
-tests/          # pytest; mirrors the engine. Ignore build/lib/ (stale untracked copy).
-docs/           # CODEBASE_REVIEW.md, SPELL_SYSTEM_VISION.md
-```
+An agent should know where a new file belongs without guessing — read the tree
+(`src/` is the engine, `web/` the FastAPI app, `examples/` and `rules/` the JSON
+content). Note `tests/` mirrors the engine; ignore `build/lib/` (stale untracked copy).
 
 **Content invariants:**
 
