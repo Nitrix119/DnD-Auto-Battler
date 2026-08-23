@@ -214,6 +214,14 @@ The casting time also determines the action economy cost:
 
 ## The Effects Pipeline
 
+> **Authoritative field reference:** [STEP_REFERENCE.md](STEP_REFERENCE.md) is generated from the
+> loader's schema (`src/rules/step_schema.py`) and is the source of truth for each step type's fields,
+> value domains, and the context keys it reads/writes. A drift test keeps it in sync with the code, and
+> the loader validates every spell against that schema on load — an unknown step type, a typo'd field,
+> a bad enum, or a `context.X` reference to a key nothing writes is a named error at load time. The
+> sections below add prose and worked examples; when they disagree with the generated reference, the
+> reference wins.
+
 The `"effects"` array is a sequential list of steps. Each step has a `"type"` that determines what
 it does. Steps share an ephemeral **context** — a dictionary of values written by earlier steps and
 readable by later ones via [expressions](#expressions).

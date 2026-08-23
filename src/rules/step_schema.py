@@ -438,3 +438,91 @@ def validate_effects(effects: Any, spell_name: str = "") -> None:
         label = f" in spell {spell_name!r}" if spell_name else ""
         joined = "\n  - ".join(errors)
         raise ValueError(f"Invalid spell effects{label}:\n  - {joined}")
+
+
+# ---------------------------------------------------------------------------
+# Reference-doc generation (the schema is the single source of truth)
+# ---------------------------------------------------------------------------
+
+# Path of the generated step reference, relative to the repo root.
+STEP_REFERENCE_PATH = "examples/spells/STEP_REFERENCE.md"
+
+_GENERATED_HEADER = (
+    "<!-- GENERATED FILE — DO NOT EDIT BY HAND.\n"
+    "     Regenerate with:  python -m src.rules.step_schema\n"
+    "     Source of truth:  src/rules/step_schema.py (STEP_SCHEMAS).\n"
+    "     A drift test (tests/test_step_reference_doc.py) fails if this is stale. -->\n"
+)
+
+
+def _render_type(f: Field) -> str:
+    """Render a field's value domain for the reference table."""
+    kind = f.kind
+    if kind == "int_or_keyword":
+        return f"int or `{f.keyword}`"
+    if kind == "enum" and f.enum is not None:
+        return "one of: " + ", ".join(f"`{m.name}`" for m in f.enum)
+    if kind == "choice":
+        return "one of: " + ", ".join(f"`{c}`" for c in f.choices)
+    if kind == "target":
+        return "`caster` / `defender`"
+    return {
+        "int": "int",
+        "bool": "true / false",
+        "str": "string",
+        "expr": "expression",
+        "formula": "dice formula",
+        "formula_or_int": "dice formula or int",
+        "object": "object",
+        "list": "list",
+        "any": "any",
+    }.get(kind, kind)
+
+
+def generate_step_reference() -> str:
+    """Render the full per-step reference as Markdown from :data:`STEP_SCHEMAS`."""
+    lines: List[str] = [_GENERATED_HEADER, "# Spell Pipeline Step Reference", ""]
+    lines.append(
+        "The authoritative list of pipeline step types and their fields, generated "
+        "from the schema the loader validates against. Every context key an "
+        "expression may read is listed under **Writes context** on the step that "
+        "produces it."
+    )
+    lines.append("")
+    lines.append("Step types: " + ", ".join(f"[`{t}`](#{t})" for t in STEP_SCHEMAS) + ".")
+    lines.append("")
+
+    for step_type, schema in STEP_SCHEMAS.items():
+        lines.append(f"## `{step_type}`")
+        lines.append("")
+        lines.append(schema.summary)
+        lines.append("")
+        lines.append("| Field | Required | Type | Description |")
+        lines.append("|---|---|---|---|")
+        for f in schema.fields:
+            req = "yes" if f.required else "no"
+            desc = f.description or ""
+            lines.append(f"| `{f.name}` | {req} | {_render_type(f)} | {desc} |")
+            for sf in f.subfields:
+                sreq = "yes" if sf.required else "no"
+                lines.append(
+                    f"| `{f.name}.{sf.name}` | {sreq} | {_render_type(sf)} | "
+                    f"{sf.description or ''} |"
+                )
+        lines.append("")
+        reads = ", ".join(f"`{k}`" for k in schema.reads) or "_(none)_"
+        writes = ", ".join(f"`{k}`" for k in schema.writes) or "_(none)_"
+        lines.append(f"**Reads context:** {reads}")
+        lines.append("")
+        lines.append(f"**Writes context:** {writes}")
+        lines.append("")
+
+    return "\n".join(lines).rstrip() + "\n"
+
+
+if __name__ == "__main__":
+    from pathlib import Path
+
+    out = Path(__file__).resolve().parents[2] / STEP_REFERENCE_PATH
+    out.write_text(generate_step_reference(), encoding="utf-8")
+    print(f"wrote {out}")
