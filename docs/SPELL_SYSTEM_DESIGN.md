@@ -547,6 +547,18 @@ keys some earlier block writes. That last check is exactly what lets us **retire
 reads a field the event provably lacks is now a *load error naming the field*, not a silent runtime
 skip. The schema also becomes the generated source for the authoring guide, ending code/doc drift.
 
+**Status — done (2026-08-24).** Delivered as design stage 1 in two halves:
+- **Spell-step side:** `src/rules/step_schema.py` (`STEP_SCHEMAS` + `lint_effects`) validates every
+  spell's `effects` at the loader boundary — unknown step type, missing/typo'd field, bad enum, bad
+  formula, and `context.X` references to keys nothing writes. It generates the authoritative
+  `STEP_REFERENCE.md` (drift-guarded), and all 22 spells lint clean.
+- **Rule side (the literal E6):** a per-event field schema (`EVENT_DATA_CLASSES` / `event_fields` in
+  `src/combat/event_data.py`) backs `RuleLoader._validate_event_field_refs`, which rejects any
+  `event.<field>` reference no trigger event carries. Typos now fail at load; the runtime
+  `AttributeError` skip is left only for the legitimate multi-trigger case. _Remaining, out of E6's
+  scope: nested entity-attribute typos (`event.defender.typo`) — would need an Entity attribute
+  schema._
+
 ### 6.10 Migration & backwards compatibility
 
 **Failure.** 22 shipped spells + 6 entity effects + the 550-test suite encode current behaviour. A
@@ -693,10 +705,11 @@ cross-encounter persistence.
 
 Ordered so each stage is independently valuable and testable, and none requires the next.
 
-1. **Schema + linter for the *current* `effects` shape.** No behaviour change; validate the 8 step
-   types at load, name errors, and **generate the guide's step tables from the schema** (the guide
-   becomes a schema artefact, ending code/doc drift — decided). Unblocks the "new spell" skill (review
-   §8) and retires E6. *This is the highest-leverage first step and needs no rewrite.*
+1. **Schema + linter for the *current* `effects` shape. — DONE (2026-08-24).** Validates the 8 step
+   types at load, names errors, and **generates the guide's step tables from the schema**
+   (`STEP_REFERENCE.md`, drift-guarded — ending code/doc drift). Also retired **E6** on the rule side
+   (per-event field schema + load-time `event.<field>` validation; §6.9). No behaviour change; all 22
+   spells lint clean. Unblocks the "new spell" skill (review §8).
 2. **Thread `slot_level` + a `scaling` modifier** on damage/iterator blocks → real upcasting (review
    §4.2), the smallest net-new authoring capability.
 3. **Targeting/iterator blocks** → split multi-target (Magic Missile done honestly, Scorching Ray,

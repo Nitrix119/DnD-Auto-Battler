@@ -10,7 +10,9 @@ existing code using ``event.data["key"]``, ``event.data.get("key")``, and
 from __future__ import annotations
 
 from dataclasses import dataclass, fields
-from typing import TYPE_CHECKING, Any, Iterator, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, FrozenSet, Iterator, List, Optional
+
+from .events import EventType
 
 if TYPE_CHECKING:
     from src.models.action import Action, SpellAction
@@ -78,23 +80,34 @@ class TurnEventData(EventData):
 class AttackDeclaredData(EventData):
     """Data for ATTACK_DECLARED events.
 
-    ``advantage`` and ``disadvantage`` default to False and may be set to True
-    by effect handlers (e.g. GrantAdvantage, GrantDisadvantage).
+    ``advantage``/``disadvantage`` and ``critical_hit``/``critical_miss`` default
+    to False and may be set True by effect handlers (e.g. GrantAdvantage,
+    ForceCriticalHit).  They are declared here so they are part of the event's
+    field schema rather than untyped dynamic attributes.
     """
     attacker: Entity
     defender: Entity
     action: Action
     advantage: bool = False
     disadvantage: bool = False
+    critical_hit: bool = False
+    critical_miss: bool = False
 
 @dataclass
 class AttackRolledData(EventData):
-    """Data for ATTACK_ROLLED events."""
+    """Data for ATTACK_ROLLED events.
+
+    ``critical_hit``/``critical_miss`` default to False and may be set True by
+    effect handlers (e.g. ForceCriticalHit); declared here so they are part of
+    the event's field schema.
+    """
     attacker: Entity
     defender: Entity
     action: Action
     roll: int
     total: int
+    critical_hit: bool = False
+    critical_miss: bool = False
 
 @dataclass
 class AttackHitData(EventData):
@@ -204,3 +217,45 @@ class ConditionRemovedData(EventData):
     """Data for CONDITION_REMOVED events."""
     entity: Entity
     condition_type: ConditionType
+
+
+# ── Event → data-class schema ───────────────────────────────────────────────────
+#
+# The authoritative mapping from each EventType to the dataclass carrying its
+# fields. Previously this association was implicit at every ``emit`` call site;
+# making it explicit lets the rule loader validate that an ``event.<field>``
+# reference names a field the triggering event actually carries (retires E6).
+# A test asserts this covers every EventType.
+
+EVENT_DATA_CLASSES: Dict[EventType, type] = {
+    EventType.ROUND_START: RoundEventData,
+    EventType.ROUND_END: RoundEventData,
+    EventType.TURN_START: TurnEventData,
+    EventType.TURN_END: TurnEventData,
+    EventType.ATTACK_DECLARED: AttackDeclaredData,
+    EventType.ATTACK_ROLLED: AttackRolledData,
+    EventType.ATTACK_HIT: AttackHitData,
+    EventType.ATTACK_MISS: AttackMissData,
+    EventType.SPELL_CAST: SpellCastData,
+    EventType.SPELL_HIT: SpellHitData,
+    EventType.SAVING_THROW_DECLARED: SavingThrowDeclaredData,
+    EventType.DAMAGE_INCOMING: DamageIncomingData,
+    EventType.DAMAGE_DEALT: DamageDealtData,
+    EventType.HEALING_APPLIED: HealingAppliedData,
+    EventType.ENTITY_DIES: EntityDiesData,
+    EventType.CONDITION_ADDED: ConditionAddedData,
+    EventType.CONDITION_REMOVED: ConditionRemovedData,
+}
+
+
+def event_fields(event_type: EventType) -> FrozenSet[str]:
+    """Return the declared field names an event of *event_type* carries.
+
+    These are the ``event.<name>`` attributes a rule expression may rely on for
+    that event. Handlers can still attach further dynamic attributes at runtime,
+    but the declared schema is what load-time validation checks against.
+    """
+    cls = EVENT_DATA_CLASSES.get(event_type)
+    if cls is None:
+        return frozenset()
+    return frozenset(f.name for f in fields(cls))

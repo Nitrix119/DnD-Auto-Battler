@@ -274,8 +274,12 @@ class RuleEngine:
                 if not result:
                     return
             except AttributeError as exc:
-                # Expected: event doesn't carry the fields this condition
-                # references (e.g. ROUND_START has no 'defender').
+                # Expected, not a typo: a multi-trigger rule whose condition
+                # references a field this particular event lacks (e.g. a rule on
+                # [ATTACK_HIT, DAMAGE_DEALT] reading event.attacker skips for
+                # DAMAGE_DEALT). Typo'd event.<field> references are now rejected
+                # at load time (RuleLoader._validate_event_field_refs, E6), so
+                # this catch is the legitimate case, not a silent bug swallow.
                 logger.debug("Rule '%s' condition skipped (missing field: %s) for %s",
                              rule.name, exc, event.event_type.value)
                 return

@@ -135,11 +135,16 @@ parallel effect vocabularies bridged by synthetic stub events (`_handle_apply_co
 - **E5. Loader regex vs. dice parser mismatch — fixed.** `_FORMULA_RE` now full-matches
   multi-term formulas (`2d6+1d8+5`, `1d20-2`) that `dice.py` can roll, while still rejecting
   garbage; covered by `tests/test_loader_validation.py`.
-- **E6. RuleEngine swallows `AttributeError` — open (deliberately deferred).** In condition eval
-  it DEBUG-logs and skips, so a genuine typo in a rule expression is silently ignored. Cleanly
-  distinguishing "wrong event type" (expected) from "typo" (bug) needs a per-event field schema
-  to validate expressions against at load time — better done alongside the spell/creature schema
-  linter than as a spot fix.
+- **E6. RuleEngine swallowed `AttributeError` in condition eval — resolved.** It DEBUG-logged and
+  skipped, so a genuine typo in a rule expression was silently ignored, indistinguishable from a
+  field legitimately absent on a wrong event type. **Fixed:** a per-event field schema
+  (`EVENT_DATA_CLASSES` / `event_fields` in `src/combat/event_data.py`) now backs a load-time check
+  (`RuleLoader._validate_event_field_refs`) that rejects any `event.<field>` reference no trigger
+  carries — so typos fail loudly at load. The runtime `AttributeError` skip now covers only the
+  legitimate multi-trigger case (a field present on some but not all of a rule's triggers). Covered
+  by `tests/rules/test_rule_event_field_validation.py`. _(Nested entity-attribute typos like
+  `event.defender.typo` are still swallowed at runtime — that needs an Entity attribute schema and
+  is outside E6's scope.)_
 
 **MEDIUM:**
 - **E7. Return-shape drift vs. docstrings — fixed.** `resolve_attack`/`parse_dice_formula`
@@ -170,11 +175,12 @@ parallel effect vocabularies bridged by synthetic stub events (`_handle_apply_co
 
 - **P0 — done:** E1 resistance loader · E2 `grant_temporary_hp` · E3 save advantage/disadvantage.
 - **P1 — done:** E4 friendly loader validation (enum lookups + `json.load`) · E8 logging fix ·
-  E7 reconcile return shapes / update docstrings · E9 delete dead code (reconnection removed).
-  _Not yet done: a full spell/creature schema linter (deferred to feed the "new spell" skill)._
+  E7 reconcile return shapes / update docstrings · E9 delete dead code (reconnection removed) ·
+  spell `effects` schema + linter (`src/rules/step_schema.py`), the foundation the "new spell" skill
+  builds on (design stage 1).
 - **P2 — mostly done:** E11 seedable RNG · E5 multi-term formula validation · E10 dropped
-  `for_each_defender` · E12 CELL_FEET sync comments. _Still open: E6 (needs a field schema, folded
-  into the linter work) and the per-session spell registry. E13 (license) resolved:
+  `for_each_defender` · E12 CELL_FEET sync comments · **E6 resolved** (per-event field schema +
+  load-time rule validation). _Still open: the per-session spell registry. E13 (license) resolved:
   PolyForm Noncommercial._
 - **Then net-new features:** structured upcasting → reactions/OA → multiattack → death saves →
   the AI/auto-battle loop.

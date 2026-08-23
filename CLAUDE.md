@@ -67,9 +67,12 @@ Non-negotiable. Every change should be justifiable against these.
    Enumerate the unhappy paths — malformed JSON, missing fields, dead targets,
    concentration loss, both-advantage-and-disadvantage — and decide each deliberately.
 5. **Fail loudly, early, and specifically.** Validate at boundaries (the JSON loaders);
-   raise precise errors that name the bad value and the valid options. Never silently
-   swallow bad data _(the one place we knowingly do — rule-expression `AttributeError` —
-   is a documented debt, E6)_.
+   raise precise errors that name the bad value and the valid options. Spell `effects`
+   and rule `event.<field>` references are schema-validated at load
+   (`src/rules/step_schema.py`, `RuleLoader._validate_event_field_refs`). The runtime
+   `AttributeError` skip in `RuleEngine` now covers only the legitimate multi-trigger
+   case (a field absent on one of a rule's several triggers), not typos — those are
+   caught at load (E6 resolved).
 6. **Small, reversible changes.** Many small, well-tested commits over one large one.
    Keep `main` clean; do non-trivial work on a branch.
 
