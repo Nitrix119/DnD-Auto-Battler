@@ -29,6 +29,29 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def effective_damage_formula(step: dict, slot_level: Optional[int]) -> str:
+    """Return a damage step's formula with any slot-based ``scaling`` applied.
+
+    Upcasting is a declared modifier, not an expression: a ``scaling`` object
+    ``{"per_slot_above": N, "add_dice": "1d6"}`` adds ``(slot_level - N)`` copies
+    of ``add_dice`` to the base formula when the spell is cast with a slot above
+    ``N``. The result is a plain dice-formula string, so crit-doubling and the
+    ``roll_once`` pre-roll keep working over it unchanged.
+    """
+    formula = step.get("formula", "")
+    scaling = step.get("scaling")
+    if not scaling or not formula or slot_level is None:
+        return formula
+    per_slot_above = scaling.get("per_slot_above")
+    add_dice = scaling.get("add_dice")
+    if per_slot_above is None or not add_dice:
+        return formula
+    extra_levels = int(slot_level) - int(per_slot_above)
+    if extra_levels <= 0:
+        return formula
+    return f"{formula}+{multiply_formula(add_dice, extra_levels)}"
+
+
 @dataclass
 class PipelineResult:
     """Outcome from running an effect pipeline for one caster/defender pair."""
@@ -102,6 +125,7 @@ class EffectPipeline:
         defender: Entity,
         action,
         seed_damages: Optional[Dict[int, int]] = None,
+        slot_level: Optional[int] = None,
     ) -> PipelineResult:
         """Execute all pipeline_effects steps sequentially.
 
@@ -112,10 +136,15 @@ class EffectPipeline:
             seed_damages: Pre-rolled damage amounts keyed by step index.
                           Used for ``roll_once: true`` damage steps so that
                           all targets of an AoE spell take the same damage.
+            slot_level: The spell slot level the spell is cast with (for
+                        upcasting). Defaults to the action's base ``spell_level``
+                        and is exposed as ``context.slot_level``.
 
         Returns:
             PipelineResult summarising damage, healing, hit, and save outcomes.
         """
+        if slot_level is None:
+            slot_level = getattr(action, "spell_level", 0) or 0
         # Initialise context with sensible defaults so expression evaluation
         # never raises AttributeError for uninitialised keys.
         context: Dict[str, Any] = {
@@ -131,6 +160,7 @@ class EffectPipeline:
             "damage_rolled": 0,
             "healing_amount": 0,
             "temp_hp_granted": 0,
+            "slot_level": slot_level,
         }
         if seed_damages:
             for idx, amount in seed_damages.items():
@@ -390,7 +420,7 @@ class EffectPipeline:
         if pre_rolled_key in context:
             amount = context[pre_rolled_key]
         else:
-            formula = step.get("formula", "")
+            formula = effective_damage_formula(step, context.get("slot_level"))
             if context["critical_hit"] and formula:
                 formula = multiply_formula(formula, 2)
             amount = roll_formula(formula) if formula else 0

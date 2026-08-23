@@ -710,8 +710,12 @@ Ordered so each stage is independently valuable and testable, and none requires 
    (`STEP_REFERENCE.md`, drift-guarded — ending code/doc drift). Also retired **E6** on the rule side
    (per-event field schema + load-time `event.<field>` validation; §6.9). No behaviour change; all 22
    spells lint clean. Unblocks the "new spell" skill (review §8).
-2. **Thread `slot_level` + a `scaling` modifier** on damage/iterator blocks → real upcasting (review
-   §4.2), the smallest net-new authoring capability.
+2. **Thread `slot_level` + a `scaling` modifier — DONE (2026-08-24).** `slot_level` flows from
+   `CombatSystem.resolve_spell` → `SpellResolver` → `EffectPipeline` (defaulting to the spell's base
+   level) and is exposed as `context.slot_level`; the `damage` block takes a `scaling` object
+   (`{"per_slot_above": N, "add_dice": "1d6"}`) applied to base and `roll_once` rolls alike. Upcasting
+   spends the actual slot cast at and rejects a slot below the spell's base level. Real upcasting
+   (review §4.2), the smallest net-new authoring capability. Covered by `tests/test_upcasting.py`.
 3. **Targeting/iterator blocks** → split multi-target (Magic Missile done honestly, Scorching Ray,
    Eldritch Blast; review §4.6), folding AoE fan-out into the same mechanism. **Re-plan here** (per the
    roadmap decision) with real code in hand before committing to 4–7.

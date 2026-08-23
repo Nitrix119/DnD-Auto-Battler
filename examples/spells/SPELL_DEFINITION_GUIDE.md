@@ -330,6 +330,22 @@ a preceding saving throw result.
 > actually rolled earlier in the pipeline). Auto-hit spells without a `saving_throw` step are
 > unaffected.
 
+**Upcasting (`scaling`).** A damage step scales with the slot the spell is cast at via an optional
+`scaling` object — the dice grow, the formula stays a dice string (no expressions):
+
+```json
+{
+  "type": "damage", "damage_type": "FIRE", "formula": "8d6", "roll_once": true,
+  "save_result": { "on_success": "half_damage" },
+  "scaling": { "per_slot_above": 3, "add_dice": "1d6" }
+}
+```
+
+`per_slot_above` is the threshold slot level (usually the spell's base level); `add_dice` is added
+once per slot level above it. A Fireball cast with a 5th-level slot rolls `8d6+2d6`. The cast-time
+slot is also exposed as `context.slot_level` for conditions/expressions. Casting at a slot **below**
+the spell's base level is rejected, and the slot actually spent is the one cast at.
+
 ---
 
 ### `healing`

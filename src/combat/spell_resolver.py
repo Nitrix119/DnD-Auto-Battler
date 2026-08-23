@@ -10,7 +10,7 @@ from .event_bus import EventBus
 from .event_data import SpellCastData
 from .events import EventType
 from .damage_processor import DamageProcessor
-from .effect_pipeline import EffectPipeline
+from .effect_pipeline import EffectPipeline, effective_damage_formula
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +35,7 @@ class SpellResolver:
         action: SpellAction,
         *,
         origin=None,
+        slot_level: Optional[int] = None,
     ) -> List[Tuple[bool, int, str, Optional[dict]]]:
         """Resolve a spell action against one or more targets.
 
@@ -63,20 +64,26 @@ class SpellResolver:
             SpellCastData(caster=caster, defenders=defenders, action=action, origin=origin),
         )
 
-        seed_damages = self._preroll_pipeline_damage(action)
+        if slot_level is None:
+            slot_level = action.spell_level
+
+        seed_damages = self._preroll_pipeline_damage(action, slot_level)
         results: List[Tuple[bool, int, str, Optional[dict]]] = []
         for defender in defenders:
             results.append(
-                self._run_pipeline_spell(caster, defender, action, seed_damages)
+                self._run_pipeline_spell(caster, defender, action, seed_damages, slot_level)
             )
         return results
 
-    def _preroll_pipeline_damage(self, action: SpellAction) -> Dict[int, int]:
+    def _preroll_pipeline_damage(
+        self, action: SpellAction, slot_level: Optional[int] = None
+    ) -> Dict[int, int]:
         """Pre-roll damage for any ``roll_once: true`` steps before the target loop.
 
         This ensures all targets of an AoE spell receive the same damage total,
         matching D&D 5e rules (e.g. Fireball rolls 8d6 once for every creature
-        in the blast).
+        in the blast). Slot-based ``scaling`` is applied here too so an upcast
+        AoE shares its (larger) rolled total across all targets.
 
         Returns:
             Dict mapping step index → pre-rolled amount.
@@ -84,7 +91,7 @@ class SpellResolver:
         seed: Dict[int, int] = {}
         for i, step in enumerate(action.pipeline_effects):
             if step.get("type") == "damage" and step.get("roll_once"):
-                seed[i] = roll_formula(step["formula"])
+                seed[i] = roll_formula(effective_damage_formula(step, slot_level))
         return seed
 
     def _run_pipeline_spell(
@@ -93,10 +100,13 @@ class SpellResolver:
         defender: Entity,
         action: SpellAction,
         seed_damages: Dict[int, int],
+        slot_level: Optional[int] = None,
     ) -> Tuple[bool, int, str, Optional[dict], int, Optional[Entity]]:
         """Execute the effect pipeline for one caster/defender pair and format the result."""
         pipeline = EffectPipeline(self._event_bus, self._damage_processor, self.rule_engine)
-        result = pipeline.run(caster, defender, action, seed_damages=seed_damages)
+        result = pipeline.run(
+            caster, defender, action, seed_damages=seed_damages, slot_level=slot_level
+        )
 
         damage_dealt = result.damage_dealt
         hit = result.hit

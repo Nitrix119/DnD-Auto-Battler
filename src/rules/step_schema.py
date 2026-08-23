@@ -53,6 +53,7 @@ CONTEXT_KEYS = frozenset({
     "attack_roll", "attack_total",
     "damage_dealt", "damage_rolled",
     "healing_amount", "temp_hp_granted",
+    "slot_level",
 })
 
 
@@ -159,10 +160,18 @@ STEP_SCHEMAS: Dict[str, StepSchema] = {
                             description="How a passed save reduces the damage."),
                   ),
                   description="Modify damage based on a preceding saving_throw."),
+            Field("scaling", kind="object",
+                  subfields=(
+                      Field("per_slot_above", required=True, kind="int",
+                            description="Threshold slot level; scaling adds dice per level above it."),
+                      Field("add_dice", required=True, kind="formula",
+                            description="Dice added per slot level above the threshold, e.g. '1d6'."),
+                  ),
+                  description="Upcasting: add dice as the spell is cast with a higher slot."),
             _TARGET,
             _CONDITION,
         ),
-        reads=("hit", "save_success", "save_roll", "critical_hit"),
+        reads=("hit", "save_success", "save_roll", "critical_hit", "slot_level"),
         writes=("damage_dealt", "damage_rolled"),
     ),
     "healing": StepSchema(

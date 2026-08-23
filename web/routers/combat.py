@@ -361,6 +361,7 @@ async def handle_cast_spell(
     log_before = len(combat.log)
     results = combat.resolve_spell(
         caster, defenders, spell_action, target=target_point,
+        slot_level=msg.get("slot_level"),
     )
     new_logs = combat.get_combat_log()[log_before:]
 

@@ -50,10 +50,13 @@ Deal typed damage to the defender.
 | `roll_once` | no | true / false | Roll once and share the total across all AoE targets. |
 | `save_result` | no | object | Modify damage based on a preceding saving_throw. |
 | `save_result.on_success` | yes | one of: `half_damage`, `no_damage` | How a passed save reduces the damage. |
+| `scaling` | no | object | Upcasting: add dice as the spell is cast with a higher slot. |
+| `scaling.per_slot_above` | yes | int | Threshold slot level; scaling adds dice per level above it. |
+| `scaling.add_dice` | yes | dice formula | Dice added per slot level above the threshold, e.g. '1d6'. |
 | `target` | no | `caster` / `defender` | "caster" or "defender". |
 | `condition` | no | expression | Expression; step is skipped if it evaluates falsy. |
 
-**Reads context:** `hit`, `save_success`, `save_roll`, `critical_hit`
+**Reads context:** `hit`, `save_success`, `save_roll`, `critical_hit`, `slot_level`
 
 **Writes context:** `damage_dealt`, `damage_rolled`
 
