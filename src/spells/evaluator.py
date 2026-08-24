@@ -21,16 +21,35 @@ from typing import Any, List, Optional
 
 from src.combat.events import EventType
 from src.combat.event_data import SpellHitData, DamageDealtData
+from src.rules.expressions import evaluate
 
 from . import blocks as _blocks  # noqa: F401  (import registers the built-in blocks)
 from .block import Block
-from .context import Invocation, InvocationResult, seed_context
+from .context import Invocation, InvocationResult, eval_context, seed_context
 from .registry import BlockRegistry, REGISTRY
 
 
+def _condition_passes(block: Block, inv: Invocation) -> bool:
+    """Evaluate a block's optional ``condition`` guard.
+
+    Returns True when there is no condition. A condition that evaluates falsy —
+    or raises — skips the block (matching the legacy pipeline's fail-safe skip).
+    """
+    condition = block.get("condition")
+    if condition is None:
+        return True
+    try:
+        return bool(evaluate(condition, eval_context(inv)))
+    except Exception:
+        return False
+
+
 def run_block(block: Block, inv: Invocation, registry: BlockRegistry = REGISTRY) -> None:
-    """Dispatch one block to its registered handler."""
-    registry.get(block.type).handler(block, inv)
+    """Dispatch one block to its handler, honouring its ``condition`` guard."""
+    reg = registry.get(block.type)
+    if not _condition_passes(block, inv):
+        return
+    reg.handler(block, inv)
 
 
 def run_program(
@@ -74,10 +93,12 @@ def resolve(
 
     for block in program:
         reg = registry.get(block.type)
-        # Emit SPELL_HIT once, just before the first non-gate (effect) block.
+        # Emit SPELL_HIT once, just before the first non-gate (effect) block —
+        # by block category, independent of whether that block is condition-skipped
+        # (matches the legacy pipeline's emission point).
         if not reg.contract.is_gate and not inv.spell_hit_emitted:
             _emit_spell_hit(inv)
-        reg.handler(block, inv)
+        run_block(block, inv, registry)
 
     if not inv.spell_hit_emitted:
         _emit_spell_hit(inv)

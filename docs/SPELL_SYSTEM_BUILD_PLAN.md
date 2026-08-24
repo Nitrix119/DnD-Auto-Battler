@@ -115,6 +115,16 @@ file shape. No new authoring capability yet; this is the substrate.
   transitional code, and it too dies in Phase 3.)
 - Rationale: the split vocabulary is the single biggest source of debt in the current system; folding
   it later would mean building the evaluator around a seam we intend to remove. Remove it first.
+- **Multi-component damage + per-entry resistance (planned superset detail).** Today one `damage`
+  block carries one type; multi-type damage (a smite: slashing + fire + radiant; a fire weapon) is
+  several blocks, and per-type resistance works *only* because each block is a single-element
+  `apply_damage` call. The resistance/immunity/vulnerability rules inspect `damage_list[0]` and apply
+  an **unfiltered** `ModifyDamage` — so a genuine multi-type bundle would resist incorrectly. The
+  new `damage` block should accept a **list of typed components** applied as one bundle (one hit, one
+  `DAMAGE_INCOMING`), and resistance must become **per-entry** (each `Damage` resisted by its own
+  type; the `modify_damage` handler already supports a `damage_type` filter — the global rules don't
+  use it). This removes the fragile one-type-per-block convention. Do it when finishing the damage
+  block; it touches the rule layer, so parity-gate it. See [[damage-typing-per-entry-resistance]].
 
 ### 3.4 Shape-routing + backwards-compat adapter
 - Route by shape (decided, §6.10): a file with a `program` array → new evaluator; a legacy `effects`

@@ -10,10 +10,12 @@ target, keeping each run's context its own.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from types import SimpleNamespace
 from typing import Any, Dict, List, Optional
 
 from src.models.entity import Entity
 from src.models.damage import Damage
+from src.rules.expressions import build_context
 
 
 def seed_context(slot_level: int) -> Dict[str, Any]:
@@ -87,7 +89,7 @@ class InvocationResult:
     had_disadvantage: bool = False
 
     @classmethod
-    def from_invocation(cls, inv: Invocation) -> "InvocationResult":
+    def from_invocation(cls, inv: "Invocation") -> "InvocationResult":
         c = inv.context
         return cls(
             hit=c["hit"],
@@ -105,3 +107,23 @@ class InvocationResult:
             had_advantage=c.get("had_advantage", False),
             had_disadvantage=c.get("had_disadvantage", False),
         )
+
+
+def eval_context(inv: "Invocation") -> Dict[str, Any]:
+    """Build the sandboxed namespace for a block's expression fields.
+
+    Exposes ``event.caster`` / ``event.defender`` / ``event.action``, the pipeline
+    ``context`` (public keys only, as a namespace), and ``save_success`` /
+    ``save_roll`` — matching the legacy pipeline's expression namespace so
+    expressions evaluate identically on both engines.
+    """
+    public = {k: v for k, v in inv.context.items() if not k.startswith("_")}
+    event_data: Dict[str, Any] = {"caster": inv.caster, "defender": inv.target}
+    if inv.action is not None:
+        event_data["action"] = inv.action
+    return build_context(
+        event_data,
+        save_success=inv.context["save_success"],
+        save_roll=inv.context["save_roll"],
+        context=SimpleNamespace(**public),
+    )

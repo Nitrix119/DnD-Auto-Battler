@@ -1,4 +1,4 @@
-"""Roll / gate blocks: attack_roll (saving_throw arrives in the next slice)."""
+"""Roll / gate blocks: attack_roll and saving_throw."""
 
 from __future__ import annotations
 
@@ -7,8 +7,10 @@ from src.combat.event_data import (
     AttackDeclaredData,
     AttackRolledData,
     AttackHitData,
+    SavingThrowDeclaredData,
 )
 from src.utils.dice import roll_d20, roll_with_advantage, roll_with_disadvantage
+from src.utils.saving_throw import roll_saving_throw
 
 from ..contract import BlockContract, TargetArity
 from ..context import Invocation
@@ -85,6 +87,50 @@ REGISTRY.register(
     attack_roll,
     BlockContract(
         writes=("hit", "attack_roll", "attack_total", "critical_hit", "critical_miss"),
+        target_arity=TargetArity.SINGLE,
+        is_gate=True,
+    ),
+)
+
+
+def saving_throw(block: Block, inv: Invocation) -> None:
+    """Roll the current target's saving throw; write save_roll/save_dc/save_success.
+
+    Emits SAVING_THROW_DECLARED so effects (e.g. Restrained → disadvantage on DEX
+    saves) can flag advantage/disadvantage before the roll. Mirrors the legacy
+    pipeline's saving-throw step.
+    """
+    caster, defender = inv.caster, inv.target
+    ctx = inv.context
+
+    attribute = block.get("attribute", "")
+    dc_spec = block.get("dc", 0)
+    effective_dc = caster.spell_save_dc if dc_spec == "use_caster_dc" else int(dc_spec)
+
+    if effective_dc > 0 and attribute:
+        declared = inv.event_bus.emit(
+            EventType.SAVING_THROW_DECLARED,
+            SavingThrowDeclaredData(defender=defender, ability=attribute, dc=effective_dc),
+        )
+        has_adv = declared.data.get("advantage", False)
+        has_dis = declared.data.get("disadvantage", False)
+        save_roll, save_success = roll_saving_throw(
+            defender, attribute, effective_dc,
+            advantage=has_adv, disadvantage=has_dis,
+        )
+    else:
+        save_roll, save_success = None, True
+
+    ctx["save_roll"] = save_roll
+    ctx["save_dc"] = effective_dc
+    ctx["save_success"] = save_success
+
+
+REGISTRY.register(
+    "saving_throw",
+    saving_throw,
+    BlockContract(
+        writes=("save_roll", "save_dc", "save_success"),
         target_arity=TargetArity.SINGLE,
         is_gate=True,
     ),

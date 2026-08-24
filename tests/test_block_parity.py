@@ -11,6 +11,7 @@ spells to ``PARITY_SPELLS``.
 """
 
 from src.models import AbilityScores, StatBlock, Entity, SpellAction
+from src.models.damage import Damage, DamageType
 from src.combat.event_bus import EventBus
 from src.combat.damage_processor import DamageProcessor
 from src.combat.effect_pipeline import EffectPipeline
@@ -45,20 +46,32 @@ def _target(hp: int = 40, ac: int = 13) -> Entity:
 # ── The parity assertion ────────────────────────────────────────────────────────
 
 _COMPARED = (
-    "hit", "damage_dealt", "save_success", "save_roll", "save_dc",
+    "hit", "damage_dealt", "healing_total", "save_success", "save_roll", "save_dc",
     "attack_roll", "attack_total", "critical_hit", "critical_miss",
     "had_advantage", "had_disadvantage",
 )
 
 
+def _wound(entity, amount):
+    if amount:
+        entity.take_damage(Damage(DamageType.GENERIC, amount))
+
+
 def assert_parity(legacy_steps, program_dicts, *, seeds=range(1, 41),
-                  spell_level=0, target_hp=40, target_ac=13):
-    """Run the same spell on both engines under each seed; assert identical."""
+                  spell_level=0, target_hp=40, target_ac=13,
+                  pre_damage_target=0, pre_damage_caster=0):
+    """Run the same spell on both engines under each seed; assert identical.
+
+    Compares every result field plus the resulting caster and target HP, so
+    damage *and* healing are covered.
+    """
     program = parse_program(program_dicts)
     for seed in seeds:
         # Legacy engine.
         dice.seed_rng(seed)
         caster_o, target_o = _caster(), _target(target_hp, target_ac)
+        _wound(target_o, pre_damage_target)
+        _wound(caster_o, pre_damage_caster)
         action_o = SpellAction(name="Spell", description="", spell_level=spell_level,
                                pipeline_effects=legacy_steps)
         bus_o = EventBus()
@@ -67,6 +80,8 @@ def assert_parity(legacy_steps, program_dicts, *, seeds=range(1, 41),
         # New engine.
         dice.seed_rng(seed)
         caster_n, target_n = _caster(), _target(target_hp, target_ac)
+        _wound(target_n, pre_damage_target)
+        _wound(caster_n, pre_damage_caster)
         action_n = SpellAction(name="Spell", description="", spell_level=spell_level)
         bus_n = EventBus()
         new = resolve_blocks(caster_n, target_n, action_n, program,
@@ -76,7 +91,8 @@ def assert_parity(legacy_steps, program_dicts, *, seeds=range(1, 41),
             assert getattr(new, f) == getattr(old, f), (
                 f"seed {seed}: field {f!r} diverged: new={getattr(new, f)} old={getattr(old, f)}"
             )
-        assert target_n.hp == target_o.hp, f"seed {seed}: HP diverged"
+        assert target_n.hp == target_o.hp, f"seed {seed}: target HP diverged"
+        assert caster_n.hp == caster_o.hp, f"seed {seed}: caster HP diverged"
 
 
 # ── Fire Bolt: attack cantrip ───────────────────────────────────────────────────
@@ -120,3 +136,68 @@ def test_upcast_scaling_reaches_parity():
     ]
     # Both engines default slot_level to the action's spell_level (=3 here).
     assert_parity(legacy, program, spell_level=3, target_ac=5)
+
+
+# ── Saving throws: save-for-half and save-negates (single target) ───────────────
+
+def test_save_for_half_parity():
+    legacy = [
+        {"type": "saving_throw", "attribute": "dexterity", "dc": "use_caster_dc"},
+        {"type": "damage", "damage_type": "FIRE", "formula": "8d6",
+         "save_result": {"on_success": "half_damage"}},
+    ]
+    program = [
+        {"block": "saving_throw", "attribute": "dexterity", "dc": "use_caster_dc"},
+        {"block": "damage", "damage_type": "FIRE", "formula": "8d6",
+         "save_result": {"on_success": "half_damage"}},
+    ]
+    assert_parity(legacy, program, target_hp=80)
+
+
+def test_save_negates_parity():
+    legacy = [
+        {"type": "saving_throw", "attribute": "wisdom", "dc": 14},
+        {"type": "damage", "damage_type": "PSYCHIC", "formula": "4d8",
+         "save_result": {"on_success": "no_damage"}},
+    ]
+    program = [
+        {"block": "saving_throw", "attribute": "wisdom", "dc": 14},
+        {"block": "damage", "damage_type": "PSYCHIC", "formula": "4d8",
+         "save_result": {"on_success": "no_damage"}},
+    ]
+    assert_parity(legacy, program, target_hp=60)
+
+
+# ── Healing: formula+bonus, and an amount expression from prior damage ──────────
+
+def test_cure_wounds_parity():
+    legacy = [
+        {"type": "healing", "target": "defender", "formula": "1d8",
+         "bonus": "event.caster.spellcasting_modifier"},
+    ]
+    program = [
+        {"block": "healing", "target": "defender", "formula": "1d8",
+         "bonus": "event.caster.spellcasting_modifier"},
+    ]
+    # Wound the target first so the heal has room to apply.
+    assert_parity(legacy, program, pre_damage_target=25)
+
+
+def test_vampiric_heal_from_damage_parity():
+    # Attack, deal necrotic, heal the caster for half the damage dealt — the
+    # instantaneous part of Vampiric Touch (the concentration rider is a later
+    # slice). Exercises the amount expression + condition guard + caster target.
+    legacy = [
+        {"type": "attack_roll", "attack_bonus": 5},
+        {"type": "damage", "damage_type": "NECROTIC", "formula": "3d6", "requires_hit": True},
+        {"type": "healing", "target": "caster", "amount": "context.damage_dealt // 2",
+         "condition": "context.damage_dealt > 0"},
+    ]
+    program = [
+        {"block": "attack_roll", "attack_bonus": 5},
+        {"block": "damage", "damage_type": "NECROTIC", "formula": "3d6", "requires_hit": True},
+        {"block": "healing", "target": "caster", "amount": "context.damage_dealt // 2",
+         "condition": "context.damage_dealt > 0"},
+    ]
+    # Low AC so most seeds hit; wound the caster so the self-heal lands.
+    assert_parity(legacy, program, target_ac=5, pre_damage_caster=15)
