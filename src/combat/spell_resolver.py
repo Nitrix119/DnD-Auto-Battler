@@ -117,8 +117,6 @@ class SpellResolver:
                 "ac": defender.ac,
             }
 
-            logger.info("DC set as:", result.save_dc)
-
         elif result.save_roll is not None:
             result_word = "success" if result.save_success else "failure"
             log_msg = (

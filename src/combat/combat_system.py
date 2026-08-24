@@ -2,7 +2,7 @@
 
 import math
 from dataclasses import dataclass, field
-from typing import List, Optional, Tuple
+from typing import List, NamedTuple, Optional, Tuple
 from enum import Enum
 
 from src.models.entity import Entity
@@ -29,6 +29,29 @@ from .attack_resolver import AttackResolver
 from .spell_resolver import SpellResolver
 from .turn_manager import TurnManager
 
+
+
+class SpellTargetResult(NamedTuple):
+    """One per-target outcome from resolving a spell.
+
+    A ``NamedTuple`` so existing positional unpacking and indexing
+    (``entity, hit, damage, roll_detail, healing, healed = result`` or
+    ``result[0]``) keep working, while the field names document the shape.
+
+    Fields:
+        entity: The defender this result is for.
+        hit: True if the spell hit (always True for save-only / auto-hit spells).
+        damage: Damage actually dealt to *entity* (after resistances etc.).
+        roll_detail: Optional dict of attack- or save-roll details for the UI.
+        healing: HP restored during this target's resolution.
+        healed: The entity that was healed (may differ from *entity*), or None.
+    """
+    entity: Entity
+    hit: bool
+    damage: int
+    roll_detail: Optional[dict]
+    healing: int
+    healed: Optional[Entity]
 
 
 @dataclass
@@ -183,7 +206,8 @@ class CombatSystem:
             action: The attack action
 
         Returns:
-            Tuple of (hit, total_damage)
+            Tuple of ``(hit, total_damage, roll_detail)`` where ``roll_detail``
+            is an optional dict of d20/bonus/total/AC for the UI.
 
         Raises:
             ValueError: If it is not the attacker's turn.
@@ -214,7 +238,7 @@ class CombatSystem:
         action: SpellAction,
         *,
         target: Optional[Point3D] = None,
-    ) -> List[Tuple[Entity, bool, int]]:
+    ) -> List["SpellTargetResult"]:
         """Resolve a spell action against one or more targets.
 
         For **AOE spells**, *target* (the point the caster aimed at) is
@@ -235,7 +259,8 @@ class CombatSystem:
             target: Point the caster aimed at.  Required for AOE spells.
 
         Returns:
-            List of (hit, damage_dealt) per defender.
+            List of :class:`SpellTargetResult` — one per resolved defender,
+            each ``(entity, hit, damage, roll_detail, healing, healed)``.
 
         Raises:
             ValueError: If it is not the caster's turn.
@@ -285,24 +310,9 @@ class CombatSystem:
             if log_msg:
                 self._log_action(caster, log_msg)
         return [
-            (defenders[i], hit, damage, roll_detail, healing, healed)
+            SpellTargetResult(defenders[i], hit, damage, roll_detail, healing, healed)
             for i, (hit, damage, _, roll_detail, healing, healed) in enumerate(results)
         ]
-    
-    # Depreciated - now handled as part of effect pipeline. See effect_pipeline.py:EffectPipeline._handle_saving_throw
-    # def resolve_saving_throw(self, defender: Entity, ability: str,
-    #                         dc: int) -> Tuple[int, bool]:
-    #     """Resolve a saving throw.
-
-    #     Args:
-    #         defender: Entity making the save
-    #         ability: The ability for the save
-    #         dc: The DC of the save
-
-    #     Returns:
-    #         Tuple of (save_roll_total, success)
-    #     """
-    #     return roll_saving_throw(defender, ability, dc)
 
     def resolve_legendary_action(
         self,
@@ -387,7 +397,7 @@ class CombatSystem:
                 if log_msg:
                     self._log_action(entity, log_msg)
             return [
-                (defenders[i], hit, damage, roll_detail, healing, healed)
+                SpellTargetResult(defenders[i], hit, damage, roll_detail, healing, healed)
                 for i, (hit, damage, _, roll_detail, healing, healed) in enumerate(results)
             ]
 

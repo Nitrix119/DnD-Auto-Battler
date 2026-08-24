@@ -1,8 +1,28 @@
-"""Dice rolling utilities."""
+"""Dice rolling utilities.
+
+All randomness in the combat engine flows through the single module-level
+``_rng`` (a :class:`random.Random`).  Call :func:`seed_rng` to make an entire
+battle reproducible — for deterministic tests, replays, or debugging a
+specific sequence — without monkeypatching. Nothing else in ``src`` calls
+``random`` directly, so seeding here seeds the whole engine.
+"""
 
 import re
 import random
-from typing import List, Tuple
+from typing import List, Optional, Tuple
+
+# Single shared RNG for the whole engine. Seed via seed_rng() for determinism.
+_rng = random.Random()
+
+
+def seed_rng(seed: Optional[int] = None) -> None:
+    """Seed the shared dice RNG.
+
+    Args:
+        seed: Integer seed for a reproducible roll sequence, or ``None`` to
+            reseed from system entropy (the default non-deterministic mode).
+    """
+    _rng.seed(seed)
 
 
 def roll_d20() -> int:
@@ -11,7 +31,7 @@ def roll_d20() -> int:
     Returns:
         Random value from 1-20
     """
-    return random.randint(1, 20)
+    return _rng.randint(1, 20)
 
 
 def roll_dice(num_dice: int, num_sides: int) -> int:
@@ -24,25 +44,27 @@ def roll_dice(num_dice: int, num_sides: int) -> int:
     Returns:
         Sum of all dice rolled
     """
-    return sum(random.randint(1, num_sides) for _ in range(num_dice))
+    return sum(_rng.randint(1, num_sides) for _ in range(num_dice))
 
 
 # Matches tokens like: +2d6, -1d8, +5, -3, 2d6 (leading token, no sign)
 _TOKEN_RE = re.compile(r"([+-]?)(\d+)(?:d(\d+))?", re.IGNORECASE)
 
 
-def parse_dice_formula(formula: str) -> List[Tuple[int, int, int]]:
+def parse_dice_formula(formula: str) -> List[Tuple[int, int, bool]]:
     """Parse an arbitrary dice formula like "2d6+1d8+5".
 
-    Each token is returned as (sign, num_dice, num_sides) where num_sides=0
-    means a flat modifier (num_dice holds the value).
+    Each token is returned as ``(signed_count, num_sides, is_dice)``:
+      - Dice term (e.g. ``-2d6``): ``is_dice`` is True, ``signed_count`` is the
+        signed number of dice, ``num_sides`` is the die size.
+      - Flat modifier (e.g. ``+5``): ``is_dice`` is False, ``signed_count`` is
+        the signed modifier value, and ``num_sides`` is 0.
 
     Args:
         formula: Dice formula string, e.g. "2d6+1d8-3" or "1d20+5"
 
     Returns:
-        List of (signed_count, num_dice, num_sides) tuples.
-        For flat modifiers num_sides is 0 and signed_count is the modifier value.
+        List of ``(signed_count, num_sides, is_dice)`` tuples.
 
     Raises:
         ValueError: If the formula contains no valid tokens.

@@ -31,12 +31,10 @@
     {
       "type": "saving_throw",
       "attribute": "dexterity",
-      "dc": "use_caster_dc",
-      "target": "for_each_defender"
+      "dc": "use_caster_dc"
     },
     {
       "type": "damage",
-      "target": "for_each_defender",
       "damage_type": "LIGHTNING",
       "formula": "8d6",
       "roll_once": true,

@@ -5,13 +5,42 @@ import re
 from pathlib import Path
 from typing import Dict, Any, Optional
 
-_FORMULA_RE = re.compile(r"^\d+d\d+([+\-]\d+)?$")
+# Full-match validator for damage formulas. Accepts one or more terms, each a
+# dice term (NdM) or flat modifier (N), joined by + / -, e.g. "3d8+6",
+# "2d6+1d8+5", "1d20-2", or "20". Mirrors what dice.roll_formula can roll, so a
+# valid multi-term formula is no longer rejected at load time (E5).
+_FORMULA_RE = re.compile(r"^[+-]?\d+(?:d\d+)?(?:[+-]\d+(?:d\d+)?)*$")
 
 
 def _validate_formula(formula: str) -> str:
-    if not _FORMULA_RE.match(formula):
+    if not _FORMULA_RE.match(formula.replace(" ", "")):
         raise ValueError(f"Invalid damage formula: {formula!r}")
     return formula
+
+
+def _enum_lookup(enum_cls, raw: Any, field_name: str):
+    """Look up an enum member by case-insensitive name with a friendly error.
+
+    Raises a descriptive ValueError naming the offending value and the valid
+    options, rather than the bare ``KeyError`` a raw ``EnumCls[...]`` lookup
+    produces — important for a JSON-authoring workflow where a typo like
+    ``"SLASH"`` should say what the valid values are.
+    """
+    try:
+        return enum_cls[str(raw).upper()]
+    except KeyError:
+        valid = ", ".join(m.name for m in enum_cls)
+        raise ValueError(
+            f"Unknown {field_name} {raw!r}; valid values: {valid}"
+        )
+
+
+def _parse_damage_types(values: Any, field_name: str) -> list:
+    """Parse a list of damage-type strings into DamageType members.
+
+    Accepts case-insensitive names (e.g. ``"fire"`` or ``"FIRE"``).
+    """
+    return [_enum_lookup(DamageType, raw, field_name) for raw in (values or [])]
 
 from src.models import (
     AbilityScores, StatBlock, AttackAction, SpellAction, Damage, DamageType,
@@ -46,7 +75,10 @@ class StatBlockLoader:
             ValueError: If JSON is invalid
         """
         with open(filepath, 'r') as f:
-            data = json.load(f)
+            try:
+                data = json.load(f)
+            except json.JSONDecodeError as exc:
+                raise ValueError(f"Invalid JSON in creature file {filepath!r}: {exc}") from exc
         return StatBlockLoader.from_dict(data)
 
     @staticmethod
@@ -68,7 +100,10 @@ class StatBlockLoader:
             ValueError: If the action is not a spell
         """
         with open(filepath, 'r') as f:
-            data = json.load(f)
+            try:
+                data = json.load(f)
+            except json.JSONDecodeError as exc:
+                raise ValueError(f"Invalid JSON in spell file {filepath!r}: {exc}") from exc
         action = StatBlockLoader._parse_action(data)
         if not isinstance(action, SpellAction):
             raise ValueError(f"Expected a spell action in {filepath!r}")
@@ -129,6 +164,12 @@ class StatBlockLoader:
             spellcasting_ability=data.get("spellcasting_ability", ""),
             spell_slot_defaults=dict(data.get("spell_slots", {})),
             legendary_action_count=data.get("legendary_actions", {}).get("count_per_round", 0),
+            damage_vulnerabilities=_parse_damage_types(
+                data.get("damage_vulnerabilities"), "damage_vulnerabilities"),
+            damage_resistances=_parse_damage_types(
+                data.get("damage_resistances"), "damage_resistances"),
+            damage_immunities=_parse_damage_types(
+                data.get("damage_immunities"), "damage_immunities"),
         )
 
         # Add saving throws if provided
@@ -142,7 +183,7 @@ class StatBlockLoader:
         """Parse the damage list from an action dictionary."""
         damage = []
         for dmg_data in action_data.get("damage", []):
-            dmg_type = DamageType[dmg_data.get("type", "BLUDGEONING").upper()]
+            dmg_type = _enum_lookup(DamageType, dmg_data.get("type", "BLUDGEONING"), "damage type")
             raw_formula = dmg_data.get("formula")
             formula = _validate_formula(raw_formula) if raw_formula is not None else None
             damage.append(Damage(
@@ -155,13 +196,13 @@ class StatBlockLoader:
     @staticmethod
     def _parse_spell_range(data: Dict[str, Any]) -> SpellRange:
         """Parse a spell range dict into a SpellRange."""
-        range_type = RangeType[data.get("type", "touch").upper()]
+        range_type = _enum_lookup(RangeType, data.get("type", "touch"), "spell range type")
         return SpellRange(range_type, distance_ft=data.get("distance_ft"))
 
     @staticmethod
     def _parse_casting_time(data: Dict[str, Any]) -> CastingTime:
         """Parse a casting_time dict into a CastingTime."""
-        ct_type = CastingTimeType[data.get("type", "action").upper()]
+        ct_type = _enum_lookup(CastingTimeType, data.get("type", "action"), "casting time type")
         return CastingTime(
             ct_type,
             count=data.get("count", 1),
@@ -172,7 +213,7 @@ class StatBlockLoader:
     @staticmethod
     def _parse_duration(data: Dict[str, Any]) -> Duration:
         """Parse a duration dict into a Duration."""
-        unit = DurationUnit[data.get("unit", "instantaneous").upper()]
+        unit = _enum_lookup(DurationUnit, data.get("unit", "instantaneous"), "duration unit")
         return Duration(
             unit,
             count=data.get("count", 1),
@@ -245,14 +286,15 @@ class StatBlockLoader:
                 else SpellRange(RangeType.TOUCH)
             )
 
-            targeting_type = TargetingType[
-                action_data.get("targeting_type", "single_target").upper()
-            ]
+            targeting_type = _enum_lookup(
+                TargetingType, action_data.get("targeting_type", "single_target"),
+                "targeting_type",
+            )
 
             aoe = None
             aoe_data = action_data.get("aoe")
             if aoe_data:
-                shape = AOEShape[aoe_data.get("shape", "sphere").upper()]
+                shape = _enum_lookup(AOEShape, aoe_data.get("shape", "sphere"), "AoE shape")
                 aoe = AOEProperties(shape, aoe_data.get("size_ft", 5))
 
             ct_data = action_data.get("casting_time", {})
@@ -432,7 +474,7 @@ class StatBlockLoader:
         Returns:
             Dictionary representation
         """
-        return {
+        result: Dict[str, Any] = {
             "name": stat_block.name,
             "abilities": {
                 "strength": stat_block.ability_scores.strength,
@@ -455,3 +497,12 @@ class StatBlockLoader:
                 for action in stat_block.actions
             ],
         }
+        # Damage modifiers — only emit when present to keep output clean.
+        for key, members in (
+            ("damage_vulnerabilities", stat_block.damage_vulnerabilities),
+            ("damage_resistances", stat_block.damage_resistances),
+            ("damage_immunities", stat_block.damage_immunities),
+        ):
+            if members:
+                result[key] = [dt.name for dt in members]
+        return result
