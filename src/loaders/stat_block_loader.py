@@ -55,7 +55,6 @@ from src.models import (
 from src.models.creature_size import CreatureSize
 from src.models.spell_slots import SpellSlots
 from src.models.stat_block import DEFAULT_RESOURCE_DEFAULTS
-from src.rules.step_schema import validate_effects
 
 
 class StatBlockLoader:
@@ -324,6 +323,9 @@ class StatBlockLoader:
             # type, typo'd field, bad enum, or a context.X reference to a key
             # nothing writes becomes a named error here instead of a silent
             # run-time no-op (see docs/SPELL_SYSTEM_DESIGN.md §6.9, §7 stage 1).
+            # Imported lazily to avoid a module-load import cycle
+            # (loaders -> rules -> combat -> spell_registry -> loaders).
+            from src.rules.step_schema import validate_effects
             validate_effects(effects, spell_name=name)
 
             return SpellAction(

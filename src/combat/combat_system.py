@@ -309,7 +309,10 @@ class CombatSystem:
             if action.cannot_cause_self_damage:
                 defenders = [d for d in defenders if d is not caster]
         else:
-            # Single-target (or SPECIAL): range-check each defender if target given
+            # Single-target, multi-target (split projectiles — each entry in
+            # `defenders` is one projectile's chosen target, repeats allowed), or
+            # SPECIAL: range-check each defender if a point is given, then resolve
+            # every defender independently via the per-target fan-out.
             if target is not None:
                 for defender in defenders:
                     check_single_target_range(caster, defender, action)

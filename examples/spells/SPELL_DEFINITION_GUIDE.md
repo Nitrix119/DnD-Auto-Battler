@@ -147,12 +147,20 @@ Controls how far the spell can reach.
 
 | Field | Required | Type | Description |
 |---|---|---|---|
-| `targeting_type` | ❌ | string | `"single_target"` (default), `"aoe"`, or `"special"` |
+| `targeting_type` | ❌ | string | `"single_target"` (default), `"multi_target"`, `"aoe"`, or `"special"` |
 | `aoe` | ✅ if AOE | object | Geometry of the AoE area |
 | `aoe.shape` | ✅ | string | `"sphere"`, `"cone"`, `"line"`, `"cylinder"`, `"cube"`, `"special"` |
 | `aoe.size_ft` | ✅ | int | Radius (sphere/cylinder), half-length of side (cube), or length (cone/line). Must be > 0 |
 | `aoe.height_ft` | ❌ | int | Cylinder height in feet; must be > 0 if provided |
 | `aoe.width_ft` | ❌ | int | Line width in feet; must be > 0 if provided (defaults to 5 ft at runtime) |
+
+**`multi_target`** models split projectiles — Magic Missile's darts, Scorching Ray's rays,
+Eldritch Blast's beams. The caller supplies one target per projectile (the `defenders`/`target_ids`
+list, repeats allowed to stack projectiles on one creature), and the effect pipeline runs
+**independently per projectile** — each gets its own attack roll and its own damage roll (do **not**
+use `roll_once`). Model the spell as the per-projectile effect (e.g. one `damage` step of `1d4+1`,
+or an `attack_roll` + `requires_hit` `damage`); the number of projectiles comes from the supplied
+target list. _(Projectile-count scaling on upcast is not yet modelled — see `higher_level_scaling`.)_
 
 For AoE spells, the caster must provide a target point at cast time; the engine auto-selects all
 living combatants whose token overlaps the area, then runs the full effect pipeline once per

@@ -518,6 +518,15 @@ above 3rd" and "one more dart per slot" cannot be authored (review §4.2).
 expression on an iterator. Upcasting is then a *modifier over the program*, never a copied
 higher-level file.
 
+**Status — partial (stage 2 done; framework to extend).** The additive-dice `scaling` on the damage
+block is implemented (stage 2, §7). But upcasting is not uniformly additive: some spells **multiply**
+counts at specific thresholds — *Summon Woodland Beings* summons ×2 creatures with a 6th-level slot
+and ×3 with an 8th, and *Magic Missile*/*Scorching Ray* add a projectile per slot. These
+count-and-multiplier cases need a richer upcasting model than additive dice, spanning damage,
+projectile/summon **counts**, durations, and target numbers. That **upcasting-framework** design is
+pending (an idea is held to discuss) and is where projectile-count and summon-count scaling should be
+unified — deliberately not built piecemeal in stages 2–3.
+
 ### 6.8 Determinism across deferred triggers
 
 **Failure.** CLAUDE.md §1 promises a battle is reproducible under `dice.seed_rng`. A trigger that
@@ -716,9 +725,25 @@ Ordered so each stage is independently valuable and testable, and none requires 
    (`{"per_slot_above": N, "add_dice": "1d6"}`) applied to base and `roll_once` rolls alike. Upcasting
    spends the actual slot cast at and rejects a slot below the spell's base level. Real upcasting
    (review §4.2), the smallest net-new authoring capability. Covered by `tests/test_upcasting.py`.
-3. **Targeting/iterator blocks** → split multi-target (Magic Missile done honestly, Scorching Ray,
-   Eldritch Blast; review §4.6), folding AoE fan-out into the same mechanism. **Re-plan here** (per the
-   roadmap decision) with real code in hand before committing to 4–7.
+3. **Split multi-target — DONE (2026-08-24).** Delivered via the pragmatic route (decided): a new
+   `multi_target` targeting type that reuses the existing, tested per-defender fan-out — `defenders`
+   is the per-projectile target assignment (repeats allowed), each projectile resolves independently
+   (own attack roll, own damage roll). Magic Missile is now honest (`1d4+1` per dart, not a `3d4+3`
+   blob), Scorching Ray added, Eldritch Blast converted. Covered by `tests/test_multi_target.py`.
+   Also fixed a latent loaders→rules→combat import cycle that stage 1 introduced (lazy import in
+   `StatBlockLoader._parse_action`).
+
+   **Deferred here on purpose (this is the re-plan point before stages 4–7):**
+   - The **nested `for_each_target` iterator block** with `then` sub-programs and per-iteration context
+     (§4.2/§6.6) — not built; the fan-out already gives independent per-target resolution, so the
+     iterator block is folded into the stage-4 unification re-plan rather than built speculatively now.
+   - **Folding AoE fan-out into that iterator** — deferred with it (AoE still uses its own tested path).
+   - **Projectile-count upcasting** (Magic Missile +1 dart/slot, Scorching Ray +1 ray/slot) — count
+     currently comes from the supplied target list. This is the **same family as multiplicative
+     summon-count scaling** (e.g. *Summon Woodland Beings*: ×2 at 6th, ×3 at 8th), which needs a
+     richer upcasting model than the additive-dice `scaling` of stage 2. Held for a dedicated
+     **upcasting-framework** design (idea pending from the user) so we don't build two conflicting
+     count-scaling mechanisms.
 4. **Unify the two damage/heal/temp-HP/condition/modifier pairs** into superset blocks (§6.2);
    migrate content behind the conformance corpus (shape-routed, §6.10); delete the twins.
 5. **Lifetime scopes + grant handles** (§6.3/6.5); reimplement concentration on them; remove the

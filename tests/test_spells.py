@@ -278,7 +278,8 @@ class TestEldritchBlastLoading:
         spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "eldritch_blast.json"))
         assert spell.name == "Eldritch Blast"
         assert spell.spell_level == 0
-        assert spell.targeting_type == TargetingType.SINGLE_TARGET
+        # Multi-target: each beam is an independent projectile (one per chosen target).
+        assert spell.targeting_type == TargetingType.MULTI_TARGET
         assert spell.spell_range.range_type == RangeType.FEET
         assert spell.spell_range.distance_ft == 120
         assert spell.duration.unit == DurationUnit.INSTANTANEOUS
@@ -351,7 +352,9 @@ class TestMagicMissileLoading:
         spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "magic_missile.json"))
         assert spell.name == "Magic Missile"
         assert spell.spell_level == 1
-        assert spell.targeting_type == TargetingType.SINGLE_TARGET
+        # Modelled honestly as split projectiles: one damage step per dart, run
+        # once per chosen target via the multi-target fan-out.
+        assert spell.targeting_type == TargetingType.MULTI_TARGET
         assert spell.spell_range.range_type == RangeType.FEET
         assert spell.spell_range.distance_ft == 120
         assert spell.duration.unit == DurationUnit.INSTANTANEOUS
@@ -360,7 +363,7 @@ class TestMagicMissileLoading:
         damage_steps = [s for s in spell.pipeline_effects if s.get("type") == "damage"]
         assert len(damage_steps) == 1
         assert damage_steps[0]["damage_type"] == "FORCE"
-        assert damage_steps[0]["formula"] == "3d4+3"
+        assert damage_steps[0]["formula"] == "1d4+1"
 
 
 class TestCureWoundsLoading:
