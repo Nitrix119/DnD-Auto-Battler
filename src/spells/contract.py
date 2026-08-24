@@ -41,8 +41,12 @@ class BlockContract:
         reads: context keys the block may read (for the linter's flow check).
         writes: context keys the block writes.
         target_arity: how the block addresses targets (see :class:`TargetArity`).
+        is_gate: True for pre-effect roll/gate blocks (``attack_roll``,
+            ``saving_throw``). The evaluator emits ``SPELL_HIT`` just before the
+            first non-gate block, matching the legacy pipeline's ordering.
     """
 
     reads: Tuple[str, ...] = ()
     writes: Tuple[str, ...] = ()
     target_arity: TargetArity = TargetArity.SINGLE
+    is_gate: bool = False
