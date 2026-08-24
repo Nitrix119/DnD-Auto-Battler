@@ -15,6 +15,7 @@ from src.models.damage import Damage, DamageType
 from src.combat.event_bus import EventBus
 from src.combat.damage_processor import DamageProcessor
 from src.combat.effect_pipeline import EffectPipeline
+from src.rules.rule_engine import RuleEngine
 from src.spells.block import parse_program
 from src.spells.evaluator import resolve as resolve_blocks
 from src.utils import dice
@@ -201,3 +202,65 @@ def test_vampiric_heal_from_damage_parity():
     ]
     # Low AC so most seeds hit; wound the caster so the self-heal lands.
     assert_parity(legacy, program, target_ac=5, pre_damage_caster=15)
+
+
+# ── State blocks: condition / modifier / temp-HP (compare entity state) ─────────
+#
+# The legacy pipeline routes apply_condition/add_modifier through the rule engine
+# (BUILTIN_EFFECTS via a synthetic stub event); the new blocks do the work
+# directly. Parity is checked on the resulting entity state, not roll outcomes.
+
+def _run_old_state(legacy_steps, *, with_rule_engine=False):
+    caster, target = _caster(), _target()
+    bus = EventBus()
+    engine = RuleEngine(bus) if with_rule_engine else None
+    action = SpellAction(name="Spell", description="", spell_level=0,
+                         pipeline_effects=legacy_steps)
+    EffectPipeline(bus, DamageProcessor(bus), engine).run(caster, target, action)
+    return caster, target
+
+
+def _run_new_state(program_dicts):
+    caster, target = _caster(), _target()
+    bus = EventBus()
+    action = SpellAction(name="Spell", description="", spell_level=0)
+    resolve_blocks(caster, target, action, parse_program(program_dicts),
+                   event_bus=bus, damage_processor=DamageProcessor(bus))
+    return caster, target
+
+
+def test_grant_temporary_hp_parity():
+    legacy = [{"type": "grant_temporary_hp", "target": "defender", "amount": 10}]
+    program = [{"block": "grant_temporary_hp", "target": "defender", "amount": 10}]
+    _, old_t = _run_old_state(legacy)          # direct in old too; no rule engine
+    _, new_t = _run_new_state(program)
+    assert new_t.temporary_hp == old_t.temporary_hp == 10
+
+
+def test_apply_condition_parity():
+    legacy = [{"type": "apply_condition", "condition_type": "prone", "target": "defender"}]
+    program = [{"block": "apply_condition", "condition_type": "prone", "target": "defender"}]
+    _, old_t = _run_old_state(legacy, with_rule_engine=True)
+    _, new_t = _run_new_state(program)
+    old_types = sorted(c.condition_type.value for c in old_t.get_active_conditions())
+    new_types = sorted(c.condition_type.value for c in new_t.get_active_conditions())
+    assert new_types == old_types == ["prone"]
+
+
+def test_add_modifier_parity():
+    legacy = [{"type": "add_modifier", "target": "defender", "stat": "ac", "value": 2,
+               "source": "Shield of Faith"}]
+    program = [{"block": "add_modifier", "target": "defender", "stat": "ac", "value": 2,
+                "source": "Shield of Faith"}]
+    _, old_t = _run_old_state(legacy, with_rule_engine=True)
+    _, new_t = _run_new_state(program)
+    # AC modifier applied identically (base 13 + 2 = 15).
+    assert new_t.ac == old_t.ac == 15
+
+
+def test_grant_temp_hp_to_caster_parity():
+    legacy = [{"type": "grant_temporary_hp", "target": "caster", "amount": 8}]
+    program = [{"block": "grant_temporary_hp", "target": "caster", "amount": 8}]
+    old_c, _ = _run_old_state(legacy)
+    new_c, _ = _run_new_state(program)
+    assert new_c.temporary_hp == old_c.temporary_hp == 8
