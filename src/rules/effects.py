@@ -151,22 +151,17 @@ def force_concentration_check(effect: dict, ctx: dict, event: CombatEvent, event
 
     Required keys:  target (expr), dc (expr → int)
 
-    On a failed save, ``target.concentrating_on`` and
-    ``target.concentration_target`` are cleared, and the concentrated spell's
-    effect (including any :class:`StatModifier` entries) is removed from the
-    concentration target entity.
+    On a failed save, concentration ends and the concentrated spell's grants are
+    revoked. ``Entity.end_concentration`` disposes a new-engine lifetime scope
+    (identity-based teardown) *and* cleans up a legacy string-tagged effect, so
+    this one call covers both engines.
     """
     target = _resolve(effect["target"], ctx)
     dc = int(_resolve(effect["dc"], ctx))
     con_bonus = target.stat_block.get_saving_throw_bonus("constitution")
     roll = roll_d20() + con_bonus
     if roll < dc:
-        spell_name = target.concentrating_on
-        conc_target = target.concentration_target
-        target.concentrating_on = None
-        target.concentration_target = None
-        if conc_target is not None and spell_name:
-            conc_target.remove_effect(spell_name)
+        target.end_concentration()
 
 
 def cancel_event(effect: dict, ctx: dict, event: CombatEvent, event_bus: EventBus) -> None:

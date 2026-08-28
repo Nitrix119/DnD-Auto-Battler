@@ -25,6 +25,16 @@ def _target(block: Block, inv: Invocation):
     return inv.caster if block.get("target") == "caster" else inv.target
 
 
+def _own(inv: Invocation, handle) -> None:
+    """Register a grant's revoke handle with the open lifetime scope, if any.
+
+    Inside a ``lifetime`` block the scope takes ownership so teardown revokes the
+    grant; outside one the grant is instantaneous/permanent (the handle is dropped).
+    """
+    if inv.active_scope is not None:
+        inv.active_scope.add(handle)
+
+
 def apply_condition(block: Block, inv: Invocation) -> None:
     """Add a status condition to the target, emitting CONDITION_ADDED."""
     target = _target(block, inv)
@@ -37,7 +47,7 @@ def apply_condition(block: Block, inv: Invocation) -> None:
         source=str(block.get("source", "")),
         effect_name=str(block.get("effect_name", "")),
     )
-    target.add_condition(condition)
+    _own(inv, target.add_condition(condition))
     inv.event_bus.emit(
         EventType.CONDITION_ADDED,
         ConditionAddedData(entity=target, condition=condition),
@@ -54,7 +64,7 @@ def add_modifier(block: Block, inv: Invocation) -> None:
         source=str(block.get("source", "")),
         effect_name=str(block.get("effect_name", "")),
     )
-    target.add_stat_modifier(mod)
+    _own(inv, target.add_stat_modifier(mod))
 
 
 def grant_temporary_hp(block: Block, inv: Invocation) -> None:
@@ -65,7 +75,7 @@ def grant_temporary_hp(block: Block, inv: Invocation) -> None:
     except Exception:
         amount = 0
     if amount > 0:
-        target.add_temporary_hp(amount)
+        _own(inv, target.add_temporary_hp(amount))
         inv.context["temp_hp_granted"] = amount
 
 

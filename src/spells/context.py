@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional
 
 from src.models.entity import Entity
 from src.models.damage import Damage
+from src.models.lifetime import LifetimeScope
 from src.rules.expressions import build_context
 
 
@@ -74,6 +75,12 @@ class Invocation:
     # collects. Empty on a per-target invocation.
     targets: List[Entity] = field(default_factory=list)
     results: List["InvocationResult"] = field(default_factory=list)
+
+    # The lifetime scope currently open (set by a `lifetime` block for its `then`
+    # body): grants made under it register their revoke handle here so teardown
+    # revokes exactly what the spell granted. None outside a lifetime — grants
+    # are then instantaneous/permanent, as before.
+    active_scope: Optional[LifetimeScope] = None
 
     # Bookkeeping the result is derived from.
     dealt_damages: List[Damage] = field(default_factory=list)

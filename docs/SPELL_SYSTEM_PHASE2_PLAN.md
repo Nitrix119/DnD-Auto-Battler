@@ -182,7 +182,54 @@ coverage (Magic Missile, Scorching Ray, Eldritch Blast, and every AoE spell come
 - **Parity**: dual-run Fireball (AoE `roll_once` half-damage), Magic Missile, Scorching Ray against
   the legacy engine; extend `can_run_on_blocks` to accept AoE/multi_target once green.
 
-### 4.2 Lifetime scopes + grant handles — *do second*
+### 4.2 Lifetime scopes + grant handles — ✅ **DONE** (2026-08-29)
+
+**What shipped (and the one scoping call):**
+
+- **`LifetimeScope` + `RevokeHandle`** ([src/models/lifetime.py](../src/models/lifetime.py)) — a scope
+  owns an ordered list of revoke closures; `dispose()` runs them in reverse, once (idempotent); a grant
+  made after dispose is revoked immediately. `LifetimeKind` = `CONCENTRATION`/`ROUNDS`/`INSTANT`. It's a
+  **pure domain primitive** (placed in `models`, not `spells`) so `Entity` holds it with no
+  `models → spells` dependency.
+- **`Entity` grants return identity-based revoke handles** — `add_stat_modifier` / `add_condition` /
+  `add_temporary_hp` now return a `RevokeHandle` that removes *exactly* that grant by object identity
+  (fixes the string-tag over-remove when two effects share a name). Return values are backward-compatible
+  (old callers ignore them). `Entity` gained `concentration_scope` + a `lifetimes` list, and
+  `begin_concentration` / `end_concentration` / `_dispose_current_concentration`: concentration is a
+  first-class lifetime; starting a new one disposes the prior atomically. The legacy string fields
+  (`concentrating_on`/`concentration_target`) still work — `_dispose_current_concentration` tears down
+  whichever is present, so legacy spells are unchanged (parity).
+- **`lifetime` wrapper block** ([blocks/lifetime.py](../src/spells/blocks/lifetime.py)) — opens a fresh
+  scope, makes it `Invocation.active_scope` while its `then` runs (grants register their handles into
+  it via `blocks/state.py`'s `_own`), then binds it: `kind: concentration` → the caster's concentration;
+  otherwise → the caster's `lifetimes`. Grants **outside** a lifetime stay instantaneous/permanent.
+- **One minimal legacy touch:** the global concentration-break rule's `force_concentration_check` now
+  calls `Entity.end_concentration()` (which disposes a scope *and* cleans a legacy string tag) instead
+  of inlining the string cleanup — so a new-engine scoped concentration breaks correctly on a failed
+  CON save. Behaviour-preserving for legacy spells.
+- **E12 resolved by construction:** scopes are per-battle state living on `Entity`, never in the
+  process-global `REGISTRY` (which stays code — the block vocabulary). No shared mutable process state.
+
+**The scoping call (important for whoever does 4.3):** every shipped persistent spell uses
+`add_entity_effect`, whose fold into blocks is **4.3's** job, so 4.2 could **not** route a shipped JSON
+spell onto the new engine without doing 4.3's work. 4.2 therefore delivers the *mechanism*, proven
+**end-to-end through the real evaluator + `Entity` + the actual global concentration rule** (not just
+unit tests): [tests/test_block_lifetime.py](../tests/test_block_lifetime.py) runs a native "Shield of
+Faith" program (`lifetime{concentration}{ add_modifier ac+2 }`), then drives real damage through
+`DamageProcessor` + the concentration rule and asserts the failed CON save disposes the scope and
+revokes the buff — plus atomic replacement and the outside-a-lifetime permanence case. **Shield of Faith
+and the other persistent spells are migrated onto the engine in 4.3**, where `add_entity_effect` folds
+in and the adapter learns to emit `lifetime{…}` programs.
+
+- **Tests:** `tests/test_lifetime_scope.py` (scope/handle unit), `tests/test_entity_lifetimes.py` (grant
+  handles + concentration on `Entity`), `tests/test_block_lifetime.py` (the end-to-end proof). Full
+  suite green (662).
+- **Deferred (not needed yet, no test demands them):** a **duration clock** — nothing ticks `ROUNDS`
+  scopes down (matching the pre-existing engine, which never expired durations either); a multi-target
+  concentration (one scope for a whole AoE) — `for_each_target` gives each element its own invocation,
+  so a concentration inside it would bind per-element; revisit when a spell needs it.
+
+**Original sketch (kept for the record):**
 
 - A **lifetime-scope** object *owns* revoke handles; every grant (modifier, condition, temp HP,
   granted action, later a rider subscription, later a summoned creature) returns a revoke handle it
@@ -265,22 +312,32 @@ AST-whitelist expression sandbox · EventBus as the substrate for cross-cutting 
 
 ## 6. The immediate next step
 
-**4.1 is done** (see the ✅ block in §4.1). **The re-plan checkpoint after 4.1 is reached — next is
-4.2 (lifetime scopes + grant handles).**
+**4.1 and 4.2 are done** (see the ✅ blocks in §4.1 / §4.2). **Next is 4.3 — inline trigger blocks +
+the entity-effect fold + `BUILTIN_EFFECTS` deletion**, the largest Phase-2 item, where the second
+vocabulary finally dies and persistent spells become single files on the new engine.
 
-Before starting 4.2, re-derive its shape from the code as it now stands: the grant blocks
-(`apply_condition`, `add_modifier`, `grant_temporary_hp`) currently mutate the target and rely on the
-legacy string-tag (`source`/`effect_name`) cleanup. 4.2 introduces a **lifetime-scope** object that
-owns revoke handles — every grant returns a handle the scope owns; teardown walks them in reverse;
-concentration is one lifetime kind (replacing it disposes the old scope atomically). This touches
-`Entity` (where grants live) and must resolve the per-session registry-state isolation concern (E12).
-Keep it behind parity for the spells that currently use durations/concentration. It needs neither
-iterators (done) nor triggers (4.3), but 4.3's entity-effect fold depends on it.
+4.3 stands directly on 4.2's substrate. Re-derive its shape from the code as it now stands:
 
-_The 4.1 approach, for reference: add `for_each_target` + its `roll_once` shared-roll seeding, factor
-the per-target run so the flat and iterator paths share one orchestration, turn on the arity linter,
-wrap set-targeted spells in the adapter, and extend `can_run_on_blocks` — all dual-run green against
-the legacy fan-out._
+- **Trigger blocks** (`on_hit`, `on_turn`, `on_damage`, …) register their `then` sub-program against an
+  EventBus event, **scoped to a lifetime** (the `lifetime` block from 4.2 — a trigger subscription is
+  just another grant whose revoke handle the scope owns, so concentration/duration teardown
+  unsubscribes it for free). They run in a **fresh per-invocation context** synthesised from the event,
+  via a **bounded work queue** with a depth guard for re-entrant events (design §6.1/§6.4).
+- **Replace `add_entity_effect`** (retired, not ported): a persistent effect becomes a `lifetime` scope
+  wrapping state blocks **+ trigger blocks**, authored inline in one spell file. Teach the adapter to
+  translate the legacy `add_entity_effect` + `on_apply` + entity-effect-rule shape into a `lifetime{…}`
+  program (extending 4.2's `lifetime` block), repoint the rule engine's effect dispatch at the block
+  registry, migrate `rules/entity_effects/*`, and delete `BUILTIN_EFFECTS`.
+- **Relax the router's reactive-effects guard** (deviation #4) as triggers subsume `InjectPipelineDamageStep`.
+- **Headline parity result:** Vampiric Touch and Armor of Agathys become single files; Shield of Faith /
+  Longstrider / Haste / Charm Person come onto the new engine (Shield of Faith's `lifetime{…}` program
+  already exists and is tested — it just needs routing from JSON).
+- **Name the persistent-effect concept here**, with the lifetime-scope shape (the open decision in §5).
+
+_The 4.2 approach, for reference: a pure `LifetimeScope`/`RevokeHandle` in `models`; `Entity` grants
+return identity handles and hold a first-class `concentration_scope`; a `lifetime` wrapper block whose
+`then` grants register into the open scope; the concentration-break rule routed through
+`Entity.end_concentration`; proven end-to-end via a native Shield of Faith program + real damage._
 
 _See also: [SPELL_SYSTEM_BUILD_PLAN.md](SPELL_SYSTEM_BUILD_PLAN.md) (Phase-1 architecture + interface
 decisions), [SPELL_SYSTEM_DESIGN.md](SPELL_SYSTEM_DESIGN.md) (design rationale), and the two decision

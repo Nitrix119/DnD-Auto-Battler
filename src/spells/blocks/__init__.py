@@ -9,3 +9,4 @@ from . import damage  # noqa: F401
 from . import healing  # noqa: F401
 from . import state  # noqa: F401
 from . import iterators  # noqa: F401
+from . import lifetime  # noqa: F401
