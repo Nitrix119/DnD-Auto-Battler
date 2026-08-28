@@ -217,6 +217,21 @@ leave a brief note here.
 - **Rule going forward:** the concrete, testable rule.
 ```
 
+### 2026-08-29 — Black must be version-pinned; the repo predates the 2024 style
+- **Context:** Running `black src/ …` on files touched during the spell rework produced huge
+  whole-file reformats (even on files with no functional change), inflating every diff.
+- **What went wrong:** `pyproject.toml` only floored `black>=23.0`, so a fresh env resolved to
+  Black 26.x. The repo is formatted to Black's **2023 stable style**; Black 24.0 changed the
+  stable style (e.g. a blank line after a class docstring, import re-explosion), so any 24.0+
+  Black rewraps the *entire tree* — nothing to do with the edit. `black --check` wants to
+  reformat files never touched; the drift is version-driven, not line-length-driven (churns at
+  any `--line-length`).
+- **Rule going forward:** Black is now pinned `==23.12.1` in `pyproject.toml` — do **not** bump it
+  without a deliberate, standalone "reformat the whole repo" commit. If your environment has a
+  newer Black, **do not run it on modified files**; hand-match the surrounding style instead, and
+  keep the commit to the functional change. (E501 is not enforced here — the tree has ~460 lines
+  >79 chars; match neighbours, not flake8's default width.)
+
 ### 2026-08-08 — A structure-only test passed while the feature crashed
 - **Context:** Reviewing the spell pipeline; the `grant_temporary_hp` step was documented
   and had a test.
