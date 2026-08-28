@@ -10,15 +10,22 @@ first spell proven at parity. Later slices extend the ported blocks and add
 spells to ``PARITY_SPELLS``.
 """
 
+import glob
+import os
+
 from src.models import AbilityScores, StatBlock, Entity, SpellAction
 from src.models.damage import Damage, DamageType
 from src.combat.event_bus import EventBus
 from src.combat.damage_processor import DamageProcessor
 from src.combat.effect_pipeline import EffectPipeline
 from src.rules.rule_engine import RuleEngine
+from src.loaders import StatBlockLoader
 from src.spells.block import parse_program
 from src.spells.evaluator import resolve as resolve_blocks
+from src.spells.adapter import to_program, can_run_on_blocks
 from src.utils import dice
+
+SPELLS_DIR = os.path.join(os.path.dirname(__file__), "..", "examples", "spells")
 
 
 # ── Fixtures: a caster with a real spell attack bonus, and a target ─────────────
@@ -264,3 +271,44 @@ def test_grant_temp_hp_to_caster_parity():
     old_c, _ = _run_old_state(legacy)
     new_c, _ = _run_new_state(program)
     assert new_c.temporary_hp == old_c.temporary_hp == 8
+
+
+# ── Corpus parity: real shipped spells the router sends to the new engine ───────
+
+def _spell_file_parity(spell, *, seeds=range(1, 26), target_hp=90, pre_damage_target=35):
+    program = to_program(spell.pipeline_effects)
+    for seed in seeds:
+        dice.seed_rng(seed)
+        c1, t1 = _caster(), _target(target_hp)
+        _wound(t1, pre_damage_target)
+        bus1 = EventBus()
+        old = EffectPipeline(bus1, DamageProcessor(bus1), None).run(c1, t1, spell)
+
+        dice.seed_rng(seed)
+        c2, t2 = _caster(), _target(target_hp)
+        _wound(t2, pre_damage_target)
+        bus2 = EventBus()
+        new = resolve_blocks(c2, t2, spell, program,
+                             event_bus=bus2, damage_processor=DamageProcessor(bus2))
+
+        for f in _COMPARED:
+            assert getattr(new, f) == getattr(old, f), (
+                f"{spell.name} seed {seed}: {f!r} diverged: "
+                f"new={getattr(new, f)} old={getattr(old, f)}"
+            )
+        assert t1.hp == t2.hp, f"{spell.name} seed {seed}: target HP diverged"
+        assert c1.hp == c2.hp, f"{spell.name} seed {seed}: caster HP diverged"
+
+
+def test_expressible_corpus_spells_reach_parity():
+    """Every shipped spell the router accepts must resolve identically on both engines."""
+    files = sorted(glob.glob(os.path.join(SPELLS_DIR, "*.json")))
+    assert files, "no spell files found"
+    tested = []
+    for f in files:
+        spell = StatBlockLoader.load_spell_from_json(f)
+        if can_run_on_blocks(spell):
+            _spell_file_parity(spell)
+            tested.append(spell.name)
+    # Sanity: the router is actually sending a meaningful set to the new engine.
+    assert len(tested) >= 6, f"expected several expressible spells, got {tested}"

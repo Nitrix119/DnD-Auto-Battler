@@ -67,6 +67,12 @@ class SpellResolver:
         if slot_level is None:
             slot_level = action.spell_level
 
+        # Route to the new block evaluator for spells it can express identically;
+        # everything else stays on the legacy pipeline (Phase 1 boundary).
+        from src.spells.adapter import can_run_on_blocks
+        if can_run_on_blocks(action) and not self._caster_has_reactive_effects(caster):
+            return self._resolve_via_blocks(caster, defenders, action, slot_level)
+
         seed_damages = self._preroll_pipeline_damage(action, slot_level)
         results: List[Tuple[bool, int, str, Optional[dict]]] = []
         for defender in defenders:
@@ -107,7 +113,59 @@ class SpellResolver:
         result = pipeline.run(
             caster, defender, action, seed_damages=seed_damages, slot_level=slot_level
         )
+        return self._format_result(caster, defender, action, result)
 
+    @staticmethod
+    def _caster_has_reactive_effects(caster: Entity) -> bool:
+        """Keep casts with reactive entity effects on the legacy engine (Phase 1).
+
+        A reactive effect that *injects into the pipeline* — Colossus Slayer's
+        ``InjectPipelineDamageStep`` appends a damage step to the running action
+        on ATTACK_HIT — has no equivalent on the new engine yet; such effects
+        become trigger blocks in Phase 2. (Event-modifying effects like advantage
+        or resistance already work identically on both engines, but this stays
+        conservative: any active effect on the caster routes to legacy.)
+        """
+        return any(caster.active_effects.values())
+
+    def _resolve_via_blocks(
+        self,
+        caster: Entity,
+        defenders: List[Entity],
+        action: SpellAction,
+        slot_level: Optional[int],
+    ) -> List[Tuple[bool, int, str, Optional[dict], int, Optional[Entity]]]:
+        """Resolve via the new block evaluator (one invocation per defender).
+
+        Reached only for spells the new engine can express identically (see
+        ``src.spells.adapter.can_run_on_blocks``); everything else uses the
+        legacy pipeline above. Imported lazily to avoid an import cycle
+        (combat → spells → combat).
+        """
+        from src.spells.evaluator import resolve as resolve_blocks
+        from src.spells.adapter import to_program
+
+        program = to_program(action.pipeline_effects)
+        results = []
+        for defender in defenders:
+            result = resolve_blocks(
+                caster, defender, action, program,
+                event_bus=self._event_bus,
+                damage_processor=self._damage_processor,
+                rule_engine=self.rule_engine,
+                slot_level=slot_level,
+            )
+            results.append(self._format_result(caster, defender, action, result))
+        return results
+
+    def _format_result(
+        self,
+        caster: Entity,
+        defender: Entity,
+        action: SpellAction,
+        result,
+    ) -> Tuple[bool, int, str, Optional[dict], int, Optional[Entity]]:
+        """Format an engine result (legacy or block) into the per-defender tuple."""
         damage_dealt = result.damage_dealt
         hit = result.hit
         healing_total = result.healing_total
