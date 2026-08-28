@@ -82,6 +82,11 @@ class Invocation:
     # are then instantaneous/permanent, as before.
     active_scope: Optional[LifetimeScope] = None
 
+    # When a trigger fires, the data of the event that fired it — exposed as
+    # ``event.<field>`` to the ``then`` body's expressions (e.g. a rider healing
+    # for ``event.total // 2``). None during an ordinary cast.
+    event_data: Optional[Dict[str, Any]] = None
+
     # Bookkeeping the result is derived from.
     dealt_damages: List[Damage] = field(default_factory=list)
     healing_total: int = 0
@@ -143,12 +148,18 @@ def eval_context(inv: "Invocation") -> Dict[str, Any]:
     expressions evaluate identically on both engines.
     """
     public = {k: v for k, v in inv.context.items() if not k.startswith("_")}
-    event_data: Dict[str, Any] = {"caster": inv.caster, "defender": inv.target}
+    # A fired trigger carries the real event's data; expose it as event.<field>,
+    # keeping caster/defender/action as fallbacks so both cast and trigger
+    # expressions resolve. During an ordinary cast event_data is None.
+    event_data: Dict[str, Any] = dict(inv.event_data) if inv.event_data else {}
+    event_data.setdefault("caster", inv.caster)
+    event_data.setdefault("defender", inv.target)
     if inv.action is not None:
-        event_data["action"] = inv.action
+        event_data.setdefault("action", inv.action)
     return build_context(
         event_data,
         save_success=inv.context["save_success"],
         save_roll=inv.context["save_roll"],
         context=SimpleNamespace(**public),
+        entity=inv.caster,
     )

@@ -244,7 +244,34 @@ in and the adapter learns to emit `lifetime{…}` programs.
 
 ### 4.3 Inline trigger blocks — *and the entity-effect fold / `BUILTIN_EFFECTS` deletion*
 
-This is the largest Phase-2 item and where the second vocabulary finally dies.
+This is the largest Phase-2 item and where the second vocabulary finally dies. Being done in
+reviewable **sub-slices**, each independently green and committed:
+
+- **4.3a — trigger-block foundation ✅ DONE (2026-08-29).** The `trigger` block
+  ([blocks/triggers.py](../src/spells/blocks/triggers.py)): args `event` (an `EventType` name), a
+  firing guard `when` (a **distinct key from the evaluator's install-time `condition`** — the collision
+  was the first bug: `run_block` was evaluating a trigger's guard at install time against a context with
+  no event, so the trigger never subscribed), an optional `target` expression, and a `then` body. On
+  run it captures the defining caster + collaborators, subscribes a handler to the event, and — if a
+  `lifetime` scope is open — registers the **unsubscribe as a revoke handle the scope owns** (a
+  subscription is just another grant; concentration/duration teardown unsubscribes the rider for free).
+  On fire it builds a **fresh `Invocation` carrying the event's data** (`Invocation.event_data`, exposed
+  as `event.<field>` and `entity`/`caster` via `eval_context`), checks `when`, binds `target`, and runs
+  `then`. A module-level **depth guard** (`_MAX_TRIGGER_DEPTH`) bounds re-entrant firings.
+  Proven in [tests/test_block_triggers.py](../tests/test_block_triggers.py): a Vampiric-Touch-style heal
+  rider fires on `DAMAGE_DEALT`, is gated by `when`, and **unsubscribes when its concentration lifetime
+  is disposed**; the depth guard blocks at the cap. Full suite green (667). *No content migrated and
+  `BUILTIN_EFFECTS` untouched yet — that's 4.3b/4.3c.*
+- **4.3b — the entity-effect fold (next).** Teach the adapter to translate the legacy `add_entity_effect`
+  + `on_apply` + entity-effect-rule shape into a `lifetime{ state + trigger blocks }` program; relax the
+  router's reactive-effects guard as triggers subsume `InjectPipelineDamageStep`. Parity-gate each
+  migrated spell (Vampiric Touch, Armor of Agathys, Shield of Faith, Longstrider, Haste, Charm Person).
+- **4.3c — repoint dispatch + delete `BUILTIN_EFFECTS`.** Repoint the rule engine's effect dispatch at
+  the block registry, migrate `rules/entity_effects/*`, delete `BUILTIN_EFFECTS`, and name the
+  persistent-effect concept. The duration clock (`RuleEngine._tick_durations` on `TURN_END`) must be
+  taught to dispose `ROUNDS` lifetime scopes so migrated durations still expire.
+
+**Original sketch (kept for the record):**
 
 - **Trigger blocks** (`on_hit`, `on_turn`, `on_damage`, …) register a `then` sub-program against an
   event, scoped to a lifetime (4.2), running in a **fresh per-invocation context** (design §6.1) via a
