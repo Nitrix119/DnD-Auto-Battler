@@ -271,6 +271,11 @@ the gate every block port is checked against, extended spell-by-spell as blocks 
 
 ## 4. Phase 2 — Capabilities as blocks on the evaluator
 
+> **Phase 1 is complete; Phase 2+ is now planned in
+> [SPELL_SYSTEM_PHASE2_PLAN.md](SPELL_SYSTEM_PHASE2_PLAN.md)**, which supersedes §4–§5 here and carries
+> the current code state, the deviations from this plan, and the refined next steps. The sections below
+> are kept as the original outline for context.
+
 Each is now a block family on the Phase-1 substrate; none was expressible on the flat loop. Ordered so
 each is independently shippable and testable.
 
