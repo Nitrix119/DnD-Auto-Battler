@@ -13,11 +13,13 @@
 > **Guiding principle (decided 2026-08-25): destroy debt.** This is treated as a near-full rewrite of
 > spell evaluation, not an incremental patch. The old system was accreted slowly and is not judged
 > sufficient going forward. Every choice favours **flexibility, modularity, and low debt** over
-> continuity with the old shapes. Concretely: the two vocabularies **collapse aggressively** into one
-> block catalogue in Phase 1 (§3.3) — no lingering `BUILTIN_EFFECTS`, no permanent compatibility
-> shims — and the new engine lives in its **own module tree**, not grown onto `effect_pipeline.py`.
-> The only thing we hold sacred is *observable behaviour*, pinned by the parity corpus (§3.5); the
-> internals are free to be rebuilt from clean interfaces.
+> continuity with the old shapes. Concretely: the two vocabularies **collapse into one block
+> catalogue** — the instantaneous twins in Phase 1 (§3.3, done), and the entity-effect / rule-engine
+> half in Phase 2 where lifetimes + triggers make it clean (§4.3); `BUILTIN_EFFECTS` is *deleted* at
+> that point, never shimmed forward permanently. `add_entity_effect` is retired rather than ported, so
+> no throwaway bridge is built. The new engine lives in its **own module tree**, not grown onto
+> `effect_pipeline.py`. The only thing we hold sacred is *observable behaviour*, pinned by the parity
+> harness (§3.5); the internals are free to be rebuilt from clean interfaces.
 
 ---
 
@@ -102,19 +104,36 @@ file shape. No new authoring capability yet; this is the substrate.
 - Per-invocation context: a fresh context per program invocation (top-level cast, and later per
   iterator element / per trigger firing), seeded like `run` does today.
 
-### 3.3 Re-express the 8 step types as blocks — aggressive fold (decided)
-- Port `attack_roll, saving_throw, damage, healing, add_entity_effect, grant_temporary_hp,
-  apply_condition, add_modifier` to block handlers, and **in the same phase collapse every
-  pipeline/`BUILTIN_EFFECTS` twin** (`damage`/`DealDamage`, `healing`/`HealTarget`, temp-HP,
-  condition, modifier, and the advantage/crit/etc. helpers) into **one superset block each**, keeping
-  the richer pipeline semantics (design §6.2).
-- **`BUILTIN_EFFECTS` is retired, not shimmed.** The rule engine's effect dispatch is repointed at the
-  block registry so entity-effect JSON and spell JSON draw from the *same* single vocabulary. There is
-  one block catalogue, full stop — the two-vocabulary seam and its synthetic stub events are deleted,
-  not preserved behind a compatibility layer. (The legacy *step-shape* adapter in §3.4 is the only
-  transitional code, and it too dies in Phase 3.)
-- Rationale: the split vocabulary is the single biggest source of debt in the current system; folding
-  it later would mean building the evaluator around a seam we intend to remove. Remove it first.
+### 3.3 Re-express the instantaneous step types as blocks — aggressive fold (decided)
+- Port the **instantaneous** step types — `attack_roll, saving_throw, damage, healing,
+  grant_temporary_hp, apply_condition, add_modifier` — to block handlers, and **in the same phase
+  collapse every pipeline/`BUILTIN_EFFECTS` twin among them** (`damage`/`DealDamage`,
+  `healing`/`HealTarget`, temp-HP, condition, modifier, advantage/crit helpers) into **one superset
+  block each**, keeping the richer pipeline semantics (design §6.2). The state blocks are done
+  *directly*, deleting the old synthetic-stub-event bridge to the rule engine. **Done (slices 2–4).**
+- **`add_entity_effect` is NOT ported in Phase 1 — it is retired, not ported (revised 2026-08-25).**
+  It is the seam to the *other* subsystem (named entity-effect `Rule`s in `rules/entity_effects/` that
+  subscribe to events, bound to grants only by string tags — the "effects vs modifiers" disconnect).
+  In the new model a persistent effect **dissolves** into a **lifetime scope** (design §6.3/§6.5)
+  wrapping **state blocks** (immediate grants — already built) + **trigger blocks** (reactive riders).
+  That needs lifetime scopes (Phase 2.2) and trigger blocks (Phase 2.3), which do not exist in Phase 1
+  — and deleting `BUILTIN_EFFECTS` requires both, because entity-effect rules run in an event-driven
+  model that only unifies with blocks once a trigger can synthesise an invocation from an event.
+- **So the entity-effect fold *and* the `BUILTIN_EFFECTS` deletion move to Phase 2** (§4.2/§4.3), done
+  properly on lifetimes + triggers, where Vampiric Touch / Armor of Agathys collapse into single
+  files. Porting `add_entity_effect` in Phase 1 would mean a throwaway bridge to a subsystem we are
+  about to scrap — exactly the debt this rewrite exists to avoid.
+- Consequence: the legacy engine + rule engine + `BUILTIN_EFFECTS` + entity-effect files **stay alive
+  through Phase 1** (reached via the router, §3.4) and are deleted in **Phase 3**.
+- **Multi-component damage + per-entry resistance (planned superset detail).** Today one `damage`
+  block carries one type; multi-type damage (a smite: slashing + fire + radiant; a fire weapon) is
+  several blocks, and per-type resistance works *only* because each block is a single-element
+  `apply_damage` call. The resistance/immunity/vulnerability rules inspect `damage_list[0]` and apply
+  an **unfiltered** `ModifyDamage` — so a genuine multi-type bundle would resist incorrectly. The
+  new `damage` block should accept a **list of typed components** applied as one bundle (one hit, one
+  `DAMAGE_INCOMING`), and resistance must become **per-entry**. Fix shape needs a short deliberation
+  first (see [[damage-typing-per-entry-resistance]]); do it when finishing the damage block, and
+  parity-gate it (touches the rule layer).
 - **Multi-component damage + per-entry resistance (planned superset detail).** Today one `damage`
   block carries one type; multi-type damage (a smite: slashing + fire + radiant; a fire weapon) is
   several blocks, and per-type resistance works *only* because each block is a single-element
@@ -128,17 +147,28 @@ file shape. No new authoring capability yet; this is the substrate.
 
 ### 3.4 Shape-routing + backwards-compat adapter
 - Route by shape (decided, §6.10): a file with a `program` array → new evaluator; a legacy `effects`
-  array → old path (or an **adapter** that reads legacy step dicts as blocks). Never route by name.
-- The adapter lets the 22 existing spells run on the new evaluator without being rewritten yet.
+  array → old path. Never route by name.
+- A spell also routes to the **legacy engine** whenever its program needs a capability the new engine
+  does not have yet — `add_entity_effect` (lifetimes/triggers, Phase 2), AoE `roll_once` fan-out and
+  `multi_target` (iterators, Phase 2). The router picks the new engine only for spells fully
+  expressible with the ported instantaneous blocks; everything else stays on legacy until its blocks
+  land. This is the "old path stays alive" mechanism, not a stopgap to rush past.
+- A small **legacy adapter** reads a legacy `effects` step-dict as a block (mapping `type`→`block`), so
+  an instantaneous legacy spell can be *run on the new engine* for the parity harness without being
+  rewritten. It dies in Phase 3.
 
 ### 3.5 The parity gate (non-negotiable)
-- **Dual-run** old vs new over the seeded 22-spell conformance corpus and assert identical
-  `PipelineResult`s / HP / conditions before the new evaluator becomes the default (design §6.2/§6.10).
-- Only after green parity does the default flip. The old pipeline stays reachable until Phase 3.
+- **Dual-run** old vs new under one seed and assert identical `PipelineResult` / HP / conditions before
+  the new evaluator handles a spell in production (design §6.2/§6.10).
+- Phase 1's parity target is the **instantaneous-expressible subset** of the corpus (single-target
+  attack/save/damage/heal/condition spells — Fire Bolt, Guiding Bolt, Inflict Wounds, Sacred Flame,
+  Cure Wounds, …). The remaining spells (AoE, multi-target, concentration/reactive) reach parity as
+  their Phase-2 blocks land; **full-corpus parity is a Phase-2 completion milestone**, not a Phase-1
+  one. The old pipeline stays reachable until Phase 3.
 
-**Phase 1 deliverable:** the new evaluator is the default for spells authored as `program`, runs all
-legacy content identically via the adapter, and has zero new authoring features — a pure, provable
-substrate swap.
+**Phase 1 deliverable:** the new evaluator is live and the default for the spells it can already
+express (proven identical to the legacy engine, seed-for-seed); every other spell transparently runs
+on the legacy engine via the router. Zero new authoring features — a provable substrate beachhead.
 
 ### 3.6 Phase 1 architecture (concrete)
 
@@ -220,17 +250,22 @@ before code are marked ⚑):
   compiles weapon attacks into a **block program** instead of `pipeline_effects`, preserving the one
   weapon/spell path on the new engine.
 
-**Parity harness (built first, in 1.2).** A test that, for every corpus spell, resolves it under one
-seed on both engines and asserts identical `PipelineResult` + resulting HP/conditions. This is the
-gate; it exists before the first block is ported so every port is checked against it.
+**Parity harness (built alongside the first block, slice 2).** A dual-run test that resolves a spell
+under one seed on both engines and asserts identical `PipelineResult` + resulting HP/conditions. It is
+the gate every block port is checked against, extended spell-by-spell as blocks land.
 
 **Phase 1 commit sequence** (small, each green):
-1. `block.py` + `contract.py` + `registry.py` + the parity harness scaffold (no behaviour).
-2. `evaluator.py` with nesting; port `attack_roll` + `damage` (superset) → first parity spell (Fire Bolt).
-3. Port `saving_throw` + `healing` (superset) → Fireball, Cure Wounds parity.
-4. Port state blocks (condition/modifier/temp-hp, folding the twins) → save-or-effect spells parity.
-5. Port `add_entity_effect`, repoint rule-engine dispatch at the registry, delete `BUILTIN_EFFECTS`.
-6. Shape-routing + legacy adapter; flip default; full corpus parity green.
+1. **Done** — `block.py` + `contract.py` + `registry.py` (foundations, no behaviour).
+2. **Done** — `evaluator.py` with nesting + the parity harness; port `attack_roll` + superset
+   `damage` → Fire Bolt parity (incl. upcast scaling).
+3. **Done** — port `saving_throw` + superset `healing` + the expression context & general `condition`
+   guard → save-for-half / save-negates / Cure Wounds / Vampiric-heal-from-damage parity.
+4. **Done** — state blocks (condition/modifier/temp-HP) done *directly*, deleting the synthetic
+   stub-event bridge → condition/modifier/temp-HP parity on entity state.
+5. **Shape-router + legacy adapter + subset parity** (the final Phase-1 slice). Route by shape; run
+   the instantaneous-expressible corpus spells on the new engine via the adapter and prove parity;
+   everything else (entity-effect, AoE, multi-target) routes to legacy. `add_entity_effect` and the
+   `BUILTIN_EFFECTS` deletion are **not** here — they move to Phase 2 (§3.3).
 
 ---
 
@@ -254,10 +289,17 @@ each is independently shippable and testable.
 - Resolve the **per-session registry isolation** (E12) here, where lifetimes make shared process
   state actually bite.
 
-### 4.3 Inline trigger blocks
+### 4.3 Inline trigger blocks — and the entity-effect fold / `BUILTIN_EFFECTS` deletion
 - `on_hit` / `on_turn` / `on_damage` register a sub-program against an event, scoped to a lifetime,
   with a **fresh per-invocation context** (design §6.1) and a **bounded work queue** with a depth
   guard for re-entrant events (design §6.4).
+- **This is where `add_entity_effect` is replaced** (not ported — see §3.3). With lifetime scopes
+  (4.2) and trigger blocks in hand, a persistent effect becomes a **lifetime scope wrapping state
+  blocks + trigger blocks** authored inline. The rule engine's effect dispatch is repointed at the
+  block registry (a trigger firing synthesises an invocation from its event), the named
+  entity-effect files are migrated or become a shared library, and **`BUILTIN_EFFECTS` is deleted**.
+  The forward name for the persistent-effect concept is decided here, with the lifetime-scope shape —
+  the old "entity effect" name is retired, not carried forward.
 - **Headline result:** migrate Vampiric Touch and Armor of Agathys to **single files** — the split
   the whole vision exists to erase.
 
