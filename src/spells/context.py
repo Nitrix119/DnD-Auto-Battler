@@ -46,16 +46,34 @@ def seed_context(slot_level: int) -> Dict[str, Any]:
 
 @dataclass
 class Invocation:
-    """Mutable state for one run of a block program over one target."""
+    """Mutable state for one run of a block program over one target.
+
+    Two roles:
+
+    - A **per-target** invocation (the common case): ``target`` is the single
+      current target and the run writes into ``context``. Iterator ``then`` bodies
+      and the flat single-target path both use this.
+    - A **root** invocation for a set-consuming program: ``targets`` holds the whole
+      set an iterator (``for_each_target``) fans over, appending each element's
+      :class:`InvocationResult` to ``results``. Its ``target`` is a placeholder
+      (the caster) that no block reads — the arity lint guarantees only a
+      set-consuming block runs at the root, and those read ``targets``, never
+      ``target``.
+    """
 
     caster: Entity
-    target: Entity
-    action: Any                      # SpellAction-like: .name, .spell_level
+    target: Entity  # the current single target (caster placeholder at an iterator root)
+    action: Any  # SpellAction-like: .name, .spell_level
     event_bus: Any
     damage_processor: Any
     rule_engine: Any = None
     slot_level: Optional[int] = None
     context: Dict[str, Any] = field(default_factory=dict)
+
+    # The target *set* an iterator consumes, and the per-element results it
+    # collects. Empty on a per-target invocation.
+    targets: List[Entity] = field(default_factory=list)
+    results: List["InvocationResult"] = field(default_factory=list)
 
     # Bookkeeping the result is derived from.
     dealt_damages: List[Damage] = field(default_factory=list)

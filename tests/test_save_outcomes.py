@@ -346,10 +346,11 @@ class TestFireballIntegration:
         dp = DamageProcessor(bus)
         resolver = SpellResolver(bus, dp)
 
-        # Patch roll_formula so the 8d6 roll is deterministic (returns 24)
-        # (fireball uses roll_once, so the pre-roll happens in spell_resolver)
+        # Patch roll_formula so the 8d6 roll is deterministic (returns 24).
+        # Fireball uses roll_once, so the shared pre-roll now happens in the
+        # for_each_target iterator (the new block engine); patch it there.
         # AND roll_d20 so the save succeeds (20 >= wizard DC 15)
-        with patch("src.combat.spell_resolver.roll_formula", return_value=24), \
+        with patch("src.spells.blocks.iterators.roll_formula", return_value=24), \
              patch("src.utils.saving_throw.roll_d20", return_value=20):
             resolver.resolve(wizard, [target], fireball)
 
@@ -363,7 +364,7 @@ class TestFireballIntegration:
         dp = DamageProcessor(bus)
         resolver = SpellResolver(bus, dp)
 
-        with patch("src.combat.spell_resolver.roll_formula", return_value=24), \
+        with patch("src.spells.blocks.iterators.roll_formula", return_value=24), \
              patch("src.utils.saving_throw.roll_d20", return_value=1):
             resolver.resolve(wizard, [target], fireball)
 
@@ -379,7 +380,7 @@ class TestFireballIntegration:
         resolver = SpellResolver(bus, dp)
 
         rolls = iter([20, 1])  # saver succeeds, failer fails
-        with patch("src.combat.spell_resolver.roll_formula", return_value=24), \
+        with patch("src.spells.blocks.iterators.roll_formula", return_value=24), \
              patch("src.utils.saving_throw.roll_d20", side_effect=lambda: next(rolls)):
             resolver.resolve(wizard, [saver, failer], fireball)
 

@@ -115,11 +115,53 @@ Read this before planning any Phase-2 work — several original assumptions chan
 Each is a block family on the Phase-1 substrate; ordered so each is independently shippable and
 parity-gated. **Re-plan checkpoints after 4.1 and after 4.2.**
 
-### 4.1 Targeting sets + iterator blocks (and fold AoE + multi_target in) — *do first*
+### 4.1 Targeting sets + iterator blocks (and fold AoE + multi_target in) — ✅ **DONE** (2026-08-29)
 
 **Goal:** move all fan-out out of `SpellResolver` into the program, as iterator blocks, and turn on
 arity enforcement. This is the most self-contained Phase-2 step and immediately expands new-engine
 coverage (Magic Missile, Scorching Ray, Eldritch Blast, and every AoE spell come home).
+
+**What shipped (and where it deviated from the sketch below):**
+
+- **`for_each_target` iterator** (`src/spells/blocks/iterators.py`), `target_arity=SET`. It reads the
+  target set from a **root `Invocation`** (`targets`) and runs its `then` body once per element via a
+  fresh per-target child invocation, collecting one `InvocationResult` each into `root.results`. The
+  single per-target execution primitive (SPELL_HIT/DAMAGE_DEALT orchestration) is factored into
+  `evaluator._run_one_target`, shared by the flat single-target path and each iterator element — the
+  seam that keeps both paths at parity.
+- **`roll_once` is the iterator's property**, as planned: the iterator pre-rolls each `roll_once`
+  damage block in its `then` body once (with slot scaling) and seeds every child via
+  `context["_shared_rolls"]`, keyed by `id(block)`. The `damage` block only **consumes** a seeded
+  total (no re-roll, no crit-double) — the one interpretation of the sketch: the flag stays as data on
+  the damage JSON, but producing/sharing lives in the iterator, not the block.
+- **Arity linter** (`src/spells/lint.py`, `ProgramArityError`): SET consumes a set and makes its
+  `then` single; a SINGLE block under set cardinality is the category error; CASTER is valid either
+  way. Run as a **runtime assertion** at the top of `evaluator.resolve_program` (deriving cardinality
+  from whether the program has a top-level set-consumer). *Deviation:* not yet a load-time gate at
+  spell-load — that lands when content migrates to `program` form (Phase 3); today `resolve_program`
+  is the enforcement point and the linter is unit-tested directly.
+- **Adapter** (`adapter.to_program(effects, targeting_type)`) wraps AoE/multi_target legacy blocks in
+  an implicit `for_each_target`; single_target stays flat. `can_run_on_blocks` now accepts
+  `SINGLE_TARGET` + `AOE` + `MULTI_TARGET` and no longer refuses `roll_once`.
+- **Wiring:** `SpellResolver._resolve_via_blocks` calls the new `evaluator.resolve_program` **once**
+  with the whole defender set (fan-out gone from the block path); the **legacy** path (per-defender
+  loop + `_preroll_pipeline_damage`) is untouched, and the reactive-effects guard still holds.
+- **Not moved:** AoE **geometry** (deriving the defender set from shape/origin) stays in
+  `CombatSystem.resolve_spell` — only iteration + shared-roll moved into the block, as the sketch
+  predicted. `for_each_beam` and richer targeting sets (`chosen(n)`, `all_in_area`, `derived`) were
+  **not** built — `for_each_target` over the resolver-supplied set covers the whole current corpus;
+  add the others when a spell needs them.
+- **In production now:** the 9 single-target spells from Phase 1 **plus** 5 AoE (Fireball, Burning
+  Hands, Cone of Cold, Lightning Bolt, Thunderwave) and 3 multi_target (Magic Missile, Scorching Ray,
+  Eldritch Blast) — 17 of 23 shipped spells on the new engine. The remaining 6 are the
+  entity-effect/concentration spells (blocked on 4.2/4.3).
+- **Tests:** `tests/test_block_arity.py` (linter) + new fan-out parity in `tests/test_block_parity.py`
+  (multi-defender dual-run vs the legacy `SpellResolver` fan-out; shared-roll behaviour proof; runtime
+  arity assertion) + the set-targeted corpus auto-parity test. Three Fireball integration tests in
+  `test_save_outcomes.py` had their `roll_formula` mock moved from `spell_resolver` to the iterator
+  (the pre-roll relocated). Full suite green (643).
+
+**Original sketch (kept for the record):**
 
 - A **targeting block** yields a set (`self`, `defender`, `chosen(n)`, `all_in_area`, `derived`);
   iterator blocks (`for_each_target`, `for_each_beam`) run a `then` sub-program per element with its
@@ -223,13 +265,22 @@ AST-whitelist expression sandbox · EventBus as the substrate for cross-cutting 
 
 ## 6. The immediate next step
 
-**Start 4.1 (iterators + AoE/multi_target fold + arity enforcement).** It is the most self-contained
-Phase-2 slice, needs neither lifetimes nor triggers, and immediately brings the AoE and multi-target
-corpus onto the new engine behind the parity harness. Concretely: add `for_each_target` (and the
-targeting set it consumes), give the iterator the `roll_once` shared-roll seeding, wire child
-`Invocation`s for `then`, turn on the arity check, teach the legacy adapter to wrap set-targeted spells
-in an implicit iterator, and extend `can_run_on_blocks` to AoE/multi_target once Fireball / Magic
-Missile / Scorching Ray dual-run green.
+**4.1 is done** (see the ✅ block in §4.1). **The re-plan checkpoint after 4.1 is reached — next is
+4.2 (lifetime scopes + grant handles).**
+
+Before starting 4.2, re-derive its shape from the code as it now stands: the grant blocks
+(`apply_condition`, `add_modifier`, `grant_temporary_hp`) currently mutate the target and rely on the
+legacy string-tag (`source`/`effect_name`) cleanup. 4.2 introduces a **lifetime-scope** object that
+owns revoke handles — every grant returns a handle the scope owns; teardown walks them in reverse;
+concentration is one lifetime kind (replacing it disposes the old scope atomically). This touches
+`Entity` (where grants live) and must resolve the per-session registry-state isolation concern (E12).
+Keep it behind parity for the spells that currently use durations/concentration. It needs neither
+iterators (done) nor triggers (4.3), but 4.3's entity-effect fold depends on it.
+
+_The 4.1 approach, for reference: add `for_each_target` + its `roll_once` shared-roll seeding, factor
+the per-target run so the flat and iterator paths share one orchestration, turn on the arity linter,
+wrap set-targeted spells in the adapter, and extend `can_run_on_blocks` — all dual-run green against
+the legacy fan-out._
 
 _See also: [SPELL_SYSTEM_BUILD_PLAN.md](SPELL_SYSTEM_BUILD_PLAN.md) (Phase-1 architecture + interface
 decisions), [SPELL_SYSTEM_DESIGN.md](SPELL_SYSTEM_DESIGN.md) (design rationale), and the two decision

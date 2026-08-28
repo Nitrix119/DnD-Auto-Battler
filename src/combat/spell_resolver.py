@@ -61,7 +61,9 @@ class SpellResolver:
         """
         self._event_bus.emit(
             EventType.SPELL_CAST,
-            SpellCastData(caster=caster, defenders=defenders, action=action, origin=origin),
+            SpellCastData(
+                caster=caster, defenders=defenders, action=action, origin=origin
+            ),
         )
 
         if slot_level is None:
@@ -70,6 +72,7 @@ class SpellResolver:
         # Route to the new block evaluator for spells it can express identically;
         # everything else stays on the legacy pipeline (Phase 1 boundary).
         from src.spells.adapter import can_run_on_blocks
+
         if can_run_on_blocks(action) and not self._caster_has_reactive_effects(caster):
             return self._resolve_via_blocks(caster, defenders, action, slot_level)
 
@@ -77,7 +80,9 @@ class SpellResolver:
         results: List[Tuple[bool, int, str, Optional[dict]]] = []
         for defender in defenders:
             results.append(
-                self._run_pipeline_spell(caster, defender, action, seed_damages, slot_level)
+                self._run_pipeline_spell(
+                    caster, defender, action, seed_damages, slot_level
+                )
             )
         return results
 
@@ -109,7 +114,9 @@ class SpellResolver:
         slot_level: Optional[int] = None,
     ) -> Tuple[bool, int, str, Optional[dict], int, Optional[Entity]]:
         """Execute the effect pipeline for one caster/defender pair and format the result."""
-        pipeline = EffectPipeline(self._event_bus, self._damage_processor, self.rule_engine)
+        pipeline = EffectPipeline(
+            self._event_bus, self._damage_processor, self.rule_engine
+        )
         result = pipeline.run(
             caster, defender, action, seed_damages=seed_damages, slot_level=slot_level
         )
@@ -141,22 +148,29 @@ class SpellResolver:
         ``src.spells.adapter.can_run_on_blocks``); everything else uses the
         legacy pipeline above. Imported lazily to avoid an import cycle
         (combat → spells → combat).
+
+        Fan-out (including AoE ``roll_once`` sharing) lives in the program: the
+        evaluator is called once with the whole defender set and returns one
+        result per defender, in order.
         """
-        from src.spells.evaluator import resolve as resolve_blocks
+        from src.spells.evaluator import resolve_program
         from src.spells.adapter import to_program
 
-        program = to_program(action.pipeline_effects)
-        results = []
-        for defender in defenders:
-            result = resolve_blocks(
-                caster, defender, action, program,
-                event_bus=self._event_bus,
-                damage_processor=self._damage_processor,
-                rule_engine=self.rule_engine,
-                slot_level=slot_level,
-            )
-            results.append(self._format_result(caster, defender, action, result))
-        return results
+        program = to_program(action.pipeline_effects, action.targeting_type)
+        results = resolve_program(
+            caster,
+            defenders,
+            action,
+            program,
+            event_bus=self._event_bus,
+            damage_processor=self._damage_processor,
+            rule_engine=self.rule_engine,
+            slot_level=slot_level,
+        )
+        return [
+            self._format_result(caster, defender, action, result)
+            for defender, result in zip(defenders, results)
+        ]
 
     def _format_result(
         self,

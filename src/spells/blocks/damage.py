@@ -6,9 +6,10 @@ damage, and routing through the DamageProcessor so resistance/immunity apply.
 ``DealDamage``'s flat-formula case is just this block with those options omitted —
 one block, not two.
 
-(``roll_once`` AoE seeding is intentionally not here yet: it is a property of the
-iterator that fans a rolled total across a target set, and lands with the
-targeting/iterator blocks. Single-target and legacy-fanned damage need it not.)
+``roll_once`` AoE sharing is the *iterator's* property, not this block's: the
+iterator (``blocks/iterators.py``) rolls the shared total once and seeds it here
+via ``context["_shared_rolls"]``; this block only consumes a seeded total when one
+is present. Single-target and non-shared damage roll normally.
 """
 
 from __future__ import annotations
@@ -33,13 +34,22 @@ def damage(block: Block, inv: Invocation) -> int:
     if block.get("requires_hit") and not ctx["hit"]:
         return 0
 
-    formula = effective_damage_formula(
-        {"formula": block.get("formula", ""), "scaling": block.get("scaling")},
-        ctx.get("slot_level"),
-    )
-    if ctx["critical_hit"] and formula:
-        formula = multiply_formula(formula, 2)
-    amount = roll_formula(formula) if formula else 0
+    # A ``roll_once`` block in an iterator's ``then`` body shares one rolled total
+    # across the whole target set; the iterator pre-rolled it (with scaling) and
+    # seeded it here, keyed by this block's identity. Consume the shared total as
+    # given — no re-roll, no crit-doubling (an AoE save has no crit) — matching
+    # the legacy pre-rolled path exactly.
+    shared = ctx.get("_shared_rolls")
+    if shared is not None and id(block) in shared:
+        amount = shared[id(block)]
+    else:
+        formula = effective_damage_formula(
+            {"formula": block.get("formula", ""), "scaling": block.get("scaling")},
+            ctx.get("slot_level"),
+        )
+        if ctx["critical_hit"] and formula:
+            formula = multiply_formula(formula, 2)
+        amount = roll_formula(formula) if formula else 0
     ctx["damage_rolled"] = ctx.get("damage_rolled", 0) + amount
 
     save_result = block.get("save_result")
@@ -55,8 +65,10 @@ def damage(block: Block, inv: Invocation) -> int:
 
     dtype = DamageType[str(block.get("damage_type", "GENERIC")).upper()]
     dealt = inv.damage_processor.apply_damage(
-        inv.target, [Damage(dtype, amount)],
-        source=inv.caster, action_name=getattr(inv.action, "name", None),
+        inv.target,
+        [Damage(dtype, amount)],
+        source=inv.caster,
+        action_name=getattr(inv.action, "name", None),
         emit_dealt=False,
     )
     if dealt > 0:

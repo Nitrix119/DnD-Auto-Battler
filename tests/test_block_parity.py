@@ -13,15 +13,19 @@ spells to ``PARITY_SPELLS``.
 import glob
 import os
 
+import pytest
+
 from src.models import AbilityScores, StatBlock, Entity, SpellAction
 from src.models.damage import Damage, DamageType
+from src.models.spell_properties import TargetingType
 from src.combat.event_bus import EventBus
 from src.combat.damage_processor import DamageProcessor
-from src.combat.effect_pipeline import EffectPipeline
+from src.combat.effect_pipeline import EffectPipeline, effective_damage_formula
 from src.rules.rule_engine import RuleEngine
 from src.loaders import StatBlockLoader
 from src.spells.block import parse_program
 from src.spells.evaluator import resolve as resolve_blocks
+from src.spells.evaluator import resolve_program
 from src.spells.adapter import to_program, can_run_on_blocks
 from src.utils import dice
 
@@ -307,8 +311,144 @@ def test_expressible_corpus_spells_reach_parity():
     tested = []
     for f in files:
         spell = StatBlockLoader.load_spell_from_json(f)
-        if can_run_on_blocks(spell):
+        if can_run_on_blocks(spell) and spell.targeting_type == TargetingType.SINGLE_TARGET:
             _spell_file_parity(spell)
             tested.append(spell.name)
     # Sanity: the router is actually sending a meaningful set to the new engine.
     assert len(tested) >= 6, f"expected several expressible spells, got {tested}"
+
+
+# ── Fan-out parity: AoE / multi-target across a set of defenders (§4.1) ──────────
+#
+# The whole point of the iterator: one program run fans over the defender set,
+# sharing an AoE `roll_once` total across all of them and rolling each save/attack
+# per-target. Parity here means the new set path agrees, per defender, with the
+# legacy `SpellResolver` fan-out (pre-roll shared damage once, then run the
+# per-defender pipeline over one shared event bus / damage processor).
+
+def _legacy_fanout(caster, defenders, spell, slot_level):
+    """Reproduce ``SpellResolver``'s legacy fan-out: shared roll_once pre-roll,
+    then the per-defender pipeline over one bus/processor."""
+    seed_damages = {}
+    for i, step in enumerate(spell.pipeline_effects):
+        if step.get("type") == "damage" and step.get("roll_once"):
+            seed_damages[i] = dice.roll_formula(
+                effective_damage_formula(step, slot_level)
+            )
+    bus = EventBus()
+    dp = DamageProcessor(bus)
+    return [
+        EffectPipeline(bus, dp, None).run(
+            caster, d, spell, seed_damages=seed_damages, slot_level=slot_level
+        )
+        for d in defenders
+    ]
+
+
+def _set_parity(spell, *, n_targets=4, seeds=range(1, 26), target_hp=90):
+    slot_level = spell.spell_level
+    program = to_program(spell.pipeline_effects, spell.targeting_type)
+    for seed in seeds:
+        dice.seed_rng(seed)
+        c1 = _caster()
+        d1 = [_target(target_hp) for _ in range(n_targets)]
+        old = _legacy_fanout(c1, d1, spell, slot_level)
+
+        dice.seed_rng(seed)
+        c2 = _caster()
+        d2 = [_target(target_hp) for _ in range(n_targets)]
+        bus2 = EventBus()
+        new = resolve_program(
+            c2, d2, spell, program,
+            event_bus=bus2, damage_processor=DamageProcessor(bus2),
+            slot_level=slot_level,
+        )
+
+        assert len(new) == len(old) == n_targets
+        for i in range(n_targets):
+            for f in _COMPARED:
+                assert getattr(new[i], f) == getattr(old[i], f), (
+                    f"{spell.name} seed {seed} target {i}: {f!r} diverged: "
+                    f"new={getattr(new[i], f)} old={getattr(old[i], f)}"
+                )
+            assert d1[i].hp == d2[i].hp, (
+                f"{spell.name} seed {seed} target {i}: HP diverged "
+                f"(old={d1[i].hp} new={d2[i].hp})"
+            )
+
+
+def _load(name):
+    return StatBlockLoader.load_spell_from_json(os.path.join(SPELLS_DIR, name))
+
+
+def test_fireball_aoe_shared_roll_parity():
+    # AoE save-for-half with a shared 8d6 roll_once total across every target.
+    _set_parity(_load("fireball.json"))
+
+
+def test_magic_missile_multi_target_parity():
+    # Auto-hit darts: each defender takes its own 1d4+1, no shared roll.
+    _set_parity(_load("magic_missile.json"), n_targets=3)
+
+
+def test_scorching_ray_multi_target_parity():
+    # A ranged spell attack per ray, then 2d6 on a hit — independent per target.
+    _set_parity(_load("scorching_ray.json"), n_targets=3, target_hp=60)
+
+
+def test_iterator_shares_one_roll_across_targets():
+    """A ``roll_once`` AoE deals the *same* rolled total to every target.
+
+    Behaviour proof, not just parity: with every target failing its save (an
+    impossible DC), each takes the full shared total, so all damage_dealt values
+    are identical — the defining property of the shared roll.
+    """
+    program = parse_program([{
+        "block": "for_each_target",
+        "then": [
+            {"block": "saving_throw", "attribute": "dexterity", "dc": 999},
+            {"block": "damage", "damage_type": "FIRE", "formula": "8d6",
+             "roll_once": True, "save_result": {"on_success": "half_damage"}},
+        ],
+    }])
+    dice.seed_rng(7)
+    caster = _caster()
+    targets = [_target(200) for _ in range(5)]
+    action = SpellAction(name="Boom", description="", spell_level=3)
+    bus = EventBus()
+    results = resolve_program(caster, targets, action, program,
+                              event_bus=bus, damage_processor=DamageProcessor(bus))
+    dealt = {r.damage_dealt for r in results}
+    assert len(dealt) == 1, f"targets took differing damage: {dealt}"
+    assert dealt.pop() > 0
+
+
+def test_resolve_program_rejects_single_block_beside_iterator():
+    """The runtime arity assertion fires on a malformed set program."""
+    from src.spells.lint import ProgramArityError
+
+    program = parse_program([
+        {"block": "for_each_target",
+         "then": [{"block": "damage", "formula": "1d6", "damage_type": "FIRE"}]},
+        # A bare single-target block at set cardinality — the category error.
+        {"block": "damage", "formula": "1d6", "damage_type": "FIRE"},
+    ])
+    action = SpellAction(name="Bad", description="", spell_level=0)
+    bus = EventBus()
+    with pytest.raises(ProgramArityError):
+        resolve_program(_caster(), [_target()], action, program,
+                        event_bus=bus, damage_processor=DamageProcessor(bus))
+
+
+def test_set_targeted_corpus_spells_reach_parity():
+    """Every AoE/multi-target shipped spell the router accepts reaches fan-out parity."""
+    files = sorted(glob.glob(os.path.join(SPELLS_DIR, "*.json")))
+    tested = []
+    for f in files:
+        spell = StatBlockLoader.load_spell_from_json(f)
+        if can_run_on_blocks(spell) and spell.targeting_type in (
+            TargetingType.AOE, TargetingType.MULTI_TARGET
+        ):
+            _set_parity(spell, seeds=range(1, 16))
+            tested.append(spell.name)
+    assert len(tested) >= 6, f"expected AoE+multi_target spells, got {tested}"
