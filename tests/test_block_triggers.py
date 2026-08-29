@@ -133,3 +133,36 @@ def test_trigger_depth_guard_blocks_at_the_cap():
     bus.emit(EventType.DAMAGE_DEALT, defender=_foe(), source=caster,
              total=10, damage_list=[])
     assert caster.hp == before  # guard blocked the rider at the cap
+
+
+def test_trigger_bindings_captured_at_install_exposed_as_instance_fields():
+    """A trigger's `bindings` are evaluated once at install and seen later as
+    `instance_fields.<name>` — the closure mechanism Charm Person's charmer uses."""
+    from src.combat.event_data import AttackDeclaredData
+
+    caster = _caster()
+    bus = EventBus()
+    # Capture `protege` = the caster at install; cancel attacks against them.
+    rider = {
+        "block": "trigger",
+        "event": "ATTACK_DECLARED",
+        "bindings": {"protege": "event.caster"},
+        "then": [
+            {"block": "cancel",
+             "condition": "event.defender == instance_fields.protege"},
+        ],
+    }
+    _establish(caster, [rider], bus)
+
+    foe = _foe()
+    against_protege = bus.emit(
+        EventType.ATTACK_DECLARED,
+        AttackDeclaredData(attacker=foe, defender=caster, action=None),
+    )
+    assert against_protege.cancelled is True
+
+    against_other = bus.emit(
+        EventType.ATTACK_DECLARED,
+        AttackDeclaredData(attacker=foe, defender=foe, action=None),
+    )
+    assert against_other.cancelled is False

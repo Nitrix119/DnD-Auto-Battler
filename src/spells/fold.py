@@ -263,8 +263,18 @@ def rule_to_trigger_blocks(
 
 
 def _triggers_from_rule(step: Dict[str, Any], rule: Any) -> List[Dict[str, Any]]:
-    """Entity-effect fold: trigger blocks holder-scoped from the step's ``on_caster``."""
-    return rule_to_trigger_blocks(rule, holder=_holder(step))
+    """Entity-effect fold: trigger blocks holder-scoped from the step's ``on_caster``.
+
+    A step's ``instance_fields`` (per-application closure values, e.g. Charm Person's
+    ``charmer``) ride each trigger as its ``bindings`` — captured at install and
+    exposed to the rider as ``instance_fields.<name>``.
+    """
+    blocks = rule_to_trigger_blocks(rule, holder=_holder(step))
+    instance_fields = step.get("instance_fields")
+    if instance_fields:
+        for tb in blocks:
+            tb["bindings"] = instance_fields
+    return blocks
 
 
 def is_add_entity_effect(step: Dict[str, Any]) -> bool:
@@ -275,18 +285,16 @@ def foldable(step: Dict[str, Any], rule: Any) -> bool:
     """True if *step* translates cleanly into a ``lifetime`` block right now.
 
     Kept on the legacy engine (conservative) when: the rule can't be resolved
-    (can't prove what reactive behaviour would be dropped); the step uses
-    ``instance_fields``; an ``on_apply`` or rule effect has no block translator
-    (e.g. ``InjectPipelineDamageStep``); or it is a concentration duration on a
-    non-``on_caster`` effect (its clock would tick on the wrong turn — Haste).
-    Reactive ``triggers`` and per-effect ``when`` guards *are* folded.
+    (can't prove what reactive behaviour would be dropped); an ``on_apply`` or rule
+    effect has no block translator (e.g. ``InjectPipelineDamageStep``); or it is a
+    concentration duration on a non-``on_caster`` effect (its clock would tick on the
+    wrong turn — Haste). Reactive ``triggers``, per-effect ``when`` guards, and
+    ``instance_fields`` (captured as a rider's ``bindings``) *are* folded.
     """
     if not is_add_entity_effect(step):
         return False
     if rule is None:
         # Without the rule we cannot verify what reactive behaviour we would drop.
-        return False
-    if step.get("instance_fields"):
         return False
     if any(e.get("action") not in _ACTION_TO_BLOCK for e in step.get("on_apply", [])):
         return False

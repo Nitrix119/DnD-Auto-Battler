@@ -158,7 +158,7 @@ class TestSavingThrows:
 class TestSpellEffectApplicationOnFailedSave:
 
     def test_charmed_applied_when_save_fails(self):
-        """Charm Person should apply the charmed effect when the defender fails the save."""
+        """Charm Person applies charmed (on the new engine) when the defender fails."""
         wizard = load_wizard()
         goblin = load_goblin()
         bus, engine, resolver = setup_engine_and_resolver(wizard, goblin)
@@ -168,12 +168,14 @@ class TestSpellEffectApplicationOnFailedSave:
         with patch("src.utils.saving_throw.roll_d20", return_value=1):
             resolver.resolve(wizard, [goblin], spell)
 
-        # The goblin should now have the charmed entity effect applied
-        assert "attack_declared" in goblin.active_effects
-        instances = goblin.active_effects["attack_declared"]
-        assert len(instances) == 1
-        assert instances[0].name == "charmed"
-        assert instances[0].instance_fields.get("charmer") is wizard
+        # Folded onto the new engine: a lifetime on the goblin holds the charmed
+        # rider, and the captured charmer (the wizard) blocks the goblin's attack
+        # on the wizard (the instance_fields closure took effect).
+        assert len(goblin.lifetimes) == 1
+        action = next(a for a in goblin.stat_block.actions if a.name == "Scimitar")
+        event = bus.emit(EventType.ATTACK_DECLARED,
+                         attacker=goblin, defender=wizard, action=action)
+        assert event.cancelled is True
 
     def test_charmed_not_applied_when_save_succeeds(self):
         """Charm Person should NOT apply the charmed effect when the defender succeeds."""
@@ -250,7 +252,8 @@ class TestSpellEffectsWithoutRuleEngine:
 class TestRuleCaching:
 
     def test_registry_returns_same_rule_object(self):
-        """The same Rule object should be reused across multiple spell resolutions."""
+        """The charmed Rule template is cached (not re-parsed per cast), while each
+        cast installs its own independent rider."""
         wizard = load_wizard()
         goblin_a = load_goblin()
         goblin_b = load_goblin()
@@ -262,12 +265,12 @@ class TestRuleCaching:
             resolver.resolve(wizard, [goblin_a], spell)
             resolver.resolve(wizard, [goblin_b], spell)
 
-        # Both goblins should share the same Rule template object
-        instance_a = goblin_a.active_effects["attack_declared"][0]
-        instance_b = goblin_b.active_effects["attack_declared"][0]
-        assert instance_a.rule is instance_b.rule
-        # But they should be different EffectInstances
-        assert instance_a is not instance_b
+        # The rule template is the same cached object across lookups (not re-parsed).
+        assert engine.effect_registry.get("charmed") is engine.effect_registry.get("charmed")
+        # But each cast installed its own independent rider (a lifetime per goblin).
+        assert len(goblin_a.lifetimes) == 1
+        assert len(goblin_b.lifetimes) == 1
+        assert goblin_a.lifetimes[0] is not goblin_b.lifetimes[0]
 
 
 # ── CombatSystem integration ──────────────────────────────────────────────────
@@ -314,10 +317,13 @@ class TestCombatSystemIntegration:
         with patch("src.utils.saving_throw.roll_d20", return_value=1):
             cs.resolve_spell(wizard, [goblin], spell)
 
-        assert "attack_declared" in goblin.active_effects
-        instance = goblin.active_effects["attack_declared"][0]
-        assert instance.name == "charmed"
-        assert instance.instance_fields.get("charmer") is wizard
+        # Folded onto the new engine: the goblin holds a charmed lifetime and cannot
+        # attack the wizard (its captured charmer).
+        assert len(goblin.lifetimes) == 1
+        action = next(a for a in goblin.stat_block.actions if a.name == "Scimitar")
+        event = bus.emit(EventType.ATTACK_DECLARED,
+                         attacker=goblin, defender=wizard, action=action)
+        assert event.cancelled is True
 
 
 # ── Longstrider spell integration ────────────────────────────────────────────

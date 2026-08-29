@@ -144,6 +144,13 @@ class Invocation:
     # event-modifier block run outside a trigger has nothing to mutate).
     live_event: Optional["CombatEvent"] = None
 
+    # Per-application values a trigger captured at install time, exposed to a fired
+    # rider's expressions as ``instance_fields.<name>`` (e.g. Charm Person binds
+    # ``charmer`` = the caster at cast time, and the charmed rider cancels attacks
+    # against ``instance_fields.charmer``). A closure variable, fixed when the
+    # trigger was installed. None outside a trigger firing that carried bindings.
+    instance_fields: Optional[Dict[str, Any]] = None
+
     # Bookkeeping the result is derived from.
     dealt_damages: List[Damage] = field(default_factory=list)
     healing_total: int = 0
@@ -159,6 +166,7 @@ class Invocation:
         event_data: Optional[Dict[str, Any]] = None,
         shared_rolls: Optional[Dict[int, int]] = None,
         live_event: Optional["CombatEvent"] = None,
+        instance_fields: Optional[Dict[str, Any]] = None,
     ) -> "Invocation":
         """A fresh invocation sharing this one's action/collaborators.
 
@@ -178,6 +186,7 @@ class Invocation:
             context=seed_context(self.env.slot_level or 0),
             event_data=event_data,
             live_event=live_event,
+            instance_fields=instance_fields,
         )
         if shared_rolls:
             inv.context["_shared_rolls"] = shared_rolls
@@ -232,9 +241,10 @@ def eval_context(inv: "Invocation") -> Dict[str, Any]:
     """Build the sandboxed namespace for a block's expression fields.
 
     Exposes ``event.caster`` / ``event.defender`` / ``event.action``, the pipeline
-    ``context`` (public keys only, as a namespace), and ``save_success`` /
-    ``save_roll`` — matching the legacy pipeline's expression namespace so
-    expressions evaluate identically on both engines.
+    ``context`` (public keys only, as a namespace), ``save_success`` / ``save_roll``,
+    and ``instance_fields.<name>`` for a rider's captured bindings — matching the
+    legacy pipeline / rule-engine expression namespace so expressions evaluate
+    identically on both engines.
     """
     public = {k: v for k, v in inv.context.items() if not k.startswith("_")}
     # A fired trigger carries the real event's data; expose it as event.<field>,
@@ -251,4 +261,5 @@ def eval_context(inv: "Invocation") -> Dict[str, Any]:
         save_roll=inv.context["save_roll"],
         context=SimpleNamespace(**public),
         entity=inv.caster,
+        instance_fields=SimpleNamespace(**(inv.instance_fields or {})),
     )

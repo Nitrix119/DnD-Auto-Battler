@@ -41,15 +41,27 @@ class TestFoldRouting:
         # No rule to prove the effect has no reactive triggers → not foldable.
         assert can_run_on_blocks(_spell("shield_of_faith"), None) is False
 
-    def test_still_un_foldable_effects_stay_on_legacy(self):
+    def test_haste_stays_on_legacy(self):
         # Haste stays on legacy: a concentration duration on a targeted ally, whose
-        # clock would tick on the wrong turn. (Charm Person — instance_fields — is
-        # covered by test_instance_fields_effect_stays_on_legacy.)
+        # clock would tick on the wrong turn (the split-holder model, a later bite).
         assert can_run_on_blocks(_spell("haste"), _rules()) is False
 
-    def test_instance_fields_effect_stays_on_legacy(self):
-        # Charm Person carries instance_fields (charmer) — not yet foldable.
-        assert can_run_on_blocks(_spell("charm_person"), _rules()) is False
+    def test_charm_person_folds_with_instance_field_bindings(self):
+        # Charm Person's instance_fields (charmer) fold as the rider's captured
+        # ``bindings``; the charmed Cancel keeps its per-effect ``when`` as a
+        # fire-time condition referencing ``instance_fields.charmer``.
+        assert can_run_on_blocks(_spell("charm_person"), _rules()) is True
+        spell = _spell("charm_person")
+        program = to_program(spell.pipeline_effects, spell.targeting_type, _rules())
+        life = program[-1]
+        assert life.type == "lifetime"
+        trig = life.then[0]
+        assert trig.type == "trigger"
+        assert trig.get("event") == "ATTACK_DECLARED"
+        assert trig.get("bindings") == {"charmer": "event.caster"}
+        cancel = trig.then[0]
+        assert cancel.type == "cancel"
+        assert cancel.get("condition") == "event.defender == instance_fields.charmer"
 
 
 # ── Fold shape ────────────────────────────────────────────────────────────────
@@ -241,3 +253,55 @@ class TestFoldEndToEnd:
         assert not cleric.has_concentration
         assert cleric.concentration_scope is None
         assert cleric.ac == base
+
+
+class TestCharmPersonFold:
+    """Charm Person on the new engine — the instance_fields closure (charmer)."""
+
+    def _cast(self, resolver, caster, target, *, save_fails):
+        from unittest.mock import patch
+
+        roll = (5, False) if save_fails else (20, True)
+        with patch("src.spells.blocks.rolls.roll_saving_throw", return_value=roll):
+            resolver.resolve(caster, [target], _spell("charm_person"))
+
+    def _declare(self, bus, attacker, defender):
+        from src.combat.event_data import AttackDeclaredData
+
+        return bus.emit(
+            EventType.ATTACK_DECLARED,
+            AttackDeclaredData(attacker=attacker, defender=defender, action=None),
+        )
+
+    def test_charmed_target_cannot_attack_the_caster(self):
+        caster, target = _cleric(), _cleric()
+        bus, engine, resolver = _resolver(caster, target)
+        self._cast(resolver, caster, target, save_fails=True)
+        assert len(target.lifetimes) == 1  # folded onto the new engine
+        assert self._declare(bus, target, caster).cancelled is True
+
+    def test_charmed_target_can_attack_others(self):
+        caster, target, bystander = _cleric(), _cleric(), _cleric()
+        bus, engine, resolver = _resolver(caster, target, bystander)
+        self._cast(resolver, caster, target, save_fails=True)
+        assert self._declare(bus, target, bystander).cancelled is False
+
+    def test_successful_save_applies_no_charm(self):
+        caster, target = _cleric(), _cleric()
+        bus, engine, resolver = _resolver(caster, target)
+        self._cast(resolver, caster, target, save_fails=False)
+        assert len(target.lifetimes) == 0
+        assert self._declare(bus, target, caster).cancelled is False
+
+    def test_two_casts_track_their_own_charmer(self):
+        """Each cast captures its own charmer — a victim blocks only its charmer."""
+        charmer_a, charmer_b = _cleric(), _cleric()
+        victim_a, victim_b = _cleric(), _cleric()
+        bus, engine, resolver = _resolver(charmer_a, charmer_b, victim_a, victim_b)
+        self._cast(resolver, charmer_a, victim_a, save_fails=True)
+        self._cast(resolver, charmer_b, victim_b, save_fails=True)
+
+        assert self._declare(bus, victim_a, charmer_a).cancelled is True
+        assert self._declare(bus, victim_a, charmer_b).cancelled is False
+        assert self._declare(bus, victim_b, charmer_b).cancelled is True
+        assert self._declare(bus, victim_b, charmer_a).cancelled is False

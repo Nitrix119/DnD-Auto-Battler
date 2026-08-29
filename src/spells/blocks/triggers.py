@@ -55,6 +55,26 @@ def _passes(expr, fired: Invocation) -> bool:
         return False
 
 
+def _capture_bindings(bindings, inv: Invocation):
+    """Evaluate a trigger's ``bindings`` once at install, against *inv*.
+
+    Returns a ``{name: value}`` dict (or None when there are no bindings), captured
+    so the rider's later firings see them as ``instance_fields.<name>``. A binding
+    whose expression fails to evaluate is dropped (the rider still installs), matching
+    the legacy ``instance_fields`` evaluation's best-effort behaviour.
+    """
+    if not bindings:
+        return None
+    ctx = eval_context(inv)
+    captured = {}
+    for name, expr in bindings.items():
+        try:
+            captured[name] = evaluate(expr, ctx)
+        except Exception:
+            pass
+    return captured
+
+
 def trigger(block: Block, inv: Invocation) -> None:
     """Subscribe this block's ``then`` to an event; scope it to the open lifetime."""
     event_type = EventType[str(block.get("event", "")).upper()]
@@ -73,6 +93,11 @@ def trigger(block: Block, inv: Invocation) -> None:
     holder = inv.caster if block.get("holder", "caster") == "caster" else inv.target
     # The scope this rider belongs to, so its `then` can end the effect itself.
     owning_scope = inv.active_scope
+    # Per-application closure variables (e.g. Charm Person's `charmer`): evaluate the
+    # `bindings` expressions **once, now** against the installing cast invocation
+    # (where `event.caster` is the spell caster) and capture the results, so the rider
+    # sees them later as `instance_fields.<name>`, fixed at cast time.
+    bindings = _capture_bindings(block.get("bindings"), inv)
 
     def handler(event) -> None:
         # The rider runs later, on someone else's turn; `holder` + the captured
@@ -85,6 +110,7 @@ def trigger(block: Block, inv: Invocation) -> None:
             target=holder,
             event_data=dict(event.data),
             live_event=event,
+            instance_fields=bindings,
         )
         fired.owning_scope = owning_scope
         if not _passes(when, fired):
