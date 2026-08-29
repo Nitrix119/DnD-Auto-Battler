@@ -1,4 +1,4 @@
-"""State blocks: apply_condition, add_modifier, grant_temporary_hp.
+"""State blocks: apply_condition, add_modifier, grant_temporary_hp, add_resource.
 
 These fold three legacy twins into one catalogue and, crucially, do the work
 **directly** instead of the old pipeline's route (build a synthetic ``on_apply``
@@ -79,6 +79,24 @@ def grant_temporary_hp(block: Block, inv: Invocation) -> None:
         inv.context["temp_hp_granted"] = amount
 
 
+def add_resource(block: Block, inv: Invocation) -> None:
+    """Add to a per-turn resource (movement, actions, …) on the target.
+
+    A *transient* grant, not a durable one: it is re-applied each turn by a
+    ``TURN_START`` rider and wiped by the next turn's refill, so it registers **no**
+    revoke handle — when the rider's lifetime ends it simply stops being re-added
+    (matching the legacy ``AddResource`` entity effect).
+    """
+    target = _target(block, inv)
+    resource = str(block.get("resource", ""))
+    try:
+        amount = int(resolve(block.get("amount", 0), eval_context(inv)))
+    except Exception:
+        return
+    if resource and amount:
+        target.add_resource(resource, amount)
+
+
 REGISTRY.register(
     "apply_condition", apply_condition,
     BlockContract(target_arity=TargetArity.SINGLE),
@@ -90,4 +108,8 @@ REGISTRY.register(
 REGISTRY.register(
     "grant_temporary_hp", grant_temporary_hp,
     BlockContract(writes=("temp_hp_granted",), target_arity=TargetArity.SINGLE),
+)
+REGISTRY.register(
+    "add_resource", add_resource,
+    BlockContract(target_arity=TargetArity.SINGLE),
 )

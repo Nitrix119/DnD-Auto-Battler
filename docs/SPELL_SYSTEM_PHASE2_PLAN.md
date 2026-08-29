@@ -277,12 +277,24 @@ reviewable **sub-slices**, each independently green and committed:
   stays authoritative for teardown), so consumers reading them are consistent. Tests:
   [tests/test_entity_effect_fold.py](../tests/test_entity_effect_fold.py) (routing boundary, fold shape,
   end-to-end cast + concentration break through the real router). Full suite green (673).
-- **4.3b-2 — the trigger side of the fold (next).** Translate the referenced rule's reactive
-  `triggers`/`effects` into `trigger` blocks (holder-scoped: the rider's `entity` is the effect-holder,
-  not necessarily the caster — matters for buff-an-ally). Add the missing state blocks (`add_resource`
-  for Haste/Longstrider, `grant_action` for Vampiric Touch) and a self-dispose path for Armor of
-  Agathys. Relax the router's reactive-effects guard as triggers subsume `InjectPipelineDamageStep`.
-  Parity-gate each migrated spell.
+- **4.3b-2a — the trigger side, first fold ✅ DONE (2026-08-29).** `fold._triggers_from_rule` now
+  translates a referenced rule's reactive `triggers`/`effects` into `trigger` blocks (one per event),
+  guarded by the rule's `condition` as the `when`. **Holder-scoping** landed: a rider's `entity`/`caster`
+  is the effect-**holder** (`inv.child(caster=holder, …)`; the fold sets `holder: caster|defender` from
+  the step's `on_caster`), so a buff-an-ally rider fires relative to the ally, not the caster. Two more
+  pieces: the `add_resource` state block (a transient per-turn grant — no revoke handle), and the trigger
+  block now **subscribes at priority -10** (the legacy entity-effect slot, after the priority-0 refill),
+  so a per-turn grant lands after the reset not before. A non-concentration `lifetime` is now held by the
+  **target** (the holder), not the caster. **Longstrider** is folded onto the new engine at parity
+  (movement +10 on its turn, after refill — proven end-to-end). Two Longstrider tests that asserted the
+  legacy `active_effects` mechanism were rewritten to assert behaviour + the new-engine artifact (a
+  lifetime on the target), per §4 (test behaviour, not structure). Still deferred by `foldable`: any rule
+  with `duration_rounds` (Haste, Vampiric Touch — needs the §4.3c clock), a per-effect `when` (Armor of
+  Agathys), `instance_fields` (Charm Person), or an unmapped action (`GrantAction`, `RemoveEffect`).
+  Full suite green (675).
+- **4.3b-2b — the harder folds (next).** `grant_action` block + Vampiric Touch; a self-dispose path +
+  per-effect `when` for Armor of Agathys; relax the router's reactive-effects guard as triggers subsume
+  `InjectPipelineDamageStep` (Colossus Slayer). Haste waits on the §4.3c duration clock.
 - **4.3c — repoint dispatch + delete `BUILTIN_EFFECTS`.** Repoint the rule engine's effect dispatch at
   the block registry, migrate `rules/entity_effects/*`, delete `BUILTIN_EFFECTS`, and name the
   persistent-effect concept. The duration clock (`RuleEngine._tick_durations` on `TURN_END`) must be

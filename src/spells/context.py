@@ -98,19 +98,22 @@ class Invocation:
     def child(
         self,
         *,
+        caster: Optional[Entity] = None,
         target: Optional[Entity] = None,
         event_data: Optional[Dict[str, Any]] = None,
         shared_rolls: Optional[Dict[int, int]] = None,
     ) -> "Invocation":
-        """A fresh invocation sharing this one's caster/action/collaborators.
+        """A fresh invocation sharing this one's action/collaborators.
 
         The single place a sub-run is spawned — an iterator per element, a trigger
         per firing — so the combat collaborators are threaded in exactly one spot
         rather than re-passed at every call site. Gets its own seeded ``context``;
-        ``target`` defaults to this invocation's target.
+        ``caster``/``target`` default to this invocation's. A trigger overrides
+        ``caster`` with the effect-**holder** so the rider's ``entity``/``caster``
+        resolves to it (the holder, not necessarily the spell's caster).
         """
         inv = Invocation(
-            caster=self.caster,
+            caster=self.caster if caster is None else caster,
             target=self.target if target is None else target,
             action=self.action,
             event_bus=self.event_bus,

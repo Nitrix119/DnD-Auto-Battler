@@ -56,11 +56,13 @@ def lifetime(block: Block, inv: Invocation) -> None:
         inv.active_scope = prev
 
     if kind is LifetimeKind.CONCENTRATION:
-        # The current target is the effect-holder; mirror it as the concentration
-        # target so consumers reading concentration_target stay consistent.
+        # Concentration always belongs to the caster; the current target is the
+        # effect-holder, mirrored as concentration_target for consistent reads.
         inv.caster.begin_concentration(scope, target=inv.target)
     else:
-        inv.caster.lifetimes.append(scope)
+        # A duration belongs to the effect-holder (the target it was applied to) —
+        # that is whose turn its clock will tick on (§4.3c).
+        inv.target.lifetimes.append(scope)
 
 
 REGISTRY.register(

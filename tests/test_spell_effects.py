@@ -455,7 +455,13 @@ class TestLongstriderSpellEffects:
         assert save_steps == []
 
     def test_longstrider_applies_effect_on_cast(self):
-        """Casting Longstrider should apply the longstrider movement effect."""
+        """Casting Longstrider installs the movement effect on the target.
+
+        Longstrider is folded onto the new block engine (§4.3b-2), so the effect is
+        a lifetime + TURN_START rider on the target rather than a legacy
+        ``active_effects`` instance. Assert the observable install: a duration
+        lifetime now sits on the goblin.
+        """
         wizard = load_wizard()
         goblin = load_goblin()
         bus, engine, resolver = setup_engine_and_resolver(wizard, goblin)
@@ -463,11 +469,7 @@ class TestLongstriderSpellEffects:
         spell = longstrider_spell()
         resolver.resolve(wizard, [goblin], spell)
 
-        # The goblin should have the longstrider effect on turn_start
-        assert "turn_start" in goblin.active_effects
-        instances = goblin.active_effects["turn_start"]
-        assert len(instances) == 1
-        assert instances[0].name == "longstrider"
+        assert len(goblin.lifetimes) == 1
 
     def test_longstrider_grants_movement_on_turn(self):
         """After casting, the affected entity gets +10 movement on TURN_START."""
@@ -498,9 +500,9 @@ class TestLongstriderSpellEffects:
         spell = longstrider_spell()
         resolver.resolve(wizard, [goblin_a, goblin_b], spell)
 
-        # Both goblins should have the effect
-        assert "turn_start" in goblin_a.active_effects
-        assert "turn_start" in goblin_b.active_effects
+        # Both goblins should have the effect installed (a duration lifetime each).
+        assert len(goblin_a.lifetimes) == 1
+        assert len(goblin_b.lifetimes) == 1
 
         bus.emit(EventType.TURN_START, TurnEventData(
             entity=goblin_a, round_num=2, turn_num=1,

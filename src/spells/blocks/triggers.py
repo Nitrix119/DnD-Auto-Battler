@@ -61,15 +61,24 @@ def trigger(block: Block, inv: Invocation) -> None:
     then = list(block.then)
     when = block.get("when")  # firing guard — NOT `condition` (see module docstring)
     target_expr = block.get("target")
+    # Riders fire in the legacy entity-effect slot (priority -10) by default, i.e.
+    # after priority-0 global rules like the per-turn resource refill — so a
+    # per-turn grant lands after the reset, not before it. Overridable per block.
+    priority = int(block.get("priority", -10))
     bus = inv.event_bus
 
+    # The effect-holder owns the rider: its `entity`/`caster` in the firing context.
+    # For a self-applied effect that is the caster; for a buff on an ally it is the
+    # target the effect was attached to. Captured now (stable for the cast).
+    holder = inv.caster if block.get("holder", "caster") == "caster" else inv.target
+
     def handler(event) -> None:
-        # The rider runs later, on someone else's turn; `inv` (captured) supplies
-        # the defining caster/action/collaborators for the fresh firing context.
+        # The rider runs later, on someone else's turn; `holder` + the captured
+        # `inv` supply the action/collaborators for the fresh firing context.
         depth = _depth_by_bus.get(bus, 0)
         if depth >= _MAX_TRIGGER_DEPTH:
             return
-        fired = inv.child(target=inv.caster, event_data=dict(event.data))
+        fired = inv.child(caster=holder, target=holder, event_data=dict(event.data))
         if not _passes(when, fired):
             return
         if target_expr is not None:
@@ -83,7 +92,7 @@ def trigger(block: Block, inv: Invocation) -> None:
         finally:
             _depth_by_bus[bus] = depth
 
-    bus.subscribe(event_type, handler)
+    bus.subscribe(event_type, handler, priority=priority)
     if inv.active_scope is not None:
         inv.active_scope.add(
             RevokeHandle(

@@ -41,12 +41,12 @@ class TestFoldRouting:
         # No rule to prove the effect has no reactive triggers → not foldable.
         assert can_run_on_blocks(_spell("shield_of_faith"), None) is False
 
-    def test_trigger_bearing_effects_stay_on_legacy(self):
-        # These entity-effect rules declare triggers (DAMAGE_DEALT, TURN_START,
-        # ATTACK_HIT) — the reactive side is folded in 4.3b-2, so for now they must
-        # NOT be accepted by the new engine.
+    def test_still_un_foldable_effects_stay_on_legacy(self):
+        # Each stays on legacy for a specific reason (§4.3b-2): Vampiric Touch uses
+        # GrantAction (no block) + a duration; Haste has a duration_rounds (needs
+        # the §4.3c clock); Armor of Agathys uses RemoveEffect + per-effect `when`.
         rules = _rules()
-        for name in ("vampiric_touch", "longstrider", "haste", "armor_of_agathys"):
+        for name in ("vampiric_touch", "haste", "armor_of_agathys"):
             assert can_run_on_blocks(_spell(name), rules) is False, name
 
     def test_instance_fields_effect_stays_on_legacy(self):
@@ -69,6 +69,60 @@ class TestFoldShape:
         mod = life.then[0]
         assert mod.get("stat") == "ac" and mod.get("value") == 2
         assert mod.get("target") == "defender"
+
+    def test_longstrider_folds_to_a_rounds_lifetime_with_a_turn_start_rider(self):
+        spell = _spell("longstrider")
+        program = to_program(spell.pipeline_effects, spell.targeting_type, _rules())
+        assert len(program) == 1
+        life = program[0]
+        assert life.type == "lifetime" and life.get("kind") == "rounds"
+        assert [b.type for b in life.then] == ["trigger"]
+        rider = life.then[0]
+        assert rider.get("event") == "TURN_START"
+        assert rider.get("holder") == "defender"  # applied to the target, not caster
+        assert [b.type for b in rider.then] == ["add_resource"]
+        grant = rider.then[0]
+        assert grant.get("resource") == "movement" and grant.get("amount") == 10
+
+
+class TestLongstriderFoldEndToEnd:
+
+    def test_movement_grant_fires_after_the_refill(self):
+        """The rider adds +10 movement *after* the per-turn refill resets it.
+
+        Validates the trigger's -10 priority slot: were it to fire before the
+        priority-0 refill, the +10 would be wiped and movement would read base.
+        """
+        from src.combat.spell_resolver import SpellResolver
+        from src.combat.event_data import TurnEventData
+
+        wizard = StatBlockLoader.load_from_json(
+            os.path.join(os.path.dirname(__file__), "..", "examples",
+                         "creatures", "characters", "wizard.json")
+        )
+        wizard = Entity(wizard)
+        goblin = StatBlockLoader.load_from_json(
+            os.path.join(os.path.dirname(__file__), "..", "examples",
+                         "creatures", "goblin.json")
+        )
+        goblin = Entity(goblin)
+        base_move = goblin.resources.movement
+
+        bus = EventBus()
+        dp = DamageProcessor(bus)
+        reg = EffectRegistry()
+        reg.scan_directory("rules/entity_effects")
+        engine = RuleEngine(bus, entities_getter=lambda: [wizard, goblin],
+                            damage_processor=dp, effect_registry=reg)
+        engine.load_from_file("rules/global/action_economy_refill.json")
+        resolver = SpellResolver(bus, dp, rule_engine=engine)
+
+        resolver.resolve(wizard, [goblin], _spell("longstrider"))
+        assert len(goblin.lifetimes) == 1  # ran through the fold, not legacy
+
+        bus.emit(EventType.TURN_START,
+                 TurnEventData(entity=goblin, round_num=2, turn_num=1))
+        assert goblin.resources.movement == base_move + 10
 
 
 # ── End-to-end on the new engine, via the real router ───────────────────────────
