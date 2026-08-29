@@ -67,8 +67,24 @@ def lifetime(block: Block, inv: Invocation) -> None:
         inv.target.lifetimes.append(scope)
 
 
+def end_lifetime(block: Block, inv: Invocation) -> None:
+    """End the effect whose rider is firing — dispose its owning lifetime scope.
+
+    Used by a self-terminating effect (Armor of Agathys ends when its temp HP is
+    gone). Disposing the scope revokes every grant it owns and unsubscribes its
+    riders. A no-op outside a trigger firing (no owning scope).
+    """
+    if inv.owning_scope is not None:
+        inv.owning_scope.dispose()
+
+
 REGISTRY.register(
     "lifetime",
     lifetime,
     BlockContract(target_arity=TargetArity.SINGLE, installs_reactions=True),
+)
+REGISTRY.register(
+    "end_lifetime",
+    end_lifetime,
+    BlockContract(target_arity=TargetArity.SINGLE),
 )

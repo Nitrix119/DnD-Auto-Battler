@@ -71,6 +71,8 @@ def trigger(block: Block, inv: Invocation) -> None:
     # For a self-applied effect that is the caster; for a buff on an ally it is the
     # target the effect was attached to. Captured now (stable for the cast).
     holder = inv.caster if block.get("holder", "caster") == "caster" else inv.target
+    # The scope this rider belongs to, so its `then` can end the effect itself.
+    owning_scope = inv.active_scope
 
     def handler(event) -> None:
         # The rider runs later, on someone else's turn; `holder` + the captured
@@ -79,6 +81,7 @@ def trigger(block: Block, inv: Invocation) -> None:
         if depth >= _MAX_TRIGGER_DEPTH:
             return
         fired = inv.child(caster=holder, target=holder, event_data=dict(event.data))
+        fired.owning_scope = owning_scope
         if not _passes(when, fired):
             return
         if target_expr is not None:

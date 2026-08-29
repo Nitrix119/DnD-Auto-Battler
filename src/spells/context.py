@@ -88,6 +88,11 @@ class Invocation:
     # for ``event.total // 2``). None during an ordinary cast.
     event_data: Optional[Dict[str, Any]] = None
 
+    # The lifetime scope that owns the currently-firing trigger, so a rider can end
+    # its own effect (an ``end_lifetime`` block disposes it — e.g. Armor of Agathys
+    # ending when its temp HP is gone). None outside a trigger firing.
+    owning_scope: Optional[LifetimeScope] = None
+
     # Bookkeeping the result is derived from.
     dealt_damages: List[Damage] = field(default_factory=list)
     healing_total: int = 0

@@ -42,12 +42,10 @@ class TestFoldRouting:
         assert can_run_on_blocks(_spell("shield_of_faith"), None) is False
 
     def test_still_un_foldable_effects_stay_on_legacy(self):
-        # Each stays on legacy for a specific reason: Haste is a concentration
-        # duration on a targeted ally (its clock would tick on the wrong turn);
-        # Armor of Agathys uses RemoveEffect + a per-effect `when`.
-        rules = _rules()
-        for name in ("haste", "armor_of_agathys"):
-            assert can_run_on_blocks(_spell(name), rules) is False, name
+        # Haste stays on legacy: a concentration duration on a targeted ally, whose
+        # clock would tick on the wrong turn. (Charm Person — instance_fields — is
+        # covered by test_instance_fields_effect_stays_on_legacy.)
+        assert can_run_on_blocks(_spell("haste"), _rules()) is False
 
     def test_instance_fields_effect_stays_on_legacy(self):
         # Charm Person carries instance_fields (charmer) — not yet foldable.
@@ -69,6 +67,26 @@ class TestFoldShape:
         mod = life.then[0]
         assert mod.get("stat") == "ac" and mod.get("value") == 2
         assert mod.get("target") == "defender"
+
+    def test_armor_of_agathys_folds_with_retaliation_and_self_dispose(self):
+        spell = _spell("armor_of_agathys")
+        assert can_run_on_blocks(spell, _rules()) is True
+        program = to_program(spell.pipeline_effects, spell.targeting_type, _rules())
+        life = program[-1]
+        assert life.type == "lifetime"
+        kinds = [b.type for b in life.then]
+        assert kinds[0] == "grant_temporary_hp"
+        triggers = [b for b in life.then if b.type == "trigger"]
+        by_event = {t.get("event"): t for t in triggers}
+        # Retaliation: on a hit, damage the attacker, only while temp HP remain.
+        hit = by_event["ATTACK_HIT"]
+        assert hit.get("target") == "event.attacker"  # rebinds to the attacker
+        assert hit.then[0].type == "damage"
+        assert hit.then[0].get("condition") == "entity.temporary_hp > 0"
+        # Self-dispose: when temp HP are gone, end the effect.
+        dealt = by_event["DAMAGE_DEALT"]
+        assert dealt.then[0].type == "end_lifetime"
+        assert dealt.then[0].get("condition") == "entity.temporary_hp <= 0"
 
     def test_vampiric_touch_folds_with_a_granted_action_and_a_heal_rider(self):
         spell = _spell("vampiric_touch")

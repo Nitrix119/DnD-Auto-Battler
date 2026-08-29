@@ -314,10 +314,22 @@ reviewable **sub-slices**, each independently green and committed:
   rider; breaking concentration revokes the granted action via the scope handle. Four VT tests had their
   legacy-pipeline roll mocks retargeted to the block engine and their manual concentration-break switched
   to the real `end_concentration` teardown. Full suite green (681).
-- **4.3b-2c — the last folds (next).** A self-dispose path + per-effect `when` for Armor of Agathys;
-  relax the router's reactive-effects guard as triggers subsume `InjectPipelineDamageStep` (Colossus
-  Slayer). Haste stays on legacy (concentration duration on a targeted ally — the clock would tick on the
-  wrong turn; modelling that properly is later work). Then **4.3c** deletes `BUILTIN_EFFECTS`.
+- **4.3b-2c — Armor of Agathys ✅ DONE (2026-08-29).** Two pieces: a **per-effect `when`** now folds as
+  the effect block's fire-time `condition` (run_block evaluates it when the trigger fires); and a
+  **self-dispose** path — `RemoveEffect` → an `end_lifetime` block that disposes the rider's own scope
+  (the trigger passes its owning scope to the fired context via `Invocation.owning_scope`). The fold
+  also learned **event-entity target rebinding**: a trigger whose effects hit an event entity (the
+  attacker) sets its `target` to that expression so the effect addresses it. **Armor of Agathys** runs
+  on the new engine at parity — grant 5 temp HP, retaliate 5 cold on a hit while temp HP remain, and end
+  the effect (disposing the scope) once temp HP are gone. Its self-termination tests were moved off the
+  legacy `active_effects` mechanism onto the new artifact (the lifetime scope's disposed state).
+  Full suite green (682).
+- **4.3b-2d — Colossus Slayer + relax the guard (next).** Fold `InjectPipelineDamageStep` → an
+  `ATTACK_HIT` trigger dealing the bonus die (killing the list-surgery injection), then relax
+  `SpellResolver._caster_has_reactive_effects` so a caster with folded reactive effects routes to the
+  new engine. Then **4.3c**: repoint the rule dispatch, migrate the entity-effect files, delete
+  `BUILTIN_EFFECTS`. (Haste stays on legacy — concentration duration on a targeted ally, clock ticks on
+  the wrong turn; deferred as later work.)
 - **4.3c — repoint dispatch + delete `BUILTIN_EFFECTS`.** Repoint the rule engine's effect dispatch at
   the block registry, migrate `rules/entity_effects/*`, delete `BUILTIN_EFFECTS`, and name the
   persistent-effect concept. The duration clock (`RuleEngine._tick_durations` on `TURN_END`) must be

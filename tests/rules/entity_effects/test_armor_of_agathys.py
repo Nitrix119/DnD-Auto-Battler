@@ -229,9 +229,9 @@ class TestArmorOfAgathysSelfTermination:
 
         spell_res.resolve(caster, [caster], _load_spell())
 
-        # Verify effect is present
-        assert any(inst.name == "armor_of_agathys"
-                   for inst in caster.active_effects.get("attack_hit", []))
+        # Verify effect is present (folded onto the new engine: a lifetime scope
+        # on the warded entity, not a legacy active_effects instance).
+        assert len(caster.lifetimes) == 1 and not caster.lifetimes[0].disposed
 
         # Attack with enough damage to deplete temp HP.
         # Patch roll_formula at both import sites: action.roll_damage() and
@@ -245,9 +245,8 @@ class TestArmorOfAgathysSelfTermination:
             ar.resolve(attacker, caster, action)
 
         assert caster.temporary_hp == 0
-        # Effect should be gone from all trigger buckets
-        for bucket in caster.active_effects.values():
-            assert not any(inst.name == "armor_of_agathys" for inst in bucket)
+        # The effect self-terminated: its lifetime scope was disposed.
+        assert caster.lifetimes[0].disposed
 
     def test_effect_removed_when_temp_hp_depleted_by_non_attack(self):
         """Non-attack damage that depletes temp HP should also remove the effect."""
@@ -260,8 +259,7 @@ class TestArmorOfAgathysSelfTermination:
         dp.apply_damage(caster, [Damage(DamageType.FIRE, 10)])
 
         assert caster.temporary_hp == 0
-        for bucket in caster.active_effects.values():
-            assert not any(inst.name == "armor_of_agathys" for inst in bucket)
+        assert caster.lifetimes[0].disposed  # self-terminated
 
     def test_effect_persists_while_temp_hp_remain(self):
         """The effect stays if temp HP are only partially consumed."""
@@ -273,8 +271,7 @@ class TestArmorOfAgathysSelfTermination:
         dp.apply_damage(caster, [Damage(DamageType.BLUDGEONING, 3)])
 
         assert caster.temporary_hp == 2
-        assert any(inst.name == "armor_of_agathys"
-                   for inst in caster.active_effects.get("attack_hit", []))
+        assert len(caster.lifetimes) == 1 and not caster.lifetimes[0].disposed
 
     def test_full_combat_flow(self):
         """End-to-end: goblin hits warded caster, takes cold damage, temp HP deplete."""

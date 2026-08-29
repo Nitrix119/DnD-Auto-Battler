@@ -16,8 +16,8 @@ This module reunites them into one ``lifetime{ … }`` block:
 
 Still deferred (kept on legacy by :func:`foldable`): a *concentration* duration on
 a non-``on_caster`` effect (its clock would tick on the wrong turn — e.g. Haste),
-a per-effect ``when`` guard, an ``instance_fields`` step, or any ``on_apply``/rule
-action without a block translator (``RemoveEffect``, ``InjectPipelineDamageStep``).
+an ``instance_fields`` step, or any ``on_apply``/rule action without a block
+translator (``InjectPipelineDamageStep``).
 
 ``foldable`` is the routing gate's check (does this step translate cleanly?);
 ``to_lifetime_block`` is the translation. Both take the referenced ``rule`` (or
@@ -116,6 +116,11 @@ def _grant_action(eff: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _end_lifetime(eff: Dict[str, Any]) -> Dict[str, Any]:
+    # A rule's ``RemoveEffect`` on itself → end the effect's own lifetime scope.
+    return {"block": "end_lifetime"}
+
+
 # Legacy BUILTIN_EFFECTS action → block translator. Actions absent here
 # (GrantAction, RemoveEffect, InjectPipelineDamageStep, …) are not yet foldable —
 # the spells that use them stay on the legacy engine until a later slice.
@@ -127,6 +132,7 @@ _ACTION_TO_BLOCK: Dict[str, Callable[[Dict[str, Any]], Dict[str, Any]]] = {
     "DealDamage": _damage,
     "AddResource": _add_resource,
     "GrantAction": _grant_action,
+    "RemoveEffect": _end_lifetime,
 }
 
 
@@ -148,6 +154,12 @@ def _effect_fires_on(eff: Dict[str, Any], event_name: str) -> bool:
     return event_name in {str(x).upper() for x in on_list}
 
 
+# Effect target expressions that name an entity *of the event* (not the holder or
+# spell caster/defender). A trigger whose effects hit one rebinds its current
+# target to it, and those effects then address the rebound target ("defender").
+_EVENT_REBIND = {"event.attacker", "event.defender", "event.source", "event.target"}
+
+
 def _triggers_from_rule(step: Dict[str, Any], rule: Any) -> List[Dict[str, Any]]:
     """One ``trigger`` block per event the rule reacts to, holding its effects.
 
@@ -158,19 +170,34 @@ def _triggers_from_rule(step: Dict[str, Any], rule: Any) -> List[Dict[str, Any]]
     blocks: List[Dict[str, Any]] = []
     for event_type in getattr(rule, "triggers", []) or []:
         event_name = event_type.name
-        then = [
-            _ACTION_TO_BLOCK[e["action"]](e)
-            for e in rule.effects
-            if _effect_fires_on(e, event_name)
-        ]
-        if not then:
+        effs = [e for e in rule.effects if _effect_fires_on(e, event_name)]
+        if not effs:
             continue
+        # If this event's effects hit an event entity (e.g. the attacker), the
+        # trigger rebinds its current target to it once.
+        rebinds = {e.get("target") for e in effs if e.get("target") in _EVENT_REBIND}
+        trigger_target = rebinds.pop() if len(rebinds) == 1 else None
+
+        then = []
+        for e in effs:
+            eff_block = _ACTION_TO_BLOCK[e["action"]](e)
+            if trigger_target and e.get("target") in _EVENT_REBIND:
+                eff_block["target"] = "defender"  # the rebound current target
+            # A per-effect `when` becomes the effect block's own `condition`, which
+            # run_block evaluates at *fire* time inside the trigger — a per-effect
+            # fire guard (e.g. Armor of Agathys retaliating only while temp HP > 0).
+            if e.get("when"):
+                eff_block["condition"] = e["when"]
+            then.append(eff_block)
+
         tb: Dict[str, Any] = {
             "block": "trigger",
             "event": event_name,
             "holder": holder,
             "then": then,
         }
+        if trigger_target:
+            tb["target"] = trigger_target
         if rule.condition:
             tb["when"] = rule.condition
         blocks.append(tb)
@@ -209,12 +236,10 @@ def foldable(step: Dict[str, Any], rule: Any) -> bool:
         and not step.get("on_caster")
     ):
         return False
-    # Reactive effects: every rule effect must map to a block, and per-effect fire
-    # guards (`when`) are not folded yet.
+    # Reactive effects: every rule effect must map to a block (a per-effect `when`
+    # is now folded, as the effect block's fire-time condition).
     for eff in getattr(rule, "effects", []) or []:
         if eff.get("action") not in _ACTION_TO_BLOCK:
-            return False
-        if eff.get("when"):
             return False
     return True
 
