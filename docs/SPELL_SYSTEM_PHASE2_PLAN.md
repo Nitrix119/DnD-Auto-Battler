@@ -20,7 +20,9 @@
 > (do not read it as current). Phase 2 slices **4.1, 4.2, and 4.3b are complete**, and **§4.7 step 1
 > (the live-event mutation contract) has landed** — all committed on branch `feat/spell-system-rework`.
 > The full pure-event-flag modifier set has shipped (`modify_damage`, `force_critical`, `grant_advantage`,
-> `grant_disadvantage`, `cancel`). The suite is green (**710 tests**); `mypy src/` sits at a steady 44
+> `grant_disadvantage`, `cancel`), and **the first production repoint has landed** — the event-modifier
+> *global* rules (resistance/immunity/vulnerability, crits) now run on the block engine, not
+> `BUILTIN_EFFECTS`. The suite is green (**718 tests**); `mypy src/` sits at a steady 44
 > pre-existing errors (one is `src/spells/blocks/damage.py:82`, a benign register-signature variance, not
 > from the new work); Black is pinned `==23.12.1` (see §9 in [CLAUDE.md](../CLAUDE.md) — do **not** run a
 > newer Black on modified files; the dev env resolves Black 26.x).
@@ -58,6 +60,7 @@
 | `blocks/lifetime.py` | `lifetime` (opens a scope, binds concentration/duration), `end_lifetime` (self-dispose). |
 | `blocks/triggers.py` | `trigger` (subscribe a `then` to an event, holder-scoped, depth-guarded, priority −10; passes the live event to its firing). |
 | `blocks/event_mod.py` | **event-modifier** blocks — mutate the in-flight event via `inv.live_event` (§4.7): `modify_damage` (resistance/immunity/vuln), `force_critical` (nat-20/1 crits), `grant_advantage`/`grant_disadvantage`/`cancel` (the condition library). |
+| `global_rules.py` | `block_eligible` + `install_global_rules` — installs the event-modifier *global* rules as permanent priority-0 triggers at combat start (§4.7 step 3, first repoint). Reuses `fold.rule_to_trigger_blocks`. |
 | *(model)* `src/models/lifetime.py` | `LifetimeScope` / `RevokeHandle` / `LifetimeKind` — pure ownership primitive with `rounds_remaining`/`tick()`. |
 
 ### 0.3 Key machinery & where parity lives
@@ -589,28 +592,39 @@ AST-whitelist expression sandbox · EventBus as the substrate for cross-cutting 
 
 ## 6. The immediate next step
 
-**4.1, 4.2, and 4.3 are done**, and **§4.7 step 1 is substantially landed** — the *live-event mutation
-contract* is settled (direct handle, §5) and the full pure-event-flag modifier set (`modify_damage`,
-`force_critical`, `grant_advantage`/`grant_disadvantage`/`cancel`) is built, parity-gated, and wired into
-`fold.py` (the condition library folds cleanly). The `Invocation` → `CastEnv` split (§0.6.1) shipped as its
-prerequisite. **21 of 23 shipped spells run on the new engine.** The remaining tranche of
-**[§4.7 Phase 2.9 — retiring `BUILTIN_EFFECTS`](#47-phase-29--retiring-builtin_effects-the-core-rules-migration)**:
+**4.1, 4.2, and 4.3 are done**; **§4.7 step 1 is substantially landed** (the pure-event-flag modifier set,
+parity-gated and fold-wired); and **the first production repoint (§4.7 step 3, partial) is in** — the
+event-modifier *global* rules run on the block engine (`src/spells/global_rules.py`; the web handler
+installs them and disables exactly those on the rule engine, so nothing double-applies). The `Invocation`
+→ `CastEnv` split (§0.6.1) shipped as the prerequisite. **21 of 23 shipped spells run on the new engine.**
+Remaining in **[§4.7](#47-phase-29--retiring-builtin_effects-the-core-rules-migration)**:
 
 1. **Repoint `RuleEngine.apply_effect` at the block engine** (§4.7 step 2) — **the next major slice; a
    production-behaviour change worth its own planning pass.** Translate an entity effect to a
-   `lifetime{ trigger… }` program and install it via the evaluator, reusing `fold.py`'s (now complete)
-   rule→trigger translation. This brings the **condition library** onto the new engine, kills
-   `InjectPipelineDamageStep` (Colossus Slayer → an `ATTACK_HIT` trigger dealing the bonus die) and lets
-   the router's injection guard (§4.3b-2d) be removed; fold Haste (split-holder duration) and Charm Person
-   (`instance_fields` → a trigger closure variable) here. Open questions: subscription **priority/ordering**
-   (block triggers install at −10 by default; entity effects fired at −10 before — verify no reordering vs
-   the priority-0 global rules) and avoiding **double-application** while both paths coexist.
-2. **Migrate the global rules** (`rules/global/*`) to block form, subscribed at combat start through the
-   block engine — this is where `force_concentration_check` and `refill_resources` get built (as forward
-   blocks fired by a permanent trigger). Then **delete `BUILTIN_EFFECTS`** and move the `TURN_END` tick to
-   a standalone clock.
+   `lifetime{ trigger… }` program and install it via the evaluator, reusing `fold.rule_to_trigger_blocks`.
+   This brings the **condition library** onto the new engine (its blocks + fold translators already exist),
+   kills `InjectPipelineDamageStep` (Colossus Slayer → an `ATTACK_HIT` trigger dealing the bonus die) and
+   lets the router's injection guard (§4.3b-2d) be removed; fold Haste (split-holder duration) and Charm
+   Person (`instance_fields` → a trigger closure variable) here. Apply the same **disable-the-legacy-path**
+   discipline the global-rule repoint used to avoid double-application. Per the user (2026-08-30): priority
+   0 + subscription order is fine for the common case; force order only where something strictly must be
+   first/last.
+2. **Finish the global rules** — build the two *side-effecting* globals as forward blocks fired by a
+   permanent trigger: `force_concentration_check` (rolls a CON save, ends concentration) and
+   `refill_resources` (resets an entity on `TURN_START`), then route `concentration` / `action_economy_refill`
+   through `install_global_rules` too. Then **delete `BUILTIN_EFFECTS`** and move the `TURN_END` tick to a
+   standalone clock.
 
 Parity-gate every rule as it moves, the same way spells were.
+
+**Carried notes from the global-rule repoint (2026-08-30):** (a) a global-rule install invocation has no
+caster/target (`None`, with a `type: ignore`) — its event-modifier effects reach the live event, not an
+entity; if `Invocation.caster`/`target` ever want to be `Optional`, this is why. (b) `global_rules.py` (a
+permanent module) imports `fold.rule_to_trigger_blocks` from the *transitional* `fold.py`; when `fold.py`
+is deleted in Phase 3 that translation needs a new home (or global rules become native `program`s). (c)
+double-application is prevented only by the caller disabling handled rules on the rule engine — currently
+only the web handler loads global rules, so it is contained, but any new global-rule loader must do the
+same.
 
 _Reference — the 4.3 approach that this builds on: a `trigger` block captures its defining invocation and
 subscribes a holder-scoped, depth-guarded handler at priority −10; a `lifetime` scope owns each grant's
