@@ -17,11 +17,13 @@ does, so parity is line-for-line. Run outside a trigger there is no live event t
 touch, so the block no-ops (a fail-safe, matching the engine's skip-don't-crash
 stance). Contract flag ``mutates_event=True`` marks the category.
 
-This module ships ``modify_damage`` (behind the damage resistance/immunity/
-vulnerability rules) and ``force_critical`` (behind the nat-20/nat-1 crit rules);
-the remaining siblings (``grant_advantage`` / ``grant_disadvantage`` / ``cancel`` /
-``force_concentration_check`` / ``refill_resources``) land as each remaining global
-rule migrates.
+This module ships the pure event-flag modifiers — ``modify_damage`` (damage
+resistance/immunity/vulnerability rules), ``force_critical`` (nat-20/nat-1 crit
+rules), and ``grant_advantage`` / ``grant_disadvantage`` / ``cancel`` (the entire
+condition library: blinded, frightened, invisible, paralysed, restrained, stunned,
+…). The remaining side-effecting members (``force_concentration_check``,
+``refill_resources``) are forward effects that fire *on* an event rather than
+mutating it, and land with their global rules' migration.
 """
 
 from __future__ import annotations
@@ -76,14 +78,47 @@ def force_critical(block: Block, inv: Invocation) -> None:
     event.data[key] = True
 
 
-REGISTRY.register(
-    "modify_damage",
-    modify_damage,
-    BlockContract(target_arity=TargetArity.SINGLE, mutates_event=True),
+def grant_advantage(block: Block, inv: Invocation) -> None:
+    """Flag advantage on the live roll event (``ATTACK_DECLARED`` /
+    ``SAVING_THROW_DECLARED``). The block form of ``effects.grant_advantage`` —
+    how blinded/invisible/paralysed/… grant advantage to or against a creature.
+    """
+    event = inv.live_event
+    if event is None:
+        return
+    event.data["advantage"] = True
+
+
+def grant_disadvantage(block: Block, inv: Invocation) -> None:
+    """Flag disadvantage on the live roll event (the mirror of
+    :func:`grant_advantage`). Advantage and disadvantage are independent flags —
+    both set, they cancel per 5e — so these are two blocks, not one parametrised.
+    """
+    event = inv.live_event
+    if event is None:
+        return
+    event.data["disadvantage"] = True
+
+
+def cancel(block: Block, inv: Invocation) -> None:
+    """Cancel the in-flight action by setting ``cancelled`` on the live event.
+
+    The block form of ``effects.cancel_event`` — how incapacitated/paralysed/
+    stunned/… stop an action outright. Sets the flag on the ``CombatEvent``
+    itself (not its ``data``), which is what the emitter checks after each handler.
+    """
+    event = inv.live_event
+    if event is None:
+        return
+    event.cancelled = True
+
+
+_EVENT_MODIFIER_CONTRACT = BlockContract(
+    target_arity=TargetArity.SINGLE, mutates_event=True
 )
 
-REGISTRY.register(
-    "force_critical",
-    force_critical,
-    BlockContract(target_arity=TargetArity.SINGLE, mutates_event=True),
-)
+REGISTRY.register("modify_damage", modify_damage, _EVENT_MODIFIER_CONTRACT)
+REGISTRY.register("force_critical", force_critical, _EVENT_MODIFIER_CONTRACT)
+REGISTRY.register("grant_advantage", grant_advantage, _EVENT_MODIFIER_CONTRACT)
+REGISTRY.register("grant_disadvantage", grant_disadvantage, _EVENT_MODIFIER_CONTRACT)
+REGISTRY.register("cancel", cancel, _EVENT_MODIFIER_CONTRACT)

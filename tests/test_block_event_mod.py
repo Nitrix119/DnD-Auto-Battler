@@ -20,7 +20,11 @@ import os
 
 from src.models import AbilityScores, StatBlock, Entity, Damage, DamageType
 from src.combat.event_bus import EventBus, CombatEvent
-from src.combat.event_data import DamageIncomingData, AttackRolledData
+from src.combat.event_data import (
+    DamageIncomingData,
+    AttackRolledData,
+    AttackDeclaredData,
+)
 from src.combat.events import EventType
 from src.combat.damage_processor import DamageProcessor
 from src.rules import RuleEngine, RuleLoader
@@ -34,6 +38,10 @@ _GLOBAL = os.path.join(os.path.dirname(__file__), "..", "rules", "global")
 RESISTANCE_JSON = os.path.join(_GLOBAL, "damage_resistance_rule.json")
 CRIT_HIT_JSON = os.path.join(_GLOBAL, "critical_hit.json")
 CRIT_MISS_JSON = os.path.join(_GLOBAL, "critical_miss.json")
+BLINDED_JSON = os.path.join(
+    os.path.dirname(__file__), "..", "rules", "entity_effects", "conditions",
+    "blinded.json",
+)
 
 # The resistance rule as a native block program: a permanent (lifetime-less)
 # trigger that halves matching damage on the in-flight DAMAGE_INCOMING event.
@@ -273,3 +281,99 @@ class TestFoldModifyDamage:
             {"action": "ModifyDamage", "multiplier": 0, "damage_type": "POISON"}
         )
         assert block["damage_type"] == "POISON"
+
+
+# ---------------------------------------------------------------------------
+# 4. The condition-library event-modifiers: advantage / disadvantage / cancel
+# ---------------------------------------------------------------------------
+
+class TestConditionEventModifiers:
+    def _event(self):
+        return CombatEvent(
+            event_type=EventType.ATTACK_DECLARED,
+            data=AttackDeclaredData(
+                attacker=_entity(), defender=_entity(), action=None
+            ),
+        )
+
+    def _run(self, btype):
+        bus = EventBus()
+        event = self._event()
+        inv = _new_inv(bus, _entity(), live_event=event, event_data=dict(event.data))
+        run_block(Block.from_dict({"block": btype}), inv)
+        return event
+
+    def test_grant_advantage_sets_flag(self):
+        assert self._run("grant_advantage").data["advantage"] is True
+
+    def test_grant_disadvantage_sets_flag(self):
+        assert self._run("grant_disadvantage").data["disadvantage"] is True
+
+    def test_cancel_sets_event_cancelled(self):
+        assert self._run("cancel").cancelled is True
+
+    def test_grant_advantage_matches_legacy_handler(self):
+        from src.rules.effects import grant_advantage as legacy
+
+        block_event = self._run("grant_advantage")
+        legacy_event = self._event()
+        legacy({}, {}, legacy_event, EventBus())
+        assert block_event.data["advantage"] == legacy_event.data["advantage"] is True
+
+    def test_grant_disadvantage_matches_legacy_handler(self):
+        from src.rules.effects import grant_disadvantage as legacy
+
+        block_event = self._run("grant_disadvantage")
+        legacy_event = self._event()
+        legacy({}, {}, legacy_event, EventBus())
+        assert (
+            block_event.data["disadvantage"]
+            == legacy_event.data["disadvantage"]
+            is True
+        )
+
+    def test_cancel_matches_legacy_handler(self):
+        from src.rules.effects import cancel_event as legacy
+
+        block_event = self._run("cancel")
+        legacy_event = self._event()
+        legacy({}, {}, legacy_event, EventBus())
+        assert block_event.cancelled == legacy_event.cancelled is True
+
+    def test_no_live_event_is_a_safe_noop(self):
+        bus = EventBus()
+        inv = _new_inv(bus, _entity())  # live_event=None
+        for bt in ("grant_advantage", "grant_disadvantage", "cancel"):
+            run_block(Block.from_dict({"block": bt}), inv)
+
+
+class TestFoldConditionActions:
+    def test_translators_name_the_blocks(self):
+        from src.spells.fold import _ACTION_TO_BLOCK
+
+        assert _ACTION_TO_BLOCK["GrantAdvantage"]({})["block"] == "grant_advantage"
+        assert (
+            _ACTION_TO_BLOCK["GrantDisadvantage"]({})["block"] == "grant_disadvantage"
+        )
+        assert _ACTION_TO_BLOCK["Cancel"]({})["block"] == "cancel"
+
+    def test_blinded_rule_folds_to_one_trigger_with_guarded_effects(self):
+        """A real condition rule translates into a trigger holding the two flags,
+        each carrying its per-effect `when` as the block's fire-time condition."""
+        from src.spells.fold import _triggers_from_rule
+
+        rule = RuleLoader.load(BLINDED_JSON)
+        step = {"type": "add_entity_effect", "on_caster": True}
+        blocks = _triggers_from_rule(step, rule)
+
+        assert len(blocks) == 1
+        tb = blocks[0]
+        assert tb["block"] == "trigger"
+        assert tb["event"] == "ATTACK_DECLARED"
+        assert tb["when"] == rule.condition
+        assert [b["block"] for b in tb["then"]] == [
+            "grant_disadvantage",
+            "grant_advantage",
+        ]
+        assert tb["then"][0]["condition"] == "event.attacker == entity"
+        assert tb["then"][1]["condition"] == "event.defender == entity"

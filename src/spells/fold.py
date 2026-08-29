@@ -131,6 +131,22 @@ def _modify_damage(eff: Dict[str, Any]) -> Dict[str, Any]:
     return out
 
 
+# Event-modifiers used by the condition library — targetless flags on the live roll
+# event. Their per-effect ``when`` / ``on`` are applied by ``_triggers_from_rule``
+# (as the block's fire-time ``condition`` and its event routing), so the translators
+# only name the block.
+def _grant_advantage(eff: Dict[str, Any]) -> Dict[str, Any]:
+    return {"block": "grant_advantage"}
+
+
+def _grant_disadvantage(eff: Dict[str, Any]) -> Dict[str, Any]:
+    return {"block": "grant_disadvantage"}
+
+
+def _cancel(eff: Dict[str, Any]) -> Dict[str, Any]:
+    return {"block": "cancel"}
+
+
 # Legacy BUILTIN_EFFECTS action → block translator. Actions absent here
 # (GrantAction, RemoveEffect, InjectPipelineDamageStep, …) are not yet foldable —
 # the spells that use them stay on the legacy engine until a later slice.
@@ -144,6 +160,9 @@ _ACTION_TO_BLOCK: Dict[str, Callable[[Dict[str, Any]], Dict[str, Any]]] = {
     "GrantAction": _grant_action,
     "RemoveEffect": _end_lifetime,
     "ModifyDamage": _modify_damage,
+    "GrantAdvantage": _grant_advantage,
+    "GrantDisadvantage": _grant_disadvantage,
+    "Cancel": _cancel,
 }
 
 
