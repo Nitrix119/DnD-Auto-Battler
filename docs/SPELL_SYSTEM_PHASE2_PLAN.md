@@ -97,6 +97,35 @@ asserting the new-engine artifact (a lifetime scope), per CLAUDE.md §4 (test be
 `rules/global/*`, and the transitional `adapter.py` / `fold.py`. **Retiring `BUILTIN_EFFECTS` is its own
 phase — see [§4.7](#47-phase-29--retiring-builtin_effects-the-core-rules-migration).**
 
+### 0.6 Carried-forward debt / cleanups (all manageable — not blockers)
+
+A review at the end of 4.3b (2026-08-29) flagged these. None is problematic debt of the kind the rewrite
+set out to erase; they're ordinary cleanups to keep an eye on. Listed most-worth-doing first.
+
+1. **Split `Invocation` into an immutable `CastEnv` + mutable per-run state — do before §4.7.**
+   `src/spells/context.py`'s `Invocation` is now ~18 fields across three roles (per-target run, iterator
+   root, trigger firing), mixing the constant cast environment (caster/action/`event_bus`/
+   `damage_processor`/`rule_engine`/`slot_level`) with mutable state (`context`, `results`, `active_scope`,
+   `event_data`, `owning_scope`, flags). `.child()` contains the construction, so it's managed, but §4.7's
+   live-event handle will add another field. Extracting a frozen `CastEnv` (the collaborators) that
+   `Invocation` holds a reference to would stop the grab-bag trend and make the §4.7 addition clean. The
+   single highest-value cleanup; best done as a standalone refactor before Phase 2.9 piles on.
+2. **Keep `src/spells/fold.py` docstrings current.** It is the most intricate new module (target rebinding,
+   holder-scoping, per-effect `when`, duration deferral, event-field detection) and the migration's Rosetta
+   Stone. It is transitional (dies in Phase 3), so the *complexity* is fine, but its docstrings drift
+   easily — one was already found stale. Treat its comments as load-bearing.
+3. **Context-dependent `"caster"`/`"entity"` target semantics.** In a cast, `"caster"` is the spell caster;
+   in a fired rider, the firing invocation's caster is the effect-*holder*, so `"caster"`/`entity` resolve
+   to the holder. Correct and documented (`Invocation.child`, `fold._target`), but a real cognitive load —
+   worth a second look if it ever surprises someone.
+4. **`runner.run_target` now carries two ordering rules** — emit `SPELL_HIT` before the first non-gate
+   block, and flush `DAMAGE_DEALT` before the first `installs_reactions` block. Both correct and minimal;
+   if a third emission-ordering rule ever lands, extract the emission scheduling from the loop.
+5. **A few migrated tests assert the new-engine *artifact*, not pure behaviour.** Moving Longstrider/AoA/VT
+   tests off the legacy `active_effects` mechanism was right (CLAUDE.md §4), but a couple now assert
+   `entity.lifetimes[...]`/`.disposed` — artifact-coupled, because the pure observable (e.g. "retaliation
+   stops") is awkward to assert directly. Acceptable; note the coupling if those internals change.
+
 ---
 
 ## 1. Current state of the code (end of Phase 1 — historical baseline; see §0 for live status)
@@ -503,7 +532,8 @@ it, but the table is still load-bearing for two things the spell adapter does **
    standalone block-engine clock.
 
 **Prerequisites / open decisions:** the live-event mutation contract (step 1) is the gating design
-question — settle it before building. `remove_condition_type` and the condition library's shape (are
+question — settle it before building. **Do the `Invocation` → `CastEnv` split ([§0.6.1](#06-carried-forward-debt--cleanups-all-manageable--not-blockers)) first** — step 1 adds a live-event handle to the
+invocation, and the split keeps that clean. `remove_condition_type` and the condition library's shape (are
 conditions plain state, or do some carry riders?) should be reviewed as they migrate. Parity-gate every
 rule as it moves, the same way spells were.
 
