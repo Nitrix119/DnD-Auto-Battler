@@ -349,9 +349,15 @@ class RuleEngine:
         Also ticks timed :class:`~src.models.condition.Condition` objects on the
         entity — conditions whose ``rounds_remaining`` reaches zero are removed
         automatically, unifying duration tracking under one mechanism.
+
+        Also ticks the entity's new-engine lifetime scopes (the block engine owns
+        that logic in ``Entity.tick_lifetimes``; this is the single TURN_END clock
+        that drives it — it moves to a standalone clock when the rule engine is
+        retired in Phase 3).
         """
         if entity is None:
             return
+        entity.tick_lifetimes()
         expired_instances: set = set()  # id(instance) of instances that expired this tick
         ticked: set = set()             # id(instance) already ticked (avoid double-decrement
                                         # when the same instance appears in multiple trigger buckets)

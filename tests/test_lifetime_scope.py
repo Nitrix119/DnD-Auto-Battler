@@ -57,3 +57,23 @@ class TestLifetimeScope:
         scope = LifetimeScope(kind=LifetimeKind.CONCENTRATION, source="Bless")
         assert scope.kind is LifetimeKind.CONCENTRATION
         assert scope.source == "Bless"
+
+
+class TestScopeCountdown:
+
+    def test_untimed_scope_never_expires(self):
+        scope = LifetimeScope()
+        assert scope.rounds_remaining is None
+        assert scope.tick() is False
+        assert scope.tick() is False
+
+    def test_timed_scope_expires_after_its_rounds(self):
+        scope = LifetimeScope(rounds_remaining=2)
+        assert scope.tick() is False  # 2 -> 1
+        assert scope.tick() is True   # 1 -> 0, expired
+        assert scope.rounds_remaining == 0
+
+    def test_disposed_scope_tick_is_a_noop(self):
+        scope = LifetimeScope(rounds_remaining=1)
+        scope.dispose()
+        assert scope.tick() is False

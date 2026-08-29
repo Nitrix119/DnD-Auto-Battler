@@ -157,6 +157,37 @@ def test_concentration_break_on_damage_revokes_the_buff_end_to_end():
     assert target.ac == 12  # the +2 AC buff revoked
 
 
+def test_duration_lifetime_expires_via_the_real_turn_end_clock():
+    """A rounds-duration lifetime disposes after N of the holder's TURN_ENDs.
+
+    Drives the actual clock: RuleEngine._tick_durations on TURN_END calls
+    Entity.tick_lifetimes. After the duration elapses the buff is revoked.
+    """
+    from src.rules import RuleEngine
+    from src.combat.event_data import TurnEventData
+
+    caster, target = _caster(), _target(ac=12)
+    bus = EventBus()
+    RuleEngine(bus, entities_getter=lambda: [caster, target])
+
+    program = [{
+        "block": "lifetime", "kind": "rounds", "duration_rounds": 2,
+        "source": "Barkskin",
+        "then": [{"block": "add_modifier", "target": "defender",
+                  "stat": "ac", "value": 2, "source": "Barkskin"}],
+    }]
+    action = SpellAction(name="Barkskin", description="", spell_level=2)
+    resolve_blocks(caster, target, action, parse_program(program),
+                   event_bus=bus, damage_processor=DamageProcessor(bus))
+    assert target.ac == 14 and len(target.lifetimes) == 1
+
+    bus.emit(EventType.TURN_END, TurnEventData(entity=target, round_num=1, turn_num=1))
+    assert target.ac == 14  # one round left
+    bus.emit(EventType.TURN_END, TurnEventData(entity=target, round_num=2, turn_num=1))
+    assert target.ac == 12          # expired: buff revoked
+    assert target.lifetimes == []
+
+
 def test_concentration_held_on_a_successful_save():
     caster, target = _caster(), _target(ac=12)
     _run(caster, target, _SHIELD_OF_FAITH)

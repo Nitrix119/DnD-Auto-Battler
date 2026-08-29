@@ -292,9 +292,19 @@ reviewable **sub-slices**, each independently green and committed:
   with `duration_rounds` (Haste, Vampiric Touch — needs the §4.3c clock), a per-effect `when` (Armor of
   Agathys), `instance_fields` (Charm Person), or an unmapped action (`GrantAction`, `RemoveEffect`).
   Full suite green (675).
-- **4.3b-2b — the harder folds (next).** `grant_action` block + Vampiric Touch; a self-dispose path +
-  per-effect `when` for Armor of Agathys; relax the router's reactive-effects guard as triggers subsume
-  `InjectPipelineDamageStep` (Colossus Slayer). Haste waits on the §4.3c duration clock.
+- **Duration clock ✅ DONE (2026-08-29).** `LifetimeScope` gained `rounds_remaining` + `tick()`;
+  `Entity.tick_lifetimes()` counts down the entity's concentration scope + `lifetimes` on its turn,
+  disposing the expired. The one `TURN_END` clock (`RuleEngine._tick_durations`) now calls it — a
+  one-line hook (the tick *logic* lives in the block engine, so it relocates cleanly when the rule
+  engine retires in Phase 3). The `lifetime` block takes `duration_rounds`; proven end-to-end through
+  the real `TURN_END` clock (a rounds-duration buff revoked after N turns). **Parity note for relaxing
+  the fold:** a *rounds* scope lives on the holder and ticks on the holder's turn (matches legacy); a
+  *concentration* scope lives on the caster and ticks on the caster's turn — matching legacy only when
+  the holder is the caster (`on_caster`). So Haste (concentration, target=defender, duration) stays
+  deferred; Vampiric Touch (concentration, `on_caster`, duration) is unblocked once `grant_action` lands.
+- **4.3b-2b — the harder folds (next).** `grant_action` block + Vampiric Touch (now the clock is in);
+  a self-dispose path + per-effect `when` for Armor of Agathys; relax the router's reactive-effects
+  guard as triggers subsume `InjectPipelineDamageStep` (Colossus Slayer).
 - **4.3c — repoint dispatch + delete `BUILTIN_EFFECTS`.** Repoint the rule engine's effect dispatch at
   the block registry, migrate `rules/entity_effects/*`, delete `BUILTIN_EFFECTS`, and name the
   persistent-effect concept. The duration clock (`RuleEngine._tick_durations` on `TURN_END`) must be

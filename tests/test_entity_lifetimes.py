@@ -111,6 +111,32 @@ class TestConcentrationLifetime:
         assert caster.concentration_scope is None
         assert target.ac == 12
 
+    def test_tick_disposes_an_expired_duration_scope(self):
+        holder = _entity(ac=12)
+        scope = LifetimeScope(kind=LifetimeKind.ROUNDS, rounds_remaining=2)
+        scope.add(
+            holder.add_stat_modifier(
+                StatModifier(stat="ac", value=2, source="Buff", effect_name="")
+            )
+        )
+        holder.lifetimes.append(scope)
+        assert holder.ac == 14
+
+        holder.tick_lifetimes()          # 2 -> 1
+        assert holder.ac == 14 and holder.lifetimes
+        holder.tick_lifetimes()          # 1 -> 0: expired, disposed, dropped
+        assert holder.ac == 12
+        assert holder.lifetimes == []
+
+    def test_tick_expires_a_concentration_duration(self):
+        caster = _entity()
+        scope = LifetimeScope(kind=LifetimeKind.CONCENTRATION, rounds_remaining=1)
+        caster.begin_concentration(scope)
+        assert caster.has_concentration
+        caster.tick_lifetimes()          # 1 -> 0: concentration ends
+        assert not caster.has_concentration
+        assert caster.concentration_scope is None
+
     def test_scope_concentration_supersedes_legacy_string_concentration(self):
         # A legacy string-tagged concentration in progress, then a new-engine scope
         # concentration begins — the legacy one is torn down too.

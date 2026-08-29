@@ -76,13 +76,19 @@ class LifetimeScope:
     removes precisely what it granted, and nothing else.
     """
 
-    __slots__ = ("kind", "source", "_handles", "_disposed")
+    __slots__ = ("kind", "source", "rounds_remaining", "_handles", "_disposed")
 
     def __init__(
-        self, kind: LifetimeKind = LifetimeKind.ROUNDS, source: str = ""
+        self,
+        kind: LifetimeKind = LifetimeKind.ROUNDS,
+        source: str = "",
+        rounds_remaining: Optional[int] = None,
     ) -> None:
         self.kind = kind
         self.source = source
+        # Rounds left before the scope expires on its holder's turn; None = no
+        # timed expiry (ends only by concentration break, self-dispose, or never).
+        self.rounds_remaining = rounds_remaining
         self._handles: List[RevokeHandle] = []
         self._disposed = False
 
@@ -109,6 +115,17 @@ class LifetimeScope:
             return handle
         self._handles.append(handle)
         return handle
+
+    def tick(self) -> bool:
+        """Count down one round; return True when the timer has run out.
+
+        No-op (returns False) for a scope with no timed expiry. Ticking a disposed
+        scope also returns False. The caller disposes on a True result.
+        """
+        if self._disposed or self.rounds_remaining is None:
+            return False
+        self.rounds_remaining -= 1
+        return self.rounds_remaining <= 0
 
     def dispose(self) -> None:
         """Revoke every owned handle in reverse order, once."""

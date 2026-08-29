@@ -46,7 +46,9 @@ def lifetime(block: Block, inv: Invocation) -> None:
     """Run ``then`` with a fresh scope open, then bind the scope by its kind."""
     kind = _kind(block)
     source = str(block.get("source", getattr(inv.action, "name", "") or ""))
-    scope = LifetimeScope(kind=kind, source=source)
+    raw_rounds = block.get("duration_rounds")
+    rounds = int(raw_rounds) if raw_rounds is not None else None
+    scope = LifetimeScope(kind=kind, source=source, rounds_remaining=rounds)
 
     prev = inv.active_scope
     inv.active_scope = scope

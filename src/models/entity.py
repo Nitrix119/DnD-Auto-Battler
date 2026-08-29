@@ -302,6 +302,23 @@ class Entity:
         """
         self._dispose_current_concentration()
 
+    def tick_lifetimes(self) -> None:
+        """Count down this entity's timed lifetime scopes; dispose the expired.
+
+        Called on the entity's ``TURN_END`` (the duration clock). A concentration
+        scope that runs out ends concentration; a duration scope that runs out (or
+        has already self-disposed) is dropped. Scopes with no timer are untouched.
+        """
+        if self.concentration_scope is not None and self.concentration_scope.tick():
+            self.end_concentration()
+        surviving: List[LifetimeScope] = []
+        for scope in self.lifetimes:
+            if scope.tick():
+                scope.dispose()
+            elif not scope.disposed:
+                surviving.append(scope)
+        self.lifetimes = surviving
+
     def _dispose_current_concentration(self) -> None:
         if self.concentration_scope is not None:
             # The scope is authoritative — identity teardown of all it granted.
