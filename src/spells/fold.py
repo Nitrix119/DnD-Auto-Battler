@@ -121,6 +121,16 @@ def _end_lifetime(eff: Dict[str, Any]) -> Dict[str, Any]:
     return {"block": "end_lifetime"}
 
 
+def _modify_damage(eff: Dict[str, Any]) -> Dict[str, Any]:
+    # An event-modifier: scales the in-flight DAMAGE_INCOMING event. Belongs inside
+    # a trigger (which supplies the live event) — the fold always emits these
+    # under a ``trigger`` block, never at cast time.
+    out = {"block": "modify_damage", "multiplier": eff.get("multiplier", 1)}
+    if eff.get("damage_type") is not None:
+        out["damage_type"] = eff["damage_type"]
+    return out
+
+
 # Legacy BUILTIN_EFFECTS action → block translator. Actions absent here
 # (GrantAction, RemoveEffect, InjectPipelineDamageStep, …) are not yet foldable —
 # the spells that use them stay on the legacy engine until a later slice.
@@ -133,6 +143,7 @@ _ACTION_TO_BLOCK: Dict[str, Callable[[Dict[str, Any]], Dict[str, Any]]] = {
     "AddResource": _add_resource,
     "GrantAction": _grant_action,
     "RemoveEffect": _end_lifetime,
+    "ModifyDamage": _modify_damage,
 }
 
 

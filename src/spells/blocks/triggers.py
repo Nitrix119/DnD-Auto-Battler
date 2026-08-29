@@ -80,7 +80,12 @@ def trigger(block: Block, inv: Invocation) -> None:
         depth = _depth_by_bus.get(bus, 0)
         if depth >= _MAX_TRIGGER_DEPTH:
             return
-        fired = inv.child(caster=holder, target=holder, event_data=dict(event.data))
+        fired = inv.child(
+            caster=holder,
+            target=holder,
+            event_data=dict(event.data),
+            live_event=event,
+        )
         fired.owning_scope = owning_scope
         if not _passes(when, fired):
             return

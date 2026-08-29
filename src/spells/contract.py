@@ -49,6 +49,13 @@ class BlockContract:
             ``DAMAGE_DEALT`` just before the first such block so a rider does not
             fire on its own cast's damage — matching where the legacy pipeline
             emitted ``DAMAGE_DEALT`` (before the first ``add_entity_effect``).
+        mutates_event: True for **event-modifier** blocks (``modify_damage`` and
+            its siblings) that reach back onto the in-flight ``CombatEvent`` via
+            ``Invocation.live_event`` — resistance multipliers, advantage/critical
+            flags, ``cancelled``. They are meaningful only when fired inside a
+            ``trigger`` (which supplies the live event); run standalone they have
+            nothing to mutate and no-op. The distinguishing mark of the one block
+            category that changes a live event rather than writing forward state.
     """
 
     reads: Tuple[str, ...] = ()
@@ -56,3 +63,4 @@ class BlockContract:
     target_arity: TargetArity = TargetArity.SINGLE
     is_gate: bool = False
     installs_reactions: bool = False
+    mutates_event: bool = False

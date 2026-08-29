@@ -12,12 +12,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from types import SimpleNamespace
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from src.models.entity import Entity
 from src.models.damage import Damage
 from src.models.lifetime import LifetimeScope
 from src.rules.expressions import build_context
+
+if TYPE_CHECKING:
+    from src.combat.event_bus import CombatEvent
 
 
 def seed_context(slot_level: int) -> Dict[str, Any]:
@@ -132,6 +135,15 @@ class Invocation:
     # ending when its temp HP is gone). None outside a trigger firing.
     owning_scope: Optional[LifetimeScope] = None
 
+    # The **live** ``CombatEvent`` a trigger is firing on, so an event-modifier
+    # block (``modify_damage`` and its siblings) can write back onto the in-flight
+    # event the resolver is mid-way through emitting — resistance multipliers,
+    # advantage/critical flags, ``cancelled``. This is the one handle that lets a
+    # block reach a live event; ``event_data`` above is a *copy* for forward reads,
+    # whereas this is the real object. None during an ordinary cast (an
+    # event-modifier block run outside a trigger has nothing to mutate).
+    live_event: Optional["CombatEvent"] = None
+
     # Bookkeeping the result is derived from.
     dealt_damages: List[Damage] = field(default_factory=list)
     healing_total: int = 0
@@ -146,6 +158,7 @@ class Invocation:
         target: Optional[Entity] = None,
         event_data: Optional[Dict[str, Any]] = None,
         shared_rolls: Optional[Dict[int, int]] = None,
+        live_event: Optional["CombatEvent"] = None,
     ) -> "Invocation":
         """A fresh invocation sharing this one's action/collaborators.
 
@@ -154,7 +167,9 @@ class Invocation:
         rather than re-passed at every call site. Gets its own seeded ``context``;
         ``caster``/``target`` default to this invocation's. A trigger overrides
         ``caster`` with the effect-**holder** so the rider's ``entity``/``caster``
-        resolves to it (the holder, not necessarily the spell's caster).
+        resolves to it (the holder, not necessarily the spell's caster), and passes
+        ``live_event`` so an event-modifier block in the ``then`` body can write
+        back onto the in-flight event.
         """
         inv = Invocation(
             env=self.env,
@@ -162,6 +177,7 @@ class Invocation:
             target=self.target if target is None else target,
             context=seed_context(self.env.slot_level or 0),
             event_data=event_data,
+            live_event=live_event,
         )
         if shared_rolls:
             inv.context["_shared_rolls"] = shared_rolls
