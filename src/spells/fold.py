@@ -211,10 +211,12 @@ def is_add_entity_effect(step: Dict[str, Any]) -> bool:
 def foldable(step: Dict[str, Any], rule: Any) -> bool:
     """True if *step* translates cleanly into a ``lifetime`` block right now.
 
-    Conservative: an unresolved rule (can't prove there are no reactive triggers
-    to drop), an ``instance_fields`` step, an ``on_apply`` action without a
-    state-block translator, or a referenced rule that declares reactive
-    ``triggers`` (the §4.3b-2 work) all keep the spell on the legacy engine.
+    Kept on the legacy engine (conservative) when: the rule can't be resolved
+    (can't prove what reactive behaviour would be dropped); the step uses
+    ``instance_fields``; an ``on_apply`` or rule effect has no block translator
+    (e.g. ``InjectPipelineDamageStep``); or it is a concentration duration on a
+    non-``on_caster`` effect (its clock would tick on the wrong turn — Haste).
+    Reactive ``triggers`` and per-effect ``when`` guards *are* folded.
     """
     if not is_add_entity_effect(step):
         return False

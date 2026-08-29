@@ -14,7 +14,92 @@
 
 ---
 
-## 1. Current state of the code (end of Phase 1)
+## 0. Current state — READ THIS FIRST (updated 2026-08-29)
+
+> This section is the live snapshot; **§1 below is the older end-of-Phase-1 baseline** kept for history
+> (do not read it as current). Phase 2 slices **4.1, 4.2, and 4.3b are complete** and committed on branch
+> `feat/spell-system-rework`. The suite is green (**683 tests**); `mypy src/` sits at a steady 44
+> pre-existing errors (none in the new `src/spells` code); Black is pinned `==23.12.1` (see §9 in
+> [CLAUDE.md](../CLAUDE.md) — do **not** run a newer Black on modified files).
+
+### 0.1 What runs on the new engine now — **21 of 23 shipped spells**
+
+- **Instantaneous single-target (9):** Acid Splash, Chill Touch, Cure Wounds, Fire Bolt, Guiding Bolt,
+  Inflict Wounds, Poison Spray, Ray of Frost, Sacred Flame.
+- **AoE (5)** + **multi-target (3):** Fireball, Burning Hands, Cone of Cold, Lightning Bolt, Thunderwave;
+  Magic Missile, Scorching Ray, Eldritch Blast. (§4.1 — `for_each_target` iterator, shared `roll_once`.)
+- **Persistent / concentration (4):** Shield of Faith, Longstrider, Vampiric Touch, Armor of Agathys.
+  (§4.3b — `add_entity_effect` folded into a `lifetime{ … }` program.)
+- **Still on legacy (2):** **Haste** (concentration duration on a *targeted ally* — the duration clock
+  would tick on the wrong turn; needs the split-holder model) and **Charm Person** (uses
+  `instance_fields`, not yet folded). Both route to the legacy `EffectPipeline` unchanged.
+
+### 0.2 The new engine — `src/spells/` (13 registered blocks)
+
+| File | What it holds |
+|---|---|
+| `block.py` | `Block(type, args, then)` immutable value + `from_dict`/`parse_program`. Nests only via `then`. |
+| `contract.py` | `TargetArity{SINGLE,CASTER,SET}` + `BlockContract(reads, writes, target_arity, is_gate, installs_reactions)`. |
+| `registry.py` | `BlockRegistry` + process-global `REGISTRY` (the block *vocabulary* — legitimately global). |
+| `context.py` | `Invocation` (per-run state; `.child()` spawns sub-runs — the one place collaborators are threaded), `InvocationResult`, `eval_context`, `seed_context`. |
+| `runner.py` | `run_block`/`run_program`/`run_target` — pure dispatch + SPELL_HIT/DAMAGE_DEALT orchestration. Imported by blocks **and** the evaluator (breaks the old cycle). |
+| `evaluator.py` | `resolve` (one target) / `resolve_program` (fan-out entry) — build invocations, call `runner`. |
+| `lint.py` | `lint_program` — target-arity check (a SINGLE block under a set is a load-time error). |
+| `adapter.py` | `to_program(effects, targeting_type, rule_lookup)` + `can_run_on_blocks(action, rule_lookup)` — transitional legacy→block shim + router capability check. |
+| `fold.py` | `add_entity_effect` step (+ its entity-effect rule) → a `lifetime{ state + trigger }` program (§4.3b). Transitional. |
+| `blocks/rolls.py` | `attack_roll`, `saving_throw` (gates). |
+| `blocks/damage.py` | `damage` (consumes iterator-seeded `roll_once` shares). |
+| `blocks/healing.py` | `healing`. |
+| `blocks/state.py` | `apply_condition`, `add_modifier`, `grant_temporary_hp`, `add_resource`, `grant_action`. |
+| `blocks/iterators.py` | `for_each_target` (fan-out over the target set; pre-rolls shared `roll_once`). |
+| `blocks/lifetime.py` | `lifetime` (opens a scope, binds concentration/duration), `end_lifetime` (self-dispose). |
+| `blocks/triggers.py` | `trigger` (subscribe a `then` to an event, holder-scoped, depth-guarded, priority −10). |
+| *(model)* `src/models/lifetime.py` | `LifetimeScope` / `RevokeHandle` / `LifetimeKind` — pure ownership primitive with `rounds_remaining`/`tick()`. |
+
+### 0.3 Key machinery & where parity lives
+
+- **Fan-out (§4.1):** `resolve_program` runs a flat program once per target, or once on a root invocation
+  when the top block consumes the set (`for_each_target`), which spawns a child per element and shares one
+  `roll_once` roll. Arity is enforced by `lint.py`.
+- **Lifetimes (§4.2):** every grant (`Entity.add_stat_modifier`/`add_condition`/`add_temporary_hp`/
+  `grant_action`) returns an identity `RevokeHandle`; a `LifetimeScope` owns them and `dispose()`s in
+  reverse. Concentration is a scope on the caster (`begin/end_concentration`, mirrored onto the legacy
+  `concentrating_on`/`concentration_target` fields for consumers); a duration scope lives on the holder.
+  The break rule (`force_concentration_check`) routes through `Entity.end_concentration`.
+- **Duration clock (§4.3):** `LifetimeScope.rounds_remaining` + `Entity.tick_lifetimes()`, driven by the
+  one `TURN_END` clock (`RuleEngine._tick_durations` calls it — a one-line hook, relocates in Phase 3).
+- **Triggers (§4.3):** a `trigger` block captures its defining `inv`, subscribes at priority −10 (the
+  legacy entity-effect slot), fires a fresh child invocation carrying the event data, guards with `when`,
+  and — inside a `lifetime` — registers its *unsubscribe* as a scope-owned handle. A per-bus depth guard
+  bounds re-entrancy. `run_target` flushes `DAMAGE_DEALT` before the first `installs_reactions` block so a
+  rider doesn't fire on its own cast's damage.
+- **The fold (§4.3b):** `SpellResolver` builds a `rule_lookup` from `rule_engine.effect_registry`;
+  `fold.foldable` gates routing (defers un-resolvable rules, `instance_fields`, an unmapped action, or a
+  concentration duration on a non-`on_caster` effect); `fold.to_lifetime_block` translates `on_apply` +
+  the rule's reactive `triggers`/`effects` into one `lifetime{ … }`.
+- **Router guard:** `SpellResolver._caster_has_injection_effect` — a cast stays on legacy **only** if the
+  caster has a pipeline-*injecting* effect (Colossus Slayer's `InjectPipelineDamageStep`). All other
+  active effects work on both engines.
+
+### 0.4 Tests (the safety net)
+
+`test_block_foundations`, `test_block_parity` (dual-run parity harness incl. AoE/multi-target fan-out),
+`test_block_arity`, `test_lifetime_scope`, `test_entity_lifetimes`, `test_block_lifetime`,
+`test_block_triggers`, `test_entity_effect_fold`. Folded spells are also covered by their original
+behaviour tests (`test_spell_effects`, `test_spells::TestVampiricTouch`,
+`test_armor_of_agathys`) — several were moved from asserting the legacy `active_effects` mechanism to
+asserting the new-engine artifact (a lifetime scope), per CLAUDE.md §4 (test behaviour, not structure).
+
+### 0.5 What is still legacy (alive by design through Phase 2)
+
+`src/combat/effect_pipeline.py` (the legacy pipeline + `AttackResolver`'s compiled steps),
+`src/rules/rule_engine.py` + `src/rules/effects.py::BUILTIN_EFFECTS`, `rules/entity_effects/*`,
+`rules/global/*`, and the transitional `adapter.py` / `fold.py`. **Retiring `BUILTIN_EFFECTS` is its own
+phase — see [§4.7](#47-phase-29--retiring-builtin_effects-the-core-rules-migration).**
+
+---
+
+## 1. Current state of the code (end of Phase 1 — historical baseline; see §0 for live status)
 
 ### 1.1 The new engine — `src/spells/`
 
@@ -242,10 +327,10 @@ in and the adapter learns to emit `lifetime{…}` programs.
   Note: the block *type* catalogue (`REGISTRY`) is legitimately global (it's code); the concern is
   per-battle **content/state**, not the vocabulary.
 
-### 4.3 Inline trigger blocks — *and the entity-effect fold / `BUILTIN_EFFECTS` deletion*
+### 4.3 Inline trigger blocks + the entity-effect spell fold — ✅ **DONE** (2026-08-29)
 
-This is the largest Phase-2 item and where the second vocabulary finally dies. Being done in
-reviewable **sub-slices**, each independently green and committed:
+The largest Phase-2 item, done in reviewable **sub-slices**, each independently green and committed.
+(The `BUILTIN_EFFECTS` deletion once bundled here is promoted to [§4.7](#47-phase-29--retiring-builtin_effects-the-core-rules-migration).)
 
 - **4.3a — trigger-block foundation ✅ DONE (2026-08-29).** The `trigger` block
   ([blocks/triggers.py](../src/spells/blocks/triggers.py)): args `event` (an `EventType` name), a
@@ -331,50 +416,14 @@ reviewable **sub-slices**, each independently green and committed:
   retaliation) rides the EventBus identically on both engines and no longer forces legacy. Full suite
   green (683). Fully retiring even this guard waits on the entity-effect dispatch repoint below.
 
-#### Scope finding — "delete `BUILTIN_EFFECTS`" is a core-rules migration, not spell folding
-
-Auditing what `BUILTIN_EFFECTS` actually backs (see the action→origin table below), **the persistent-effect
-spell fold — the part of 4.3 the rewrite is about — is essentially complete**: every foldable
-`add_entity_effect` spell (Shield of Faith, Longstrider, Vampiric Touch, Armor of Agathys) now runs on the
-new engine at parity. What remains under "4.3c / delete `BUILTIN_EFFECTS`" is materially larger and mostly
-*not* spell content:
-
-- Five actions are used **only by core global rules** — `ForceConcentrationCheck` (concentration break),
-  `ForceCriticalHit`/`ForceCriticalMiss` (crit rules), `ModifyDamage` (damage resistance/immunity/
-  vulnerability), `RefillResources` (per-turn economy). These are **event-modifier** effects with no
-  block equivalent — a different block category than the state/damage/grant blocks built so far.
-- Remaining entity effects not yet folded — the **condition library** (`charmed`, `blinded`, `petrified`,
-  …), **poison**, **Colossus Slayer** (injection), **Haste** (concentration-on-ally duration), **Charm
-  Person** (`instance_fields`) — are applied via `RuleEngine.apply_effect` (creature features / saves),
-  not a spell's `add_entity_effect`, so they need the **dispatch repoint** (apply_effect installs block
-  programs), not the spell adapter.
-
-So deleting `BUILTIN_EFFECTS` outright means: build an **event-modifier block family** (advantage,
-crit-force, damage-modify, concentration-check, resource-refill, cancel), repoint `RuleEngine.apply_effect`
-and the global-rule dispatch at the block registry, and migrate every `rules/**` file — a cross-cutting
-core-engine migration on its own footing, distinct from folding persistent-effect spells. **Recommend
-treating it as its own phase (call it Phase 2.9 / 3-prep), not a tail of 4.3b.** The spell-fold goal of
-4.3 is met; the legacy engine + `BUILTIN_EFFECTS` stay alive (as the plan always intended through Phase 2)
-until that migration.
-- **4.3c — repoint dispatch + delete `BUILTIN_EFFECTS`.** Repoint the rule engine's effect dispatch at
-  the block registry, migrate `rules/entity_effects/*`, delete `BUILTIN_EFFECTS`, and name the
-  persistent-effect concept. The duration clock (`RuleEngine._tick_durations` on `TURN_END`) must be
-  taught to dispose `ROUNDS` lifetime scopes so migrated durations still expire.
-
-**Original sketch (kept for the record):**
-
-- **Trigger blocks** (`on_hit`, `on_turn`, `on_damage`, …) register a `then` sub-program against an
-  event, scoped to a lifetime (4.2), running in a **fresh per-invocation context** (design §6.1) via a
-  **bounded work queue** with a depth guard for re-entrant events (design §6.4).
-- **Replace `add_entity_effect`** (retired, not ported): a persistent effect becomes a lifetime scope
-  wrapping state blocks + trigger blocks, authored **inline in one spell file**. Repoint the rule
-  engine's effect dispatch at the block registry (a trigger firing synthesises an `Invocation` from
-  its event), migrate `rules/entity_effects/*` (or make them a shared library), and **delete
-  `BUILTIN_EFFECTS`**. **Name the persistent-effect concept here**, with the lifetime-scope shape — the
-  old "entity effect" name is retired, not carried forward.
-- **Relax the router's reactive-effects guard** (deviation #4) as triggers subsume injection etc.
-- **Headline parity result:** Vampiric Touch and Armor of Agathys become **single files** — the split
-  the whole rewrite exists to erase.
+**4.3 status:** the entity-effect **spell fold is complete** — Shield of Faith, Longstrider, Vampiric
+Touch, and Armor of Agathys run on the new engine at parity, and the reactive-effects guard is narrowed
+to injection-only. The remaining item once filed under "4.3c — delete `BUILTIN_EFFECTS`" turned out to be
+a **core-rules migration, not spell folding** (event-modifier effects behind the global concentration/
+crit/resistance/refill rules; creature features applied via `RuleEngine.apply_effect`). It is promoted to
+its own phase — **[§4.7 Phase 2.9](#47-phase-29--retiring-builtin_effects-the-core-rules-migration)** —
+with the full challenge/solution write-up. Haste and Charm Person also stay on legacy until then
+(reasons in §0.1 / §4.7).
 
 ### 4.4 Entity lifecycle / summoning
 
@@ -395,6 +444,73 @@ until that migration.
 
 - A block that invokes the resolver on another spell (Wish, Contingency) + copy/counter. Built last —
   the proof the "add one block" model absorbs the exotic tail (design §5.5, §6.11).
+
+### 4.7 Phase 2.9 — retiring `BUILTIN_EFFECTS` (the core-rules migration)
+
+> **Promoted out of 4.3.** The persistent-effect *spell* fold is done (§4.3); what's left of the old
+> "delete `BUILTIN_EFFECTS`" line item is a distinct, larger migration of **core combat rules** — worth
+> its own phase and its own design pass. Nothing here blocks the spell rewrite's value; the legacy engine
+> is meant to stay alive through Phase 2, and this is the bridge into Phase 3.
+
+**Where the challenge comes from.** `BUILTIN_EFFECTS` (in `src/rules/effects.py`) is the handler table
+the JSON *rule engine* dispatches through. Folding `add_entity_effect` spells retired the spell path into
+it, but the table is still load-bearing for two things the spell adapter does **not** touch:
+
+1. **Global rules use event-modifier effects that have no block equivalent.** Auditing every `rules/**`
+   file, these actions are used **only** by `rules/global/*` — core combat mechanics, not spell content:
+
+   | Action | Global rule it backs | Kind |
+   |---|---|---|
+   | `ForceConcentrationCheck` | concentration break on damage | reads event, forces a save, calls `end_concentration` |
+   | `ForceCriticalHit` / `ForceCriticalMiss` | crit rules | mutates the in-flight `ATTACK_ROLLED` event |
+   | `ModifyDamage` | damage resistance / immunity / vulnerability | multiplies the in-flight `DAMAGE_INCOMING` event |
+   | `RefillResources` | per-turn action economy | mutates the entity on `TURN_START` |
+
+   These are **event-modifier** effects (they change a *live* event mid-flight, or fire a bookkeeping
+   side-effect), a category the block engine doesn't have — every block built so far
+   (`damage`/`healing`/state/`grant_*`/`trigger`) is a *forward* effect that writes state or subscribes,
+   not one that reaches into an event the resolver is mid-way through emitting. `ModifyDamage` /
+   `GrantAdvantage` / `GrantDisadvantage` are also used by a few entity effects.
+
+2. **The remaining entity effects are applied off the spell path.** The condition library
+   (`rules/entity_effects/conditions/*` — charmed, blinded, petrified, …), poison, **Colossus Slayer**
+   (injection), **Haste**, and **Charm Person** reach an entity via `RuleEngine.apply_effect` (creature
+   features, save riders, `instance_fields`) — *not* a spell's `add_entity_effect`. So the fold/adapter
+   can't reach them; they need the **dispatch itself repointed** at the block engine.
+
+**Proposed solution (order matters — each step keeps the suite green):**
+
+1. **Build an `event-modifier` block family.** A new block category that operates on the *current* event
+   (exposed via `Invocation.event_data` / a live-event handle): `modify_damage`, `grant_advantage` /
+   `grant_disadvantage`, `force_critical`, `force_concentration_check`, `refill_resources`, `cancel`.
+   These are the block equivalents of the table above. Design note: they run inside a `trigger` (which
+   already fires with the event in scope) — so a global rule becomes a permanent (lifetime-less) trigger
+   subscribed at load, and the event-modifier block reaches back into `event_data`. Decide the
+   live-event mutation contract (how a block writes `advantage`/`critical`/`multiplier` back onto the
+   `CombatEvent`) up front — it's the one genuinely new primitive.
+2. **Repoint `RuleEngine.apply_effect` at the block engine.** Instead of stashing an `EffectInstance` in
+   `entity.active_effects`, translate the rule to a `lifetime{ trigger… }` program (reusing `fold`'s
+   rule→trigger translation, now extended with the event-modifier actions) and install it via the block
+   evaluator. This makes Colossus Slayer a trigger, kills `InjectPipelineDamageStep` (it becomes an
+   `ATTACK_HIT` trigger dealing the bonus die), and lets the router guard (§4.3b-2d) be **removed
+   entirely**. Fold Haste (needs the split-holder duration model: the duration scope on the ally, ticked
+   on the ally's turn, with concentration still the caster's) and Charm Person (`instance_fields` → a
+   trigger closure variable) here.
+3. **Migrate the global rules** (`rules/global/*`) to the block form and subscribe them at combat start
+   through the block engine rather than the rule engine.
+4. **Delete `BUILTIN_EFFECTS`** and the now-unused rule-engine dispatch once nothing references them;
+   move the `TURN_END` lifetime tick (§4.3, currently a one-line hook in `_tick_durations`) onto a
+   standalone block-engine clock.
+
+**Prerequisites / open decisions:** the live-event mutation contract (step 1) is the gating design
+question — settle it before building. `remove_condition_type` and the condition library's shape (are
+conditions plain state, or do some carry riders?) should be reviewed as they migrate. Parity-gate every
+rule as it moves, the same way spells were.
+
+**Definition of done:** `BUILTIN_EFFECTS`, `src/rules/effects.py`'s handler table, and the router's
+injection guard are gone; every `rules/**` file and every creature feature runs through the block engine;
+Haste and Charm Person are on the new engine. That clears the runway for **Phase 3** (delete the legacy
+`EffectPipeline` + `adapter`/`fold` shims, fold `AttackResolver` in, migrate content to inline `program`s).
 
 ---
 
@@ -422,39 +538,35 @@ AST-whitelist expression sandbox · EventBus as the substrate for cross-cutting 
   in `DamageProcessor`; how crit/save-half/scaling apply across a bundle; block field shape). Gates
   finishing the `damage` block. [[damage-typing-per-entry-resistance]]
 - **Upcasting framework** — count/multiplicative scaling shape. Gates 4.5. [[upcasting-framework-pending]]
-- **Persistent-effect block name** — decided in 4.3 with the lifetime-scope shape.
+- **Live-event mutation contract** — how an event-modifier block, firing inside a `trigger`, writes back
+  onto the in-flight `CombatEvent` (advantage / critical / damage multiplier / cancel). **Gates §4.7**
+  (retiring `BUILTIN_EFFECTS`) — it is the one genuinely new primitive there. Prototype against the
+  damage-resistance rule first.
+- **Persistent-effect block name** — *settled*: the concept is the `lifetime` block wrapping state +
+  `trigger` blocks (§4.2/§4.3), no separate "entity effect" vocabulary.
 - **Summoning prerequisites** — enumerated in 4.4 / ENTITY_LIFECYCLE_DECISIONS; settle before 4.4.
 
 ---
 
 ## 6. The immediate next step
 
-**4.1 and 4.2 are done** (see the ✅ blocks in §4.1 / §4.2). **Next is 4.3 — inline trigger blocks +
-the entity-effect fold + `BUILTIN_EFFECTS` deletion**, the largest Phase-2 item, where the second
-vocabulary finally dies and persistent spells become single files on the new engine.
+**4.1, 4.2, and 4.3 are done** (see the ✅ blocks and §0 for the live snapshot). **21 of 23 shipped
+spells run on the new engine.** The next tranche of work is
+**[§4.7 Phase 2.9 — retiring `BUILTIN_EFFECTS`](#47-phase-29--retiring-builtin_effects-the-core-rules-migration)**:
+the core-rules migration (event-modifier block family → repoint `RuleEngine.apply_effect` → migrate the
+global rules → delete the handler table), which also brings Haste, Charm Person, Colossus Slayer, and the
+condition library onto the new engine and lets the router's injection guard be deleted.
 
-4.3 stands directly on 4.2's substrate. Re-derive its shape from the code as it now stands:
+**Start there by settling the one new primitive first:** the *live-event mutation contract* — how a block,
+firing inside a `trigger` with the event in scope, writes back onto the in-flight `CombatEvent`
+(advantage/critical/damage-multiplier/cancel). Everything else in §4.7 is mechanical once that shape is
+decided. Prototype it against the smallest global rule (the damage-resistance `ModifyDamage` rule) and
+parity-gate before generalising.
 
-- **Trigger blocks** (`on_hit`, `on_turn`, `on_damage`, …) register their `then` sub-program against an
-  EventBus event, **scoped to a lifetime** (the `lifetime` block from 4.2 — a trigger subscription is
-  just another grant whose revoke handle the scope owns, so concentration/duration teardown
-  unsubscribes it for free). They run in a **fresh per-invocation context** synthesised from the event,
-  via a **bounded work queue** with a depth guard for re-entrant events (design §6.1/§6.4).
-- **Replace `add_entity_effect`** (retired, not ported): a persistent effect becomes a `lifetime` scope
-  wrapping state blocks **+ trigger blocks**, authored inline in one spell file. Teach the adapter to
-  translate the legacy `add_entity_effect` + `on_apply` + entity-effect-rule shape into a `lifetime{…}`
-  program (extending 4.2's `lifetime` block), repoint the rule engine's effect dispatch at the block
-  registry, migrate `rules/entity_effects/*`, and delete `BUILTIN_EFFECTS`.
-- **Relax the router's reactive-effects guard** (deviation #4) as triggers subsume `InjectPipelineDamageStep`.
-- **Headline parity result:** Vampiric Touch and Armor of Agathys become single files; Shield of Faith /
-  Longstrider / Haste / Charm Person come onto the new engine (Shield of Faith's `lifetime{…}` program
-  already exists and is tested — it just needs routing from JSON).
-- **Name the persistent-effect concept here**, with the lifetime-scope shape (the open decision in §5).
-
-_The 4.2 approach, for reference: a pure `LifetimeScope`/`RevokeHandle` in `models`; `Entity` grants
-return identity handles and hold a first-class `concentration_scope`; a `lifetime` wrapper block whose
-`then` grants register into the open scope; the concentration-break rule routed through
-`Entity.end_concentration`; proven end-to-end via a native Shield of Faith program + real damage._
+_Reference — the 4.3 approach that this builds on: a `trigger` block captures its defining invocation and
+subscribes a holder-scoped, depth-guarded handler at priority −10; a `lifetime` scope owns each grant's
+and subscription's revoke handle; `fold.py` translates `add_entity_effect` + its rule into one
+`lifetime{ state + trigger }` program; the `TURN_END` clock ticks `LifetimeScope.rounds_remaining`._
 
 _See also: [SPELL_SYSTEM_BUILD_PLAN.md](SPELL_SYSTEM_BUILD_PLAN.md) (Phase-1 architecture + interface
 decisions), [SPELL_SYSTEM_DESIGN.md](SPELL_SYSTEM_DESIGN.md) (design rationale), and the two decision
