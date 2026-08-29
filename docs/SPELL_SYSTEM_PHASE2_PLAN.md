@@ -17,10 +17,12 @@
 ## 0. Current state — READ THIS FIRST (updated 2026-08-29)
 
 > This section is the live snapshot; **§1 below is the older end-of-Phase-1 baseline** kept for history
-> (do not read it as current). Phase 2 slices **4.1, 4.2, and 4.3b are complete** and committed on branch
-> `feat/spell-system-rework`. The suite is green (**683 tests**); `mypy src/` sits at a steady 44
-> pre-existing errors (none in the new `src/spells` code); Black is pinned `==23.12.1` (see §9 in
-> [CLAUDE.md](../CLAUDE.md) — do **not** run a newer Black on modified files).
+> (do not read it as current). Phase 2 slices **4.1, 4.2, and 4.3b are complete**, and **§4.7 step 1
+> (the live-event mutation contract) has landed** — all committed on branch `feat/spell-system-rework`.
+> The suite is green (**694 tests**); `mypy src/` sits at a steady 44 pre-existing errors (one is
+> `src/spells/blocks/damage.py:82`, a benign register-signature variance, not from the new work); Black
+> is pinned `==23.12.1` (see §9 in [CLAUDE.md](../CLAUDE.md) — do **not** run a newer Black on modified
+> files; the dev env resolves Black 26.x).
 
 ### 0.1 What runs on the new engine now — **21 of 23 shipped spells**
 
@@ -34,14 +36,14 @@
   would tick on the wrong turn; needs the split-holder model) and **Charm Person** (uses
   `instance_fields`, not yet folded). Both route to the legacy `EffectPipeline` unchanged.
 
-### 0.2 The new engine — `src/spells/` (13 registered blocks)
+### 0.2 The new engine — `src/spells/` (14 registered blocks)
 
 | File | What it holds |
 |---|---|
 | `block.py` | `Block(type, args, then)` immutable value + `from_dict`/`parse_program`. Nests only via `then`. |
-| `contract.py` | `TargetArity{SINGLE,CASTER,SET}` + `BlockContract(reads, writes, target_arity, is_gate, installs_reactions)`. |
+| `contract.py` | `TargetArity{SINGLE,CASTER,SET}` + `BlockContract(reads, writes, target_arity, is_gate, installs_reactions, mutates_event)`. |
 | `registry.py` | `BlockRegistry` + process-global `REGISTRY` (the block *vocabulary* — legitimately global). |
-| `context.py` | `Invocation` (per-run state; `.child()` spawns sub-runs — the one place collaborators are threaded), `InvocationResult`, `eval_context`, `seed_context`. |
+| `context.py` | `CastEnv` (frozen collaborators) + `Invocation` (per-run state holding an `env` ref, collaborators via property delegators; `.child()` spawns sub-runs — the one place they're threaded; `live_event` is the §4.7 handle onto the in-flight event), `InvocationResult`, `eval_context`, `seed_context`. |
 | `runner.py` | `run_block`/`run_program`/`run_target` — pure dispatch + SPELL_HIT/DAMAGE_DEALT orchestration. Imported by blocks **and** the evaluator (breaks the old cycle). |
 | `evaluator.py` | `resolve` (one target) / `resolve_program` (fan-out entry) — build invocations, call `runner`. |
 | `lint.py` | `lint_program` — target-arity check (a SINGLE block under a set is a load-time error). |
@@ -53,7 +55,8 @@
 | `blocks/state.py` | `apply_condition`, `add_modifier`, `grant_temporary_hp`, `add_resource`, `grant_action`. |
 | `blocks/iterators.py` | `for_each_target` (fan-out over the target set; pre-rolls shared `roll_once`). |
 | `blocks/lifetime.py` | `lifetime` (opens a scope, binds concentration/duration), `end_lifetime` (self-dispose). |
-| `blocks/triggers.py` | `trigger` (subscribe a `then` to an event, holder-scoped, depth-guarded, priority −10). |
+| `blocks/triggers.py` | `trigger` (subscribe a `then` to an event, holder-scoped, depth-guarded, priority −10; passes the live event to its firing). |
+| `blocks/event_mod.py` | `modify_damage` — the first **event-modifier** block; mutates the in-flight event via `inv.live_event` (§4.7). |
 | *(model)* `src/models/lifetime.py` | `LifetimeScope` / `RevokeHandle` / `LifetimeKind` — pure ownership primitive with `rounds_remaining`/`tick()`. |
 
 ### 0.3 Key machinery & where parity lives
@@ -102,14 +105,13 @@ phase — see [§4.7](#47-phase-29--retiring-builtin_effects-the-core-rules-migr
 A review at the end of 4.3b (2026-08-29) flagged these. None is problematic debt of the kind the rewrite
 set out to erase; they're ordinary cleanups to keep an eye on. Listed most-worth-doing first.
 
-1. **Split `Invocation` into an immutable `CastEnv` + mutable per-run state — do before §4.7.**
-   `src/spells/context.py`'s `Invocation` is now ~18 fields across three roles (per-target run, iterator
-   root, trigger firing), mixing the constant cast environment (caster/action/`event_bus`/
-   `damage_processor`/`rule_engine`/`slot_level`) with mutable state (`context`, `results`, `active_scope`,
-   `event_data`, `owning_scope`, flags). `.child()` contains the construction, so it's managed, but §4.7's
-   live-event handle will add another field. Extracting a frozen `CastEnv` (the collaborators) that
-   `Invocation` holds a reference to would stop the grab-bag trend and make the §4.7 addition clean. The
-   single highest-value cleanup; best done as a standalone refactor before Phase 2.9 piles on.
+1. **Split `Invocation` into an immutable `CastEnv` + mutable per-run state — ✅ DONE (2026-08-29).**
+   A frozen `CastEnv` now holds the constant collaborators (`action`/`event_bus`/`damage_processor`/
+   `rule_engine`/`slot_level`); `Invocation` holds an `env` reference and exposes them as read-only
+   property delegators, so every `inv.event_bus`/`inv.action` call site is unchanged and `.child()` reuses
+   `self.env` by reference. Behaviour-preserving (green suite is the whole bar). This landed as the
+   prerequisite refactor before §4.7's `live_event` handle, keeping that addition on the per-run state, not
+   the environment.
 2. **Keep `src/spells/fold.py` docstrings current.** It is the most intricate new module (target rebinding,
    holder-scoping, per-effect `when`, duration deferral, event-field detection) and the migration's Rosetta
    Stone. It is transitional (dies in Phase 3), so the *complexity* is fine, but its docstrings drift
@@ -509,14 +511,15 @@ it, but the table is still load-bearing for two things the spell adapter does **
 
 **Proposed solution (order matters — each step keeps the suite green):**
 
-1. **Build an `event-modifier` block family.** A new block category that operates on the *current* event
-   (exposed via `Invocation.event_data` / a live-event handle): `modify_damage`, `grant_advantage` /
-   `grant_disadvantage`, `force_critical`, `force_concentration_check`, `refill_resources`, `cancel`.
-   These are the block equivalents of the table above. Design note: they run inside a `trigger` (which
-   already fires with the event in scope) — so a global rule becomes a permanent (lifetime-less) trigger
-   subscribed at load, and the event-modifier block reaches back into `event_data`. Decide the
-   live-event mutation contract (how a block writes `advantage`/`critical`/`multiplier` back onto the
-   `CombatEvent`) up front — it's the one genuinely new primitive.
+1. **Build an `event-modifier` block family.** *Started — `modify_damage` shipped (2026-08-29).* A new
+   block category that operates on the *current* event via `Invocation.live_event` (the live-event handle):
+   `modify_damage` ✅, then `grant_advantage` / `grant_disadvantage`, `force_critical`,
+   `force_concentration_check`, `refill_resources`, `cancel`. These are the block equivalents of the table
+   above. They run inside a `trigger` (which already fires with the event in scope) — so a global rule
+   becomes a permanent (lifetime-less) trigger subscribed at load, and the event-modifier block reaches
+   back into the live event. **The live-event mutation contract is settled** (direct handle — see §5) and
+   proven on the damage-resistance rule; the remaining blocks are mechanical against it. Each lands with
+   its rule's migration (step 3).
 2. **Repoint `RuleEngine.apply_effect` at the block engine.** Instead of stashing an `EffectInstance` in
    `entity.active_effects`, translate the rule to a `lifetime{ trigger… }` program (reusing `fold`'s
    rule→trigger translation, now extended with the event-modifier actions) and install it via the block
@@ -531,11 +534,10 @@ it, but the table is still load-bearing for two things the spell adapter does **
    move the `TURN_END` lifetime tick (§4.3, currently a one-line hook in `_tick_durations`) onto a
    standalone block-engine clock.
 
-**Prerequisites / open decisions:** the live-event mutation contract (step 1) is the gating design
-question — settle it before building. **Do the `Invocation` → `CastEnv` split ([§0.6.1](#06-carried-forward-debt--cleanups-all-manageable--not-blockers)) first** — step 1 adds a live-event handle to the
-invocation, and the split keeps that clean. `remove_condition_type` and the condition library's shape (are
-conditions plain state, or do some carry riders?) should be reviewed as they migrate. Parity-gate every
-rule as it moves, the same way spells were.
+**Prerequisites / open decisions:** the live-event mutation contract (step 1) — **settled and proven**
+(direct handle, see §5). The `Invocation` → `CastEnv` split ([§0.6.1](#06-carried-forward-debt--cleanups-all-manageable--not-blockers)) — **done**, landed before the handle. `remove_condition_type` and the condition
+library's shape (are conditions plain state, or do some carry riders?) should be reviewed as they migrate.
+Parity-gate every rule as it moves, the same way spells were.
 
 **Definition of done:** `BUILTIN_EFFECTS`, `src/rules/effects.py`'s handler table, and the router's
 injection guard are gone; every `rules/**` file and every creature feature runs through the block engine;
@@ -568,10 +570,14 @@ AST-whitelist expression sandbox · EventBus as the substrate for cross-cutting 
   in `DamageProcessor`; how crit/save-half/scaling apply across a bundle; block field shape). Gates
   finishing the `damage` block. [[damage-typing-per-entry-resistance]]
 - **Upcasting framework** — count/multiplicative scaling shape. Gates 4.5. [[upcasting-framework-pending]]
-- **Live-event mutation contract** — how an event-modifier block, firing inside a `trigger`, writes back
-  onto the in-flight `CombatEvent` (advantage / critical / damage multiplier / cancel). **Gates §4.7**
-  (retiring `BUILTIN_EFFECTS`) — it is the one genuinely new primitive there. Prototype against the
-  damage-resistance rule first.
+- **Live-event mutation contract** — *settled (2026-08-29), direct handle.* An event-modifier block,
+  firing inside a `trigger` (which supplies the live event), writes **directly** onto
+  `Invocation.live_event` — `.data` for multiplier/advantage/critical, `.cancelled` for cancel — mirroring
+  the legacy handlers line-for-line, so parity is obvious. `live_event` is `None` outside a trigger, where
+  such a block no-ops. Contract flag `mutates_event=True` marks the category. Proven on the smallest rule
+  (damage resistance) — `modify_damage`, dual-run vs the legacy `damage_resistance_rule`
+  (`tests/test_block_event_mod.py`). The remaining siblings (`grant_advantage`/`force_critical`/`cancel`/
+  `force_concentration_check`/`refill_resources`) land as each global rule migrates.
 - **Persistent-effect block name** — *settled*: the concept is the `lifetime` block wrapping state +
   `trigger` blocks (§4.2/§4.3), no separate "entity effect" vocabulary.
 - **Summoning prerequisites** — enumerated in 4.4 / ENTITY_LIFECYCLE_DECISIONS; settle before 4.4.
@@ -580,18 +586,25 @@ AST-whitelist expression sandbox · EventBus as the substrate for cross-cutting 
 
 ## 6. The immediate next step
 
-**4.1, 4.2, and 4.3 are done** (see the ✅ blocks and §0 for the live snapshot). **21 of 23 shipped
-spells run on the new engine.** The next tranche of work is
-**[§4.7 Phase 2.9 — retiring `BUILTIN_EFFECTS`](#47-phase-29--retiring-builtin_effects-the-core-rules-migration)**:
-the core-rules migration (event-modifier block family → repoint `RuleEngine.apply_effect` → migrate the
-global rules → delete the handler table), which also brings Haste, Charm Person, Colossus Slayer, and the
-condition library onto the new engine and lets the router's injection guard be deleted.
+**4.1, 4.2, and 4.3 are done**, and **§4.7 step 1 has landed** — the *live-event mutation contract* is
+settled (direct handle, §5) and proven with the `modify_damage` block dual-run against the damage-resistance
+rule; the `Invocation` → `CastEnv` split (§0.6.1) shipped as its prerequisite. **21 of 23 shipped spells run
+on the new engine.** The remaining tranche is the rest of
+**[§4.7 Phase 2.9 — retiring `BUILTIN_EFFECTS`](#47-phase-29--retiring-builtin_effects-the-core-rules-migration)**, now that the gating primitive exists:
 
-**Start there by settling the one new primitive first:** the *live-event mutation contract* — how a block,
-firing inside a `trigger` with the event in scope, writes back onto the in-flight `CombatEvent`
-(advantage/critical/damage-multiplier/cancel). Everything else in §4.7 is mechanical once that shape is
-decided. Prototype it against the smallest global rule (the damage-resistance `ModifyDamage` rule) and
-parity-gate before generalising.
+1. **Build out the event-modifier siblings** as their rules need them — `grant_advantage`/
+   `grant_disadvantage`, `force_critical`, `force_concentration_check`, `refill_resources`, `cancel`
+   (all mechanical against the settled contract; each mirrors its `effects.py` twin).
+2. **Repoint `RuleEngine.apply_effect` at the block engine** (§4.7 step 2) — translate an entity effect to
+   a `lifetime{ trigger… }` program and install it via the evaluator, reusing `fold.py`'s rule→trigger
+   translation. This kills `InjectPipelineDamageStep` (Colossus Slayer → an `ATTACK_HIT` trigger) and lets
+   the router's injection guard (§4.3b-2d) be removed; fold Haste and Charm Person here.
+3. **Migrate the global rules** (`rules/global/*`) to block form, subscribed at combat start through the
+   block engine, then **delete `BUILTIN_EFFECTS`** and move the `TURN_END` tick to a standalone clock.
+
+Parity-gate every rule as it moves, the same way spells were. A good next slice is the crit rules
+(`force_critical`) or concentration (`force_concentration_check`) — both single-effect global rules like
+resistance, so each is a small repeat of step 1's pattern.
 
 _Reference — the 4.3 approach that this builds on: a `trigger` block captures its defining invocation and
 subscribes a holder-scoped, depth-guarded handler at priority −10; a `lifetime` scope owns each grant's
