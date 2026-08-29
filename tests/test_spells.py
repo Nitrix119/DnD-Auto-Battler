@@ -725,7 +725,7 @@ class TestVampiricTouch:
             EventType.HEALING_APPLIED, lambda e: healing_events.append(e)
         )
 
-        with patch("src.combat.effect_pipeline.roll_d20", return_value=20):
+        with patch("src.spells.blocks.rolls.roll_d20", return_value=20):
             combat.resolve_spell(wizard, [goblin], spell)
 
         if not wizard.concentrating_on:
@@ -749,10 +749,9 @@ class TestVampiricTouch:
 
         assert any(a.name == "Vampiric Touch" for a in wizard.granted_actions)
 
-        # Break concentration manually
-        wizard.concentration_target.remove_effect(wizard.concentrating_on)
-        wizard.concentrating_on = None
-        wizard.concentration_target = None
+        # Break concentration through the real teardown path — disposing the
+        # lifetime scope revokes the granted action by its owned handle.
+        wizard.end_concentration()
 
         assert not any(a.name == "Vampiric Touch" for a in wizard.granted_actions)
 
@@ -766,7 +765,7 @@ class TestVampiricTouch:
         wizard.take_damage(Damage(DamageType.BLUDGEONING, 10))
 
         # Initial cast
-        with patch("src.combat.effect_pipeline.roll_d20", return_value=20):
+        with patch("src.spells.blocks.rolls.roll_d20", return_value=20):
          combat.resolve_spell(wizard, [goblin], spell)
 
         if not wizard.concentrating_on:
@@ -784,7 +783,7 @@ class TestVampiricTouch:
             EventType.HEALING_APPLIED, lambda e: healing_events.append(e)
         )
 
-        with patch("src.combat.effect_pipeline.roll_d20", return_value=20):
+        with patch("src.spells.blocks.rolls.roll_d20", return_value=20):
             hit, damage, _ = combat.resolve_attack(wizard, goblin, granted)
 
         if hit:
@@ -803,8 +802,8 @@ class TestVampiricTouch:
         hp_before = wizard.hp
 
         # Force the spell attack to hit (natural 20) and damage to be exactly 9
-        with patch("src.combat.effect_pipeline.roll_d20", return_value=20), \
-             patch("src.combat.effect_pipeline.roll_formula", return_value=9):
+        with patch("src.spells.blocks.rolls.roll_d20", return_value=20), \
+             patch("src.spells.blocks.damage.roll_formula", return_value=9):
             results = combat.resolve_spell(wizard, [goblin], spell)
 
         # Verify the hit actually landed
@@ -824,8 +823,8 @@ class TestVampiricTouch:
         wizard.take_damage(Damage(DamageType.BLUDGEONING, 30))
 
         # First cast — force hit
-        with patch("src.combat.effect_pipeline.roll_d20", return_value=20), \
-             patch("src.combat.effect_pipeline.roll_formula", return_value=6):
+        with patch("src.spells.blocks.rolls.roll_d20", return_value=20), \
+             patch("src.spells.blocks.damage.roll_formula", return_value=6):
             combat.resolve_spell(wizard, [goblin], spell)
 
         assert wizard.concentrating_on == "vampiric_touch"
@@ -836,8 +835,8 @@ class TestVampiricTouch:
         wizard.take_damage(Damage(DamageType.BLUDGEONING, 10))
         hp_before_second = wizard.hp
 
-        with patch("src.combat.effect_pipeline.roll_d20", return_value=20), \
-             patch("src.combat.effect_pipeline.roll_formula", return_value=8):
+        with patch("src.spells.blocks.rolls.roll_d20", return_value=20), \
+             patch("src.spells.blocks.damage.roll_formula", return_value=8):
             results = combat.resolve_spell(wizard, [goblin], spell)
 
         _, hit, damage, _, healing, _ = results[0]

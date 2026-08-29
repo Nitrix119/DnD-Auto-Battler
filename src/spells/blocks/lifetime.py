@@ -70,5 +70,5 @@ def lifetime(block: Block, inv: Invocation) -> None:
 REGISTRY.register(
     "lifetime",
     lifetime,
-    BlockContract(target_arity=TargetArity.SINGLE),
+    BlockContract(target_arity=TargetArity.SINGLE, installs_reactions=True),
 )

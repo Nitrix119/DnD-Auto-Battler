@@ -44,9 +44,15 @@ class BlockContract:
         is_gate: True for pre-effect roll/gate blocks (``attack_roll``,
             ``saving_throw``). The evaluator emits ``SPELL_HIT`` just before the
             first non-gate block, matching the legacy pipeline's ordering.
+        installs_reactions: True for blocks that subscribe handlers to future
+            events (``lifetime``, ``trigger``). The evaluator flushes the pending
+            ``DAMAGE_DEALT`` just before the first such block so a rider does not
+            fire on its own cast's damage — matching where the legacy pipeline
+            emitted ``DAMAGE_DEALT`` (before the first ``add_entity_effect``).
     """
 
     reads: Tuple[str, ...] = ()
     writes: Tuple[str, ...] = ()
     target_arity: TargetArity = TargetArity.SINGLE
     is_gate: bool = False
+    installs_reactions: bool = False

@@ -302,9 +302,22 @@ reviewable **sub-slices**, each independently green and committed:
   *concentration* scope lives on the caster and ticks on the caster's turn — matching legacy only when
   the holder is the caster (`on_caster`). So Haste (concentration, target=defender, duration) stays
   deferred; Vampiric Touch (concentration, `on_caster`, duration) is unblocked once `grant_action` lands.
-- **4.3b-2b — the harder folds (next).** `grant_action` block + Vampiric Touch (now the clock is in);
-  a self-dispose path + per-effect `when` for Armor of Agathys; relax the router's reactive-effects
-  guard as triggers subsume `InjectPipelineDamageStep` (Colossus Slayer).
+- **4.3b-2b — Vampiric Touch ✅ DONE (2026-08-29).** `grant_action` state block (builds the granted
+  `AttackAction`, hands the scope its revoke handle so ending concentration removes it; `Entity.grant_action`
+  now returns an identity handle). The fold maps `GrantAction` and passes the rule's `duration_rounds`
+  into the lifetime block. A **reaction-ordering** fix landed with it: a new `installs_reactions` contract
+  flag on `lifetime`/`trigger`; `run_target` flushes the pending `DAMAGE_DEALT` *before* the first such
+  block, so a rider a cast installs does not fire on that cast's own damage — matching where the legacy
+  pipeline emitted `DAMAGE_DEALT` (before the first `add_entity_effect`). **Vampiric Touch** now runs on
+  the new engine at parity: instantaneous attack/damage/self-heal, a concentration lifetime (10 rounds,
+  `on_caster` so the clock ticks correctly) holding the granted melee attack + a `DAMAGE_DEALT` heal
+  rider; breaking concentration revokes the granted action via the scope handle. Four VT tests had their
+  legacy-pipeline roll mocks retargeted to the block engine and their manual concentration-break switched
+  to the real `end_concentration` teardown. Full suite green (681).
+- **4.3b-2c — the last folds (next).** A self-dispose path + per-effect `when` for Armor of Agathys;
+  relax the router's reactive-effects guard as triggers subsume `InjectPipelineDamageStep` (Colossus
+  Slayer). Haste stays on legacy (concentration duration on a targeted ally — the clock would tick on the
+  wrong turn; modelling that properly is later work). Then **4.3c** deletes `BUILTIN_EFFECTS`.
 - **4.3c — repoint dispatch + delete `BUILTIN_EFFECTS`.** Repoint the rule engine's effect dispatch at
   the block registry, migrate `rules/entity_effects/*`, delete `BUILTIN_EFFECTS`, and name the
   persistent-effect concept. The duration clock (`RuleEngine._tick_durations` on `TURN_END`) must be

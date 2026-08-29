@@ -42,11 +42,11 @@ class TestFoldRouting:
         assert can_run_on_blocks(_spell("shield_of_faith"), None) is False
 
     def test_still_un_foldable_effects_stay_on_legacy(self):
-        # Each stays on legacy for a specific reason (§4.3b-2): Vampiric Touch uses
-        # GrantAction (no block) + a duration; Haste has a duration_rounds (needs
-        # the §4.3c clock); Armor of Agathys uses RemoveEffect + per-effect `when`.
+        # Each stays on legacy for a specific reason: Haste is a concentration
+        # duration on a targeted ally (its clock would tick on the wrong turn);
+        # Armor of Agathys uses RemoveEffect + a per-effect `when`.
         rules = _rules()
-        for name in ("vampiric_touch", "haste", "armor_of_agathys"):
+        for name in ("haste", "armor_of_agathys"):
             assert can_run_on_blocks(_spell(name), rules) is False, name
 
     def test_instance_fields_effect_stays_on_legacy(self):
@@ -69,6 +69,22 @@ class TestFoldShape:
         mod = life.then[0]
         assert mod.get("stat") == "ac" and mod.get("value") == 2
         assert mod.get("target") == "defender"
+
+    def test_vampiric_touch_folds_with_a_granted_action_and_a_heal_rider(self):
+        spell = _spell("vampiric_touch")
+        assert can_run_on_blocks(spell, _rules()) is True
+        program = to_program(spell.pipeline_effects, spell.targeting_type, _rules())
+        # attack_roll, damage, healing (instantaneous), then the lifetime.
+        assert [b.type for b in program] == [
+            "attack_roll", "damage", "healing", "lifetime",
+        ]
+        life = program[-1]
+        assert life.get("kind") == "concentration"
+        assert life.get("duration_rounds") == 10  # ticks via the clock, on_caster
+        assert [b.type for b in life.then] == ["grant_action", "trigger"]
+        rider = life.then[1]
+        assert rider.get("event") == "DAMAGE_DEALT" and rider.get("holder") == "caster"
+        assert [b.type for b in rider.then] == ["healing"]
 
     def test_longstrider_folds_to_a_rounds_lifetime_with_a_turn_start_rider(self):
         spell = _spell("longstrider")

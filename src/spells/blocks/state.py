@@ -1,4 +1,5 @@
-"""State blocks: apply_condition, add_modifier, grant_temporary_hp, add_resource.
+"""State blocks: apply_condition, add_modifier, grant_temporary_hp, add_resource,
+grant_action.
 
 These fold three legacy twins into one catalogue and, crucially, do the work
 **directly** instead of the old pipeline's route (build a synthetic ``on_apply``
@@ -11,6 +12,9 @@ from __future__ import annotations
 
 from src.models.condition import Condition, ConditionType
 from src.models.stat_modifier import StatModifier
+from src.models.action import AttackAction, ActionType
+from src.models.action_resources import ACTION_COST
+from src.models.damage import Damage, DamageType
 from src.combat.events import EventType
 from src.combat.event_data import ConditionAddedData
 from src.rules.expressions import resolve
@@ -97,6 +101,36 @@ def add_resource(block: Block, inv: Invocation) -> None:
         target.add_resource(resource, amount)
 
 
+def grant_action(block: Block, inv: Invocation) -> None:
+    """Grant a temporary AttackAction to the target (e.g. a concentration's attack).
+
+    Builds the action from the block's ``name``/``bonus_to_hit``/``range_ft``/
+    ``damage`` fields and hands the scope its revoke handle, so ending the lifetime
+    removes the action.
+    """
+    target = _target(block, inv)
+    ec = eval_context(inv)
+    try:
+        bonus = int(resolve(block.get("bonus_to_hit", 0), ec))
+    except Exception:
+        bonus = 0
+    damages = [
+        Damage(DamageType[str(d.get("type", "GENERIC")).upper()], 0,
+               formula=d.get("formula", ""))
+        for d in block.get("damage", [])
+    ]
+    action = AttackAction(
+        name=str(block.get("name", "")),
+        description=str(block.get("description", "")),
+        action_type=ActionType.ATTACK,
+        bonus_to_hit=bonus,
+        range_ft=float(block.get("range_ft", 5.0)),
+        damage=damages,
+        cost=ACTION_COST,
+    )
+    _own(inv, target.grant_action(action))
+
+
 REGISTRY.register(
     "apply_condition", apply_condition,
     BlockContract(target_arity=TargetArity.SINGLE),
@@ -111,5 +145,9 @@ REGISTRY.register(
 )
 REGISTRY.register(
     "add_resource", add_resource,
+    BlockContract(target_arity=TargetArity.SINGLE),
+)
+REGISTRY.register(
+    "grant_action", grant_action,
     BlockContract(target_arity=TargetArity.SINGLE),
 )

@@ -75,6 +75,15 @@ def run_target(
         reg = registry.get(block.type)
         if not reg.contract.is_gate and not inv.spell_hit_emitted:
             _emit_spell_hit(inv)
+        # Flush pending DAMAGE_DEALT before a block that installs reactions, so a
+        # rider it subscribes does not fire on this cast's own damage (legacy
+        # emitted DAMAGE_DEALT just before the first add_entity_effect).
+        if (
+            reg.contract.installs_reactions
+            and not inv.damage_dealt_emitted
+            and inv.context["damage_dealt"] > 0
+        ):
+            _emit_damage_dealt(inv)
         run_block(block, inv, registry)
 
     if not inv.spell_hit_emitted:

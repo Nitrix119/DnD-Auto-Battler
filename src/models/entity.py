@@ -188,9 +188,18 @@ class Entity:
         self.granted_actions = [a for a in self.granted_actions if a.source_effect != name]
         self.conditions = [c for c in self.conditions if c.effect_name != name]
 
-    def grant_action(self, action: Action) -> None:
-        """Attach a temporary action granted by an entity effect."""
+    def grant_action(self, action: Action) -> RevokeHandle:
+        """Attach a temporary action; return a handle that removes *this* action.
+
+        Removal is by object identity, so a lifetime scope revokes exactly the
+        action it granted.
+        """
         self.granted_actions.append(action)
+
+        def _revoke() -> None:
+            self.granted_actions = [a for a in self.granted_actions if a is not action]
+
+        return RevokeHandle(_revoke, label="granted_action")
 
     def get_effects_for_trigger(self, trigger: str) -> list:
         """Get all effects for a given trigger string."""

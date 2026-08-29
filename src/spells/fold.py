@@ -14,10 +14,10 @@ This module reunites them into one ``lifetime{ … }`` block:
   event), holder-scoped and guarded by the rule's ``condition``.
 - ``concentration`` / a rounds duration → the ``lifetime`` **kind**.
 
-Still deferred (kept on legacy by :func:`foldable`): a rule with ``duration_rounds``
-(needs the §4.3c TURN_END clock to expire), a per-effect ``when`` guard, an
-``instance_fields`` step, or any ``on_apply``/rule action without a block
-translator (``GrantAction``, ``RemoveEffect``, ``InjectPipelineDamageStep``).
+Still deferred (kept on legacy by :func:`foldable`): a *concentration* duration on
+a non-``on_caster`` effect (its clock would tick on the wrong turn — e.g. Haste),
+a per-effect ``when`` guard, an ``instance_fields`` step, or any ``on_apply``/rule
+action without a block translator (``RemoveEffect``, ``InjectPipelineDamageStep``).
 
 ``foldable`` is the routing gate's check (does this step translate cleanly?);
 ``to_lifetime_block`` is the translation. Both take the referenced ``rule`` (or
@@ -104,6 +104,18 @@ def _add_resource(eff: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _grant_action(eff: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "block": "grant_action",
+        "target": _target(eff.get("target")),
+        "name": eff.get("name", ""),
+        "description": eff.get("description", ""),
+        "bonus_to_hit": eff.get("bonus_to_hit", 0),
+        "range_ft": eff.get("range_ft", 5.0),
+        "damage": eff.get("damage", []),
+    }
+
+
 # Legacy BUILTIN_EFFECTS action → block translator. Actions absent here
 # (GrantAction, RemoveEffect, InjectPipelineDamageStep, …) are not yet foldable —
 # the spells that use them stay on the legacy engine until a later slice.
@@ -114,6 +126,7 @@ _ACTION_TO_BLOCK: Dict[str, Callable[[Dict[str, Any]], Dict[str, Any]]] = {
     "HealTarget": _healing,
     "DealDamage": _damage,
     "AddResource": _add_resource,
+    "GrantAction": _grant_action,
 }
 
 
@@ -185,12 +198,16 @@ def foldable(step: Dict[str, Any], rule: Any) -> bool:
         return False
     if any(e.get("action") not in _ACTION_TO_BLOCK for e in step.get("on_apply", [])):
         return False
-    # A rule ``duration_rounds`` expires via a TURN_END clock we don't wire until
-    # §4.3c; folding one now would make it never end (a parity break) — and this
-    # holds even for a concentration effect, since the duration is a *second* end
-    # condition beyond the CON-save break. A rule with no duration_rounds never
-    # expired on legacy either, so it is safe.
-    if getattr(rule, "duration_rounds", None):
+    # A concentration duration ticks on the caster's turn (its scope lives on the
+    # caster), but legacy ticks it on the effect-holder's turn. Those match only
+    # when the holder IS the caster (on_caster) — otherwise defer (e.g. Haste,
+    # concentration on a targeted ally). A rounds duration lives on the holder and
+    # ticks on the holder's turn either way, so it is always safe.
+    if (
+        getattr(rule, "duration_rounds", None)
+        and step.get("concentration")
+        and not step.get("on_caster")
+    ):
         return False
     # Reactive effects: every rule effect must map to a block, and per-effect fire
     # guards (`when`) are not folded yet.
@@ -217,6 +234,8 @@ def to_lifetime_block(step: Dict[str, Any], rule: Any) -> Dict[str, Any]:
         "source": step.get("entity_effect_name", ""),
         "then": then,
     }
+    if getattr(rule, "duration_rounds", None):
+        block["duration_rounds"] = rule.duration_rounds
     # A step-level condition (e.g. "only on a failed save") gates installation —
     # the evaluator's per-block `condition` guard applies it to the whole lifetime.
     if step.get("condition"):
