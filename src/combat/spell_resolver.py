@@ -74,7 +74,7 @@ class SpellResolver:
         from src.spells.adapter import can_run_on_blocks
 
         rule_lookup = self._rule_lookup()
-        if can_run_on_blocks(action, rule_lookup) and not self._caster_has_reactive_effects(
+        if can_run_on_blocks(action, rule_lookup) and not self._caster_has_injection_effect(
             caster
         ):
             return self._resolve_via_blocks(caster, defenders, action, slot_level)
@@ -138,18 +138,33 @@ class SpellResolver:
             return None
         return lambda name: reg.get(name) if name in reg else None
 
-    @staticmethod
-    def _caster_has_reactive_effects(caster: Entity) -> bool:
-        """Keep casts with reactive entity effects on the legacy engine (Phase 1).
+    # Effect actions the new engine can't reproduce: they mutate the *running*
+    # attack's step list (Colossus Slayer's bonus die on ATTACK_HIT). Everything
+    # else an active effect does rides the EventBus and works on both engines.
+    _INJECTION_ACTIONS = frozenset(
+        {"InjectPipelineDamageStep", "AddDamageToAttackHit"}
+    )
 
-        A reactive effect that *injects into the pipeline* — Colossus Slayer's
-        ``InjectPipelineDamageStep`` appends a damage step to the running action
-        on ATTACK_HIT — has no equivalent on the new engine yet; such effects
-        become trigger blocks in Phase 2. (Event-modifying effects like advantage
-        or resistance already work identically on both engines, but this stays
-        conservative: any active effect on the caster routes to legacy.)
+    @classmethod
+    def _caster_has_injection_effect(cls, caster: Entity) -> bool:
+        """Keep a cast on the legacy engine only when the caster has a pipeline-
+        *injecting* reactive effect (§4.3).
+
+        Narrowed from "any active effect": event-modifying effects (advantage,
+        resistance, retaliation, …) resolve identically on both engines, so only a
+        pipeline injection — which the new engine has no equivalent for — forces
+        legacy. Fully retiring even this waits on the entity-effect dispatch repoint
+        (the remainder of §4.3c).
         """
-        return any(caster.active_effects.values())
+        for bucket in caster.active_effects.values():
+            for instance in bucket:
+                rule = getattr(instance, "rule", None)
+                effects = getattr(rule, "effects", None) or []
+                if any(
+                    e.get("action") in cls._INJECTION_ACTIONS for e in effects
+                ):
+                    return True
+        return False
 
     def _resolve_via_blocks(
         self,

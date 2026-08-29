@@ -54,6 +54,42 @@ class TestFoldRouting:
 
 # ── Fold shape ────────────────────────────────────────────────────────────────
 
+class TestRouterInjectionGuard:
+    """The router keeps only pipeline-injecting casters on legacy (§4.3)."""
+
+    def _caster_with_effect(self, effect_dict):
+        from src.combat.spell_resolver import SpellResolver
+        from src.rules import RuleEngine, RuleLoader
+
+        caster = _cleric()
+        bus = EventBus()
+        engine = RuleEngine(bus, entities_getter=lambda: [caster])
+        rule = RuleLoader.from_dict({
+            "name": "feat", "triggers": ["ATTACK_HIT"],
+            "condition": None, "effects": [effect_dict],
+        })
+        engine.apply_effect(caster, rule)
+        return caster
+
+    def test_injection_effect_forces_legacy(self):
+        from src.combat.spell_resolver import SpellResolver
+
+        caster = self._caster_with_effect({
+            "action": "InjectPipelineDamageStep",
+            "attack_action": "event.action", "formula": "1d8",
+            "damage_type": "event.action.primary_damage_type",
+        })
+        assert SpellResolver._caster_has_injection_effect(caster) is True
+
+    def test_non_injection_effect_no_longer_forces_legacy(self):
+        from src.combat.spell_resolver import SpellResolver
+
+        caster = self._caster_with_effect({
+            "action": "GrantAdvantage", "target": "event.attacker",
+        })
+        assert SpellResolver._caster_has_injection_effect(caster) is False
+
+
 class TestFoldShape:
 
     def test_shield_of_faith_folds_to_a_concentration_lifetime(self):

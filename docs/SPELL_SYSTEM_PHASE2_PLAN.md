@@ -324,12 +324,38 @@ reviewable **sub-slices**, each independently green and committed:
   the effect (disposing the scope) once temp HP are gone. Its self-termination tests were moved off the
   legacy `active_effects` mechanism onto the new artifact (the lifetime scope's disposed state).
   Full suite green (682).
-- **4.3b-2d — Colossus Slayer + relax the guard (next).** Fold `InjectPipelineDamageStep` → an
-  `ATTACK_HIT` trigger dealing the bonus die (killing the list-surgery injection), then relax
-  `SpellResolver._caster_has_reactive_effects` so a caster with folded reactive effects routes to the
-  new engine. Then **4.3c**: repoint the rule dispatch, migrate the entity-effect files, delete
-  `BUILTIN_EFFECTS`. (Haste stays on legacy — concentration duration on a targeted ally, clock ticks on
-  the wrong turn; deferred as later work.)
+- **4.3b-2d — router guard narrowed ✅ DONE (2026-08-29).** `SpellResolver._caster_has_reactive_effects`
+  → `_caster_has_injection_effect`: it now keeps a cast on legacy **only** when the caster has a
+  pipeline-*injecting* effect (`InjectPipelineDamageStep`/`AddDamageToAttackHit` — Colossus Slayer), the
+  one reactive mechanism the new engine can't reproduce. Every other active effect (advantage, resistance,
+  retaliation) rides the EventBus identically on both engines and no longer forces legacy. Full suite
+  green (683). Fully retiring even this guard waits on the entity-effect dispatch repoint below.
+
+#### Scope finding — "delete `BUILTIN_EFFECTS`" is a core-rules migration, not spell folding
+
+Auditing what `BUILTIN_EFFECTS` actually backs (see the action→origin table below), **the persistent-effect
+spell fold — the part of 4.3 the rewrite is about — is essentially complete**: every foldable
+`add_entity_effect` spell (Shield of Faith, Longstrider, Vampiric Touch, Armor of Agathys) now runs on the
+new engine at parity. What remains under "4.3c / delete `BUILTIN_EFFECTS`" is materially larger and mostly
+*not* spell content:
+
+- Five actions are used **only by core global rules** — `ForceConcentrationCheck` (concentration break),
+  `ForceCriticalHit`/`ForceCriticalMiss` (crit rules), `ModifyDamage` (damage resistance/immunity/
+  vulnerability), `RefillResources` (per-turn economy). These are **event-modifier** effects with no
+  block equivalent — a different block category than the state/damage/grant blocks built so far.
+- Remaining entity effects not yet folded — the **condition library** (`charmed`, `blinded`, `petrified`,
+  …), **poison**, **Colossus Slayer** (injection), **Haste** (concentration-on-ally duration), **Charm
+  Person** (`instance_fields`) — are applied via `RuleEngine.apply_effect` (creature features / saves),
+  not a spell's `add_entity_effect`, so they need the **dispatch repoint** (apply_effect installs block
+  programs), not the spell adapter.
+
+So deleting `BUILTIN_EFFECTS` outright means: build an **event-modifier block family** (advantage,
+crit-force, damage-modify, concentration-check, resource-refill, cancel), repoint `RuleEngine.apply_effect`
+and the global-rule dispatch at the block registry, and migrate every `rules/**` file — a cross-cutting
+core-engine migration on its own footing, distinct from folding persistent-effect spells. **Recommend
+treating it as its own phase (call it Phase 2.9 / 3-prep), not a tail of 4.3b.** The spell-fold goal of
+4.3 is met; the legacy engine + `BUILTIN_EFFECTS` stay alive (as the plan always intended through Phase 2)
+until that migration.
 - **4.3c — repoint dispatch + delete `BUILTIN_EFFECTS`.** Repoint the rule engine's effect dispatch at
   the block registry, migrate `rules/entity_effects/*`, delete `BUILTIN_EFFECTS`, and name the
   persistent-effect concept. The duration clock (`RuleEngine._tick_durations` on `TURN_END`) must be
