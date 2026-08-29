@@ -46,11 +46,30 @@ def seed_context(slot_level: int) -> Dict[str, Any]:
     }
 
 
+@dataclass(frozen=True)
+class CastEnv:
+    """The constant cast environment — the collaborators for one whole cast.
+
+    These never vary across a cast and all its child sub-runs (each iterator
+    element, each trigger firing), so a child reuses its parent's ``CastEnv`` by
+    reference rather than re-threading five arguments. Frozen because nothing
+    should mutate the environment mid-cast; the per-run *state* lives on
+    :class:`Invocation`, which holds a reference to one of these.
+    """
+
+    action: Any  # SpellAction-like: .name, .spell_level
+    event_bus: Any
+    damage_processor: Any
+    rule_engine: Any = None
+    slot_level: Optional[int] = None
+
+
 @dataclass
 class Invocation:
     """Mutable state for one run of a block program over one target.
 
-    Two roles:
+    Holds a reference to the immutable :class:`CastEnv` (the collaborators) plus
+    the per-run state that varies. Two roles:
 
     - A **per-target** invocation (the common case): ``target`` is the single
       current target and the run writes into ``context``. Iterator ``then`` bodies
@@ -61,16 +80,36 @@ class Invocation:
       (the caster) that no block reads — the arity lint guarantees only a
       set-consuming block runs at the root, and those read ``targets``, never
       ``target``.
+
+    The collaborators are exposed as read-only properties delegating to ``env``,
+    so ``inv.event_bus`` / ``inv.action`` / … keep working unchanged.
     """
 
+    env: CastEnv
     caster: Entity
     target: Entity  # the current single target (caster placeholder at an iterator root)
-    action: Any  # SpellAction-like: .name, .spell_level
-    event_bus: Any
-    damage_processor: Any
-    rule_engine: Any = None
-    slot_level: Optional[int] = None
     context: Dict[str, Any] = field(default_factory=dict)
+
+    # -- Collaborators (delegated to the immutable environment) ----------------
+    @property
+    def action(self) -> Any:
+        return self.env.action
+
+    @property
+    def event_bus(self) -> Any:
+        return self.env.event_bus
+
+    @property
+    def damage_processor(self) -> Any:
+        return self.env.damage_processor
+
+    @property
+    def rule_engine(self) -> Any:
+        return self.env.rule_engine
+
+    @property
+    def slot_level(self) -> Optional[int]:
+        return self.env.slot_level
 
     # The target *set* an iterator consumes, and the per-element results it
     # collects. Empty on a per-target invocation.
@@ -118,14 +157,10 @@ class Invocation:
         resolves to it (the holder, not necessarily the spell's caster).
         """
         inv = Invocation(
+            env=self.env,
             caster=self.caster if caster is None else caster,
             target=self.target if target is None else target,
-            action=self.action,
-            event_bus=self.event_bus,
-            damage_processor=self.damage_processor,
-            rule_engine=self.rule_engine,
-            slot_level=self.slot_level,
-            context=seed_context(self.slot_level or 0),
+            context=seed_context(self.env.slot_level or 0),
             event_data=event_data,
         )
         if shared_rolls:

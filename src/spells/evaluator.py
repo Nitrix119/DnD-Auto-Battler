@@ -20,7 +20,7 @@ from typing import Any, List, Optional
 from . import blocks as _blocks  # noqa: F401  (import registers the built-in blocks)
 from .block import Block
 from .contract import TargetArity
-from .context import Invocation, InvocationResult, seed_context
+from .context import CastEnv, Invocation, InvocationResult, seed_context
 from .lint import lint_program
 from .registry import BlockRegistry, REGISTRY
 from .runner import run_program, run_target
@@ -48,14 +48,17 @@ def _new_invocation(
     slot_level: int,
     targets: Optional[List[Any]] = None,
 ) -> Invocation:
-    return Invocation(
-        caster=caster,
-        target=target,
+    env = CastEnv(
         action=action,
         event_bus=event_bus,
         damage_processor=damage_processor,
         rule_engine=rule_engine,
         slot_level=slot_level,
+    )
+    return Invocation(
+        env=env,
+        caster=caster,
+        target=target,
         context=seed_context(slot_level),
         targets=list(targets) if targets else [],
     )
