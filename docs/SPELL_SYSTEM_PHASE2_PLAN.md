@@ -22,22 +22,26 @@
 > The full pure-event-flag modifier set has shipped (`modify_damage`, `force_critical`, `grant_advantage`,
 > `grant_disadvantage`, `cancel`), and **the first production repoint has landed** — the event-modifier
 > *global* rules (resistance/immunity/vulnerability, crits) now run on the block engine, not
-> `BUILTIN_EFFECTS`. The suite is green (**718 tests**); `mypy src/` sits at a steady 44
+> `BUILTIN_EFFECTS`, and **Charm Person is folded onto the block engine** (instance_fields as a trigger
+> closure) — **22 of 23 shipped spells now run on the new engine**, only Haste remains on legacy. The
+> suite is green (**723 tests**); `mypy src/` sits at a steady 44
 > pre-existing errors (one is `src/spells/blocks/damage.py:82`, a benign register-signature variance, not
 > from the new work); Black is pinned `==23.12.1` (see §9 in [CLAUDE.md](../CLAUDE.md) — do **not** run a
 > newer Black on modified files; the dev env resolves Black 26.x).
 
-### 0.1 What runs on the new engine now — **21 of 23 shipped spells**
+### 0.1 What runs on the new engine now — **22 of 23 shipped spells**
 
 - **Instantaneous single-target (9):** Acid Splash, Chill Touch, Cure Wounds, Fire Bolt, Guiding Bolt,
   Inflict Wounds, Poison Spray, Ray of Frost, Sacred Flame.
 - **AoE (5)** + **multi-target (3):** Fireball, Burning Hands, Cone of Cold, Lightning Bolt, Thunderwave;
   Magic Missile, Scorching Ray, Eldritch Blast. (§4.1 — `for_each_target` iterator, shared `roll_once`.)
-- **Persistent / concentration (4):** Shield of Faith, Longstrider, Vampiric Touch, Armor of Agathys.
-  (§4.3b — `add_entity_effect` folded into a `lifetime{ … }` program.)
-- **Still on legacy (2):** **Haste** (concentration duration on a *targeted ally* — the duration clock
-  would tick on the wrong turn; needs the split-holder model) and **Charm Person** (uses
-  `instance_fields`, not yet folded). Both route to the legacy `EffectPipeline` unchanged.
+- **Persistent / concentration / control (5):** Shield of Faith, Longstrider, Vampiric Touch, Armor of
+  Agathys, **Charm Person** (§4.3b — `add_entity_effect` folded into a `lifetime{ … }` program; Charm
+  Person's `instance_fields` fold as a trigger's captured `bindings`, exposed to the rider as
+  `instance_fields.<name>`).
+- **Still on legacy (1):** **Haste** — a concentration duration on a *targeted ally*, whose duration
+  clock would tick on the wrong turn; needs the split-holder model. Routes to the legacy
+  `EffectPipeline` unchanged.
 
 ### 0.2 The new engine — `src/spells/` (18 registered blocks)
 
@@ -46,7 +50,7 @@
 | `block.py` | `Block(type, args, then)` immutable value + `from_dict`/`parse_program`. Nests only via `then`. |
 | `contract.py` | `TargetArity{SINGLE,CASTER,SET}` + `BlockContract(reads, writes, target_arity, is_gate, installs_reactions, mutates_event)`. |
 | `registry.py` | `BlockRegistry` + process-global `REGISTRY` (the block *vocabulary* — legitimately global). |
-| `context.py` | `CastEnv` (frozen collaborators) + `Invocation` (per-run state holding an `env` ref, collaborators via property delegators; `.child()` spawns sub-runs — the one place they're threaded; `live_event` is the §4.7 handle onto the in-flight event), `InvocationResult`, `eval_context`, `seed_context`. |
+| `context.py` | `CastEnv` (frozen collaborators) + `Invocation` (per-run state holding an `env` ref, collaborators via property delegators; `.child()` spawns sub-runs — the one place they're threaded; `live_event` is the §4.7 handle onto the in-flight event; `instance_fields` are a rider's captured closure values), `InvocationResult`, `eval_context`, `seed_context`. |
 | `runner.py` | `run_block`/`run_program`/`run_target` — pure dispatch + SPELL_HIT/DAMAGE_DEALT orchestration. Imported by blocks **and** the evaluator (breaks the old cycle). |
 | `evaluator.py` | `resolve` (one target) / `resolve_program` (fan-out entry) — build invocations, call `runner`. |
 | `lint.py` | `lint_program` — target-arity check (a SINGLE block under a set is a load-time error). |
@@ -58,7 +62,7 @@
 | `blocks/state.py` | `apply_condition`, `add_modifier`, `grant_temporary_hp`, `add_resource`, `grant_action`. |
 | `blocks/iterators.py` | `for_each_target` (fan-out over the target set; pre-rolls shared `roll_once`). |
 | `blocks/lifetime.py` | `lifetime` (opens a scope, binds concentration/duration), `end_lifetime` (self-dispose). |
-| `blocks/triggers.py` | `trigger` (subscribe a `then` to an event, holder-scoped, depth-guarded, priority −10; passes the live event to its firing). |
+| `blocks/triggers.py` | `trigger` (subscribe a `then` to an event, holder-scoped, depth-guarded, priority −10; passes the live event to its firing; captures `bindings` at install → `instance_fields.<name>`). |
 | `blocks/event_mod.py` | **event-modifier** blocks — mutate the in-flight event via `inv.live_event` (§4.7): `modify_damage` (resistance/immunity/vuln), `force_critical` (nat-20/1 crits), `grant_advantage`/`grant_disadvantage`/`cancel` (the condition library). |
 | `global_rules.py` | `block_eligible` + `install_global_rules` — installs the event-modifier *global* rules as permanent priority-0 triggers at combat start (§4.7 step 3, first repoint). Reuses `fold.rule_to_trigger_blocks`. |
 | *(model)* `src/models/lifetime.py` | `LifetimeScope` / `RevokeHandle` / `LifetimeKind` — pure ownership primitive with `rounds_remaining`/`tick()`. |
@@ -593,23 +597,36 @@ AST-whitelist expression sandbox · EventBus as the substrate for cross-cutting 
 ## 6. The immediate next step
 
 **4.1, 4.2, and 4.3 are done**; **§4.7 step 1 is substantially landed** (the pure-event-flag modifier set,
-parity-gated and fold-wired); and **the first production repoint (§4.7 step 3, partial) is in** — the
-event-modifier *global* rules run on the block engine (`src/spells/global_rules.py`; the web handler
-installs them and disables exactly those on the rule engine, so nothing double-applies). The `Invocation`
-→ `CastEnv` split (§0.6.1) shipped as the prerequisite. **21 of 23 shipped spells run on the new engine.**
-Remaining in **[§4.7](#47-phase-29--retiring-builtin_effects-the-core-rules-migration)**:
+parity-gated and fold-wired); **the first production repoint (§4.7 step 3, partial) is in** (event-modifier
+*global* rules on the block engine); and **Charm Person is folded** (instance_fields → a trigger's captured
+`bindings`). The `Invocation` → `CastEnv` split (§0.6.1) shipped as the prerequisite. **22 of 23 shipped
+spells run on the new engine — only Haste remains.**
 
-1. **Repoint `RuleEngine.apply_effect` at the block engine** (§4.7 step 2) — **the next major slice; a
-   production-behaviour change worth its own planning pass.** Translate an entity effect to a
-   `lifetime{ trigger… }` program and install it via the evaluator, reusing `fold.rule_to_trigger_blocks`.
-   This brings the **condition library** onto the new engine (its blocks + fold translators already exist),
-   kills `InjectPipelineDamageStep` (Colossus Slayer → an `ATTACK_HIT` trigger dealing the bonus die) and
-   lets the router's injection guard (§4.3b-2d) be removed; fold Haste (split-holder duration) and Charm
-   Person (`instance_fields` → a trigger closure variable) here. Apply the same **disable-the-legacy-path**
-   discipline the global-rule repoint used to avoid double-application. Per the user (2026-08-30): priority
-   0 + subscription order is fine for the common case; force order only where something strictly must be
-   first/last.
-2. **Finish the global rules** — build the two *side-effecting* globals as forward blocks fired by a
+> **Production finding (2026-08-30, drove the re-scope).** In `src/` + `web/`, `RuleEngine.apply_effect` is
+> reached through exactly one path — the legacy pipeline's `add_entity_effect` step — and the only shipped
+> spells on it were Haste and Charm Person. **Nothing wires the condition library to `apply_effect`** (a
+> spell applying "blinded" adds the `Condition` but never its reactive rule), and **no loader applies
+> creature features** (Colossus Slayer). So conditions/Colossus are exercised only in tests, and the router
+> injection guard is dormant in production. The plan below is re-ordered accordingly: finish the spells
+> first (empties the legacy spell path), then the deeper repoint.
+
+Remaining in **[§4.7](#47-phase-29--retiring-builtin_effects-the-core-rules-migration)**, in order:
+
+1. **Fold Haste — the next bite.** Needs the **split-holder duration** model: the concentration scope on
+   the caster (disposed on a failed CON save / a new concentration), the `AddResource` rider + its 10-round
+   clock on the *ally*, ticked on the ally's turn. The one new primitive; its own small plan. Lands 23/23
+   spells on the new engine and empties the legacy `add_entity_effect` **spell** path.
+2. **Repoint `RuleEngine.apply_effect` at the block engine** (§4.7 step 2). Translate an entity effect to a
+   `lifetime{ trigger… }` program and install it via the evaluator, reusing `fold.rule_to_trigger_blocks`
+   (already used by the global-rule repoint). This is what brings the **condition library** onto the new
+   engine (its blocks + fold translators all exist) and kills `InjectPipelineDamageStep` (Colossus Slayer →
+   an `ATTACK_HIT` trigger). **Note the finding:** since production doesn't apply conditions/features via
+   `apply_effect` yet, this may pair with wiring conditions to actually apply (a functional gap). Colossus's
+   crit-aware injection is coupled to weapon attacks moving to the block engine (Phase 3), so the router
+   injection guard may outlive this step. Apply the same **disable-the-legacy-path** discipline used for the
+   global rules. Per the user (2026-08-30): priority 0 + subscription order is fine; force order only where
+   something strictly must be first/last.
+3. **Finish the global rules** — build the two *side-effecting* globals as forward blocks fired by a
    permanent trigger: `force_concentration_check` (rolls a CON save, ends concentration) and
    `refill_resources` (resets an entity on `TURN_START`), then route `concentration` / `action_economy_refill`
    through `install_global_rules` too. Then **delete `BUILTIN_EFFECTS`** and move the `TURN_END` tick to a
