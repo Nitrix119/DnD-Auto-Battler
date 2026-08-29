@@ -20,7 +20,7 @@ import os
 
 from src.models import AbilityScores, StatBlock, Entity, Damage, DamageType
 from src.combat.event_bus import EventBus, CombatEvent
-from src.combat.event_data import DamageIncomingData
+from src.combat.event_data import DamageIncomingData, AttackRolledData
 from src.combat.events import EventType
 from src.combat.damage_processor import DamageProcessor
 from src.rules import RuleEngine, RuleLoader
@@ -30,9 +30,10 @@ from src.spells.block import Block
 from src.spells.context import CastEnv, Invocation, seed_context
 from src.spells.runner import run_block
 
-RESISTANCE_JSON = os.path.join(
-    os.path.dirname(__file__), "..", "rules", "global", "damage_resistance_rule.json"
-)
+_GLOBAL = os.path.join(os.path.dirname(__file__), "..", "rules", "global")
+RESISTANCE_JSON = os.path.join(_GLOBAL, "damage_resistance_rule.json")
+CRIT_HIT_JSON = os.path.join(_GLOBAL, "critical_hit.json")
+CRIT_MISS_JSON = os.path.join(_GLOBAL, "critical_miss.json")
 
 # The resistance rule as a native block program: a permanent (lifetime-less)
 # trigger that halves matching damage on the in-flight DAMAGE_INCOMING event.
@@ -44,6 +45,20 @@ RESISTANCE_TRIGGER = {
         "event.defender.stat_block.damage_resistances"
     ),
     "then": [{"block": "modify_damage", "multiplier": 0.5}],
+}
+
+# The nat-20 / nat-1 crit rules as native block programs.
+CRIT_HIT_TRIGGER = {
+    "block": "trigger",
+    "event": "ATTACK_ROLLED",
+    "when": "event.roll == 20",
+    "then": [{"block": "force_critical", "outcome": "hit"}],
+}
+CRIT_MISS_TRIGGER = {
+    "block": "trigger",
+    "event": "ATTACK_ROLLED",
+    "when": "event.roll == 1",
+    "then": [{"block": "force_critical", "outcome": "miss"}],
 }
 
 
@@ -157,6 +172,83 @@ class TestResistanceParity:
         legacy = self._legacy_hp([DamageType.COLD], Damage(DamageType.FIRE, 10))
         block = self._block_hp([DamageType.COLD], Damage(DamageType.FIRE, 10))
         assert block == legacy == 20  # full 10 damage, condition did not fire
+
+
+# ---------------------------------------------------------------------------
+# 2b. force_critical — the crit-rule primitive
+# ---------------------------------------------------------------------------
+
+class TestForceCriticalHandle:
+    def _run(self, outcome, roll):
+        bus = EventBus()
+        event = CombatEvent(
+            event_type=EventType.ATTACK_ROLLED,
+            data=AttackRolledData(
+                attacker=_entity(), defender=_entity(), action=None,
+                roll=roll, total=roll,
+            ),
+        )
+        inv = _new_inv(bus, _entity(), live_event=event, event_data=dict(event.data))
+        run_block(Block.from_dict({"block": "force_critical", "outcome": outcome}), inv)
+        return event.data
+
+    def test_outcome_hit_sets_critical_hit(self):
+        data = self._run("hit", 20)
+        assert data["critical_hit"] is True
+        assert data["critical_miss"] is False
+
+    def test_outcome_miss_sets_critical_miss(self):
+        data = self._run("miss", 1)
+        assert data["critical_miss"] is True
+        assert data["critical_hit"] is False
+
+    def test_default_outcome_is_hit(self):
+        bus = EventBus()
+        event = CombatEvent(
+            event_type=EventType.ATTACK_ROLLED,
+            data=AttackRolledData(attacker=_entity(), defender=_entity(),
+                                  action=None, roll=20, total=20),
+        )
+        inv = _new_inv(bus, _entity(), live_event=event, event_data=dict(event.data))
+        run_block(Block.from_dict({"block": "force_critical"}), inv)
+        assert event.data["critical_hit"] is True
+
+    def test_no_live_event_is_a_safe_noop(self):
+        bus = EventBus()
+        inv = _new_inv(bus, _entity())  # live_event=None
+        run_block(Block.from_dict({"block": "force_critical", "outcome": "hit"}), inv)
+
+
+class TestForceCriticalParity:
+    """A native crit trigger sets the same flag the legacy crit rule does."""
+
+    def _emit(self, roll, *, legacy_json=None, trigger=None):
+        bus = EventBus()
+        if legacy_json is not None:
+            RuleEngine(bus).load_from_file(legacy_json)
+        if trigger is not None:
+            _install_native_trigger(bus, trigger)
+        event = bus.emit(
+            EventType.ATTACK_ROLLED,
+            AttackRolledData(attacker=_entity(), defender=_entity(),
+                             action=None, roll=roll, total=roll),
+        )
+        return event.data["critical_hit"], event.data["critical_miss"]
+
+    def test_nat_20_forces_crit_matches_legacy(self):
+        legacy = self._emit(20, legacy_json=CRIT_HIT_JSON)
+        block = self._emit(20, trigger=CRIT_HIT_TRIGGER)
+        assert block == legacy == (True, False)
+
+    def test_nat_1_forces_miss_matches_legacy(self):
+        legacy = self._emit(1, legacy_json=CRIT_MISS_JSON)
+        block = self._emit(1, trigger=CRIT_MISS_TRIGGER)
+        assert block == legacy == (False, True)
+
+    def test_ordinary_roll_forces_neither_matches_legacy(self):
+        legacy = self._emit(10, legacy_json=CRIT_HIT_JSON)
+        block = self._emit(10, trigger=CRIT_HIT_TRIGGER)
+        assert block == legacy == (False, False)
 
 
 # ---------------------------------------------------------------------------

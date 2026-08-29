@@ -17,9 +17,11 @@ does, so parity is line-for-line. Run outside a trigger there is no live event t
 touch, so the block no-ops (a fail-safe, matching the engine's skip-don't-crash
 stance). Contract flag ``mutates_event=True`` marks the category.
 
-This module ships ``modify_damage`` first — the block behind the damage
-resistance/immunity/vulnerability rules; its siblings (``grant_advantage`` /
-``force_critical`` / ``cancel`` / …) land as each remaining global rule migrates.
+This module ships ``modify_damage`` (behind the damage resistance/immunity/
+vulnerability rules) and ``force_critical`` (behind the nat-20/nat-1 crit rules);
+the remaining siblings (``grant_advantage`` / ``grant_disadvantage`` / ``cancel`` /
+``force_concentration_check`` / ``refill_resources``) land as each remaining global
+rule migrates.
 """
 
 from __future__ import annotations
@@ -57,8 +59,31 @@ def modify_damage(block: Block, inv: Invocation) -> None:
         dmg.amount = int(dmg.amount * multiplier)
 
 
+def force_critical(block: Block, inv: Invocation) -> None:
+    """Force the in-flight attack to resolve as a critical hit (or miss).
+
+    The block form of ``effects.force_critical_hit`` / ``force_critical_miss``
+    folded into one: ``outcome: "hit"`` (default) sets ``critical_hit`` on the live
+    ``ATTACK_ROLLED``/``ATTACK_DECLARED`` event, ``outcome: "miss"`` sets
+    ``critical_miss`` — the flags ``CombatSystem`` reads after emitting. The caller's
+    ``when`` guard decides the trigger (a nat 20, a paralysed target, …).
+    """
+    event = inv.live_event
+    if event is None:
+        return
+    outcome = str(block.get("outcome", "hit")).lower()
+    key = "critical_miss" if outcome == "miss" else "critical_hit"
+    event.data[key] = True
+
+
 REGISTRY.register(
     "modify_damage",
     modify_damage,
+    BlockContract(target_arity=TargetArity.SINGLE, mutates_event=True),
+)
+
+REGISTRY.register(
+    "force_critical",
+    force_critical,
     BlockContract(target_arity=TargetArity.SINGLE, mutates_event=True),
 )
