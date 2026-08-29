@@ -22,19 +22,24 @@ without limit.
 
 from __future__ import annotations
 
+from weakref import WeakKeyDictionary
+
 from src.combat.events import EventType
 from src.models.lifetime import RevokeHandle
 from src.rules.expressions import evaluate
 
 from ..contract import BlockContract, TargetArity
-from ..context import Invocation, eval_context, seed_context
+from ..context import Invocation, eval_context
 from ..block import Block
 from ..registry import REGISTRY
+from ..runner import run_program
 
 # Cap on nested trigger firings within one originating event, so a mutual
-# retaliation (A hurts B, B's rider hurts A, A's rider hurts B, …) terminates.
+# retaliation (A hurts B, B's rider hurts A, …) terminates. The depth is tracked
+# **per event bus** — i.e. per battle — via a weak-keyed map, not a module global,
+# so concurrent battles never share a counter (the E12 per-battle-state rule).
 _MAX_TRIGGER_DEPTH = 8
-_depth = 0
+_depth_by_bus: "WeakKeyDictionary[object, int]" = WeakKeyDictionary()
 
 
 def _passes(expr, fired: Invocation) -> bool:
@@ -52,36 +57,19 @@ def _passes(expr, fired: Invocation) -> bool:
 
 def trigger(block: Block, inv: Invocation) -> None:
     """Subscribe this block's ``then`` to an event; scope it to the open lifetime."""
-    from ..evaluator import run_program
-
     event_type = EventType[str(block.get("event", "")).upper()]
     then = list(block.then)
     when = block.get("when")  # firing guard — NOT `condition` (see module docstring)
     target_expr = block.get("target")
-
-    # Capture the defining scope — the rider runs later, on someone else's turn.
-    caster = inv.caster
-    action = inv.action
     bus = inv.event_bus
-    damage_processor = inv.damage_processor
-    rule_engine = inv.rule_engine
-    slot_level = inv.slot_level
 
     def handler(event) -> None:
-        global _depth
-        if _depth >= _MAX_TRIGGER_DEPTH:
+        # The rider runs later, on someone else's turn; `inv` (captured) supplies
+        # the defining caster/action/collaborators for the fresh firing context.
+        depth = _depth_by_bus.get(bus, 0)
+        if depth >= _MAX_TRIGGER_DEPTH:
             return
-        fired = Invocation(
-            caster=caster,
-            target=caster,
-            action=action,
-            event_bus=bus,
-            damage_processor=damage_processor,
-            rule_engine=rule_engine,
-            slot_level=slot_level,
-            context=seed_context(slot_level or 0),
-            event_data=dict(event.data),
-        )
+        fired = inv.child(target=inv.caster, event_data=dict(event.data))
         if not _passes(when, fired):
             return
         if target_expr is not None:
@@ -89,11 +77,11 @@ def trigger(block: Block, inv: Invocation) -> None:
                 fired.target = evaluate(target_expr, eval_context(fired))
             except Exception:
                 return
-        _depth += 1
+        _depth_by_bus[bus] = depth + 1
         try:
             run_program(then, fired)
         finally:
-            _depth -= 1
+            _depth_by_bus[bus] = depth
 
     bus.subscribe(event_type, handler)
     if inv.active_scope is not None:

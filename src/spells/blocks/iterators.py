@@ -29,6 +29,7 @@ from ..contract import BlockContract, TargetArity
 from ..context import Invocation
 from ..block import Block
 from ..registry import REGISTRY
+from ..runner import run_target
 
 
 def _preroll_shared(then: List[Block], slot_level) -> Dict[int, int]:
@@ -55,26 +56,12 @@ def for_each_target(block: Block, inv: Invocation) -> None:
     Reads the set from the root invocation's ``targets`` and appends each
     element's :class:`~src.spells.context.InvocationResult` to ``results``.
     """
-    # Local import avoids the blocks ↔ evaluator import cycle (the evaluator
-    # imports this package to register its blocks).
-    from ..evaluator import _run_one_target
-
     then = list(block.then)
     shared_rolls = _preroll_shared(then, inv.slot_level)
 
     for element in inv.targets:
-        result = _run_one_target(
-            inv.caster,
-            element,
-            inv.action,
-            then,
-            event_bus=inv.event_bus,
-            damage_processor=inv.damage_processor,
-            rule_engine=inv.rule_engine,
-            slot_level=inv.slot_level,
-            shared_rolls=shared_rolls,
-        )
-        inv.results.append(result)
+        child = inv.child(target=element, shared_rolls=shared_rolls)
+        inv.results.append(run_target(child, then))
 
 
 REGISTRY.register(

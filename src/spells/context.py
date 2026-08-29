@@ -3,8 +3,9 @@
 One :class:`Invocation` holds everything a single program run needs: the caster,
 the current (single) target, the shared mutable ``context`` dict, the combat
 collaborators, and the bookkeeping the result is derived from. Sub-programs
-(iterators, triggers — later slices) get a child invocation with a rebound
-target, keeping each run's context its own.
+(an iterator per element, a trigger per firing) spawn a child via
+:meth:`Invocation.child`, which reuses the caster/action/collaborators and gives
+the child its own seeded context — so the collaborators are threaded in one place.
 """
 
 from __future__ import annotations
@@ -93,6 +94,35 @@ class Invocation:
     healed_entity: Optional[Entity] = None
     spell_hit_emitted: bool = False
     damage_dealt_emitted: bool = False
+
+    def child(
+        self,
+        *,
+        target: Optional[Entity] = None,
+        event_data: Optional[Dict[str, Any]] = None,
+        shared_rolls: Optional[Dict[int, int]] = None,
+    ) -> "Invocation":
+        """A fresh invocation sharing this one's caster/action/collaborators.
+
+        The single place a sub-run is spawned — an iterator per element, a trigger
+        per firing — so the combat collaborators are threaded in exactly one spot
+        rather than re-passed at every call site. Gets its own seeded ``context``;
+        ``target`` defaults to this invocation's target.
+        """
+        inv = Invocation(
+            caster=self.caster,
+            target=self.target if target is None else target,
+            action=self.action,
+            event_bus=self.event_bus,
+            damage_processor=self.damage_processor,
+            rule_engine=self.rule_engine,
+            slot_level=self.slot_level,
+            context=seed_context(self.slot_level or 0),
+            event_data=event_data,
+        )
+        if shared_rolls:
+            inv.context["_shared_rolls"] = shared_rolls
+        return inv
 
 
 @dataclass

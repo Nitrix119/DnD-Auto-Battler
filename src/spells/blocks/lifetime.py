@@ -25,6 +25,7 @@ from ..contract import BlockContract, TargetArity
 from ..context import Invocation
 from ..block import Block
 from ..registry import REGISTRY
+from ..runner import run_program
 
 _KINDS = {
     "concentration": LifetimeKind.CONCENTRATION,
@@ -43,8 +44,6 @@ def _kind(block: Block) -> LifetimeKind:
 
 def lifetime(block: Block, inv: Invocation) -> None:
     """Run ``then`` with a fresh scope open, then bind the scope by its kind."""
-    from ..evaluator import run_program
-
     kind = _kind(block)
     source = str(block.get("source", getattr(inv.action, "name", "") or ""))
     scope = LifetimeScope(kind=kind, source=source)

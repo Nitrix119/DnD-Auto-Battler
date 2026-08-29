@@ -113,25 +113,23 @@ def test_trigger_depth_is_balanced_after_firing():
     _wound(caster, 20)
     bus = EventBus()
     _establish(caster, [_HEAL_RIDER], bus)
-    assert triggers_mod._depth == 0
+    assert triggers_mod._depth_by_bus.get(bus, 0) == 0
     bus.emit(EventType.DAMAGE_DEALT, defender=_foe(), source=caster,
              total=6, damage_list=[])
-    assert triggers_mod._depth == 0
+    assert triggers_mod._depth_by_bus.get(bus, 0) == 0
 
 
 def test_trigger_depth_guard_blocks_at_the_cap():
     # At maximum re-entrancy depth the guard refuses to run a further rider,
-    # bounding retaliation chains (design §6.4). Simulate being at the cap.
+    # bounding retaliation chains (design §6.4). The depth is tracked per bus, so
+    # simulate this bus being at the cap.
     caster = _caster()
     _wound(caster, 20)
     bus = EventBus()
     _establish(caster, [_HEAL_RIDER], bus)
 
-    triggers_mod._depth = triggers_mod._MAX_TRIGGER_DEPTH
-    try:
-        before = caster.hp
-        bus.emit(EventType.DAMAGE_DEALT, defender=_foe(), source=caster,
-                 total=10, damage_list=[])
-        assert caster.hp == before  # guard blocked the rider at the cap
-    finally:
-        triggers_mod._depth = 0  # don't leak the global into other tests
+    triggers_mod._depth_by_bus[bus] = triggers_mod._MAX_TRIGGER_DEPTH
+    before = caster.hp
+    bus.emit(EventType.DAMAGE_DEALT, defender=_foe(), source=caster,
+             total=10, damage_list=[])
+    assert caster.hp == before  # guard blocked the rider at the cap
