@@ -262,10 +262,27 @@ reviewable **sub-slices**, each independently green and committed:
   rider fires on `DAMAGE_DEALT`, is gated by `when`, and **unsubscribes when its concentration lifetime
   is disposed**; the depth guard blocks at the cap. Full suite green (667). *No content migrated and
   `BUILTIN_EFFECTS` untouched yet — that's 4.3b/4.3c.*
-- **4.3b — the entity-effect fold (next).** Teach the adapter to translate the legacy `add_entity_effect`
-  + `on_apply` + entity-effect-rule shape into a `lifetime{ state + trigger blocks }` program; relax the
-  router's reactive-effects guard as triggers subsume `InjectPipelineDamageStep`. Parity-gate each
-  migrated spell (Vampiric Touch, Armor of Agathys, Shield of Faith, Longstrider, Haste, Charm Person).
+- **4.3b-1 — the entity-effect fold, state-only case ✅ DONE (2026-08-29).** New
+  [src/spells/fold.py](../src/spells/fold.py) translates a foldable `add_entity_effect` step into a
+  `lifetime{ … }` block: `on_apply` grants → state blocks (via an `_ACTION_TO_BLOCK` map:
+  AddModifier/ApplyCondition/GrantTemporaryHP/HealTarget/DealDamage), `concentration`/duration → the
+  lifetime kind. The adapter's `to_program`/`can_run_on_blocks` take a `rule_lookup` (`name -> Rule`)
+  so foldability can inspect the referenced entity-effect rule; `SpellResolver` supplies it from
+  `rule_engine.effect_registry`. **Shield of Faith** now runs on the new engine (its rule declares no
+  triggers). Conservative boundary — a step is **not** foldable if the rule can't be resolved (can't
+  prove there are no reactive triggers to drop), or the rule declares any trigger, or it uses
+  `instance_fields`, or an `on_apply` action has no block translator — so Vampiric Touch, Longstrider,
+  Haste, Armor of Agathys, Charm Person all stay on legacy for now. `Entity.begin_concentration` now
+  mirrors the scope onto the legacy `concentrating_on`/`concentration_target` display fields (the scope
+  stays authoritative for teardown), so consumers reading them are consistent. Tests:
+  [tests/test_entity_effect_fold.py](../tests/test_entity_effect_fold.py) (routing boundary, fold shape,
+  end-to-end cast + concentration break through the real router). Full suite green (673).
+- **4.3b-2 — the trigger side of the fold (next).** Translate the referenced rule's reactive
+  `triggers`/`effects` into `trigger` blocks (holder-scoped: the rider's `entity` is the effect-holder,
+  not necessarily the caster — matters for buff-an-ally). Add the missing state blocks (`add_resource`
+  for Haste/Longstrider, `grant_action` for Vampiric Touch) and a self-dispose path for Armor of
+  Agathys. Relax the router's reactive-effects guard as triggers subsume `InjectPipelineDamageStep`.
+  Parity-gate each migrated spell.
 - **4.3c — repoint dispatch + delete `BUILTIN_EFFECTS`.** Repoint the rule engine's effect dispatch at
   the block registry, migrate `rules/entity_effects/*`, delete `BUILTIN_EFFECTS`, and name the
   persistent-effect concept. The duration clock (`RuleEngine._tick_durations` on `TURN_END`) must be

@@ -273,16 +273,25 @@ class Entity:
     # Concentration as a first-class lifetime (§4.2)
     # ------------------------------------------------------------------
 
-    def begin_concentration(self, scope: LifetimeScope) -> None:
+    def begin_concentration(
+        self, scope: LifetimeScope, *, target: Optional["Entity"] = None
+    ) -> None:
         """Start concentrating on *scope*, dropping any prior concentration first.
 
         Disposes the previous concentration atomically — a new-engine ``scope`` or
         a legacy string-tagged effect — so its entire granted subtree is gone
         before the new one takes hold (design §6.3). The new spell's grants are
         expected to have registered their revoke handles into *scope* already.
+
+        The legacy ``concentrating_on`` / ``concentration_target`` fields are
+        mirrored (from the scope's ``source`` and *target*) so consumers that read
+        them see consistent state during the transition; the scope stays
+        authoritative for teardown.
         """
         self._dispose_current_concentration()
         self.concentration_scope = scope
+        self.concentrating_on = scope.source or None
+        self.concentration_target = target
 
     def end_concentration(self) -> None:
         """Drop concentration and revoke everything the concentrated spell granted.
@@ -295,10 +304,13 @@ class Entity:
 
     def _dispose_current_concentration(self) -> None:
         if self.concentration_scope is not None:
+            # The scope is authoritative — identity teardown of all it granted.
+            # (The string fields are only display mirrors here, so no string-tag
+            # cleanup; just clear them below.)
             self.concentration_scope.dispose()
             self.concentration_scope = None
-        # Legacy string-tag concentration (still used by the legacy engine).
-        if self.concentrating_on and self.concentration_target is not None:
+        elif self.concentrating_on and self.concentration_target is not None:
+            # Pure legacy string-tag concentration (no scope).
             self.concentration_target.remove_effect(self.concentrating_on)
         self.concentrating_on = None
         self.concentration_target = None

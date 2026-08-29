@@ -70,10 +70,13 @@ class SpellResolver:
             slot_level = action.spell_level
 
         # Route to the new block evaluator for spells it can express identically;
-        # everything else stays on the legacy pipeline (Phase 1 boundary).
+        # everything else stays on the legacy pipeline (Phase 1/2 boundary).
         from src.spells.adapter import can_run_on_blocks
 
-        if can_run_on_blocks(action) and not self._caster_has_reactive_effects(caster):
+        rule_lookup = self._rule_lookup()
+        if can_run_on_blocks(action, rule_lookup) and not self._caster_has_reactive_effects(
+            caster
+        ):
             return self._resolve_via_blocks(caster, defenders, action, slot_level)
 
         seed_damages = self._preroll_pipeline_damage(action, slot_level)
@@ -122,6 +125,19 @@ class SpellResolver:
         )
         return self._format_result(caster, defender, action, result)
 
+    def _rule_lookup(self):
+        """Return a ``name -> Rule | None`` lookup over the entity-effect rules.
+
+        The fold (``add_entity_effect`` → ``lifetime`` block) needs the referenced
+        rule to know whether it declares reactive triggers it can't yet handle.
+        Returns ``None`` when no rule registry is wired (then such steps are
+        treated as un-foldable and stay on legacy).
+        """
+        reg = getattr(self.rule_engine, "effect_registry", None)
+        if reg is None:
+            return None
+        return lambda name: reg.get(name) if name in reg else None
+
     @staticmethod
     def _caster_has_reactive_effects(caster: Entity) -> bool:
         """Keep casts with reactive entity effects on the legacy engine (Phase 1).
@@ -156,7 +172,9 @@ class SpellResolver:
         from src.spells.evaluator import resolve_program
         from src.spells.adapter import to_program
 
-        program = to_program(action.pipeline_effects, action.targeting_type)
+        program = to_program(
+            action.pipeline_effects, action.targeting_type, self._rule_lookup()
+        )
         results = resolve_program(
             caster,
             defenders,
