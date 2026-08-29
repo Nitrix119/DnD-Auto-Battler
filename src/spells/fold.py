@@ -147,6 +147,14 @@ def _cancel(eff: Dict[str, Any]) -> Dict[str, Any]:
     return {"block": "cancel"}
 
 
+def _force_critical_hit(eff: Dict[str, Any]) -> Dict[str, Any]:
+    return {"block": "force_critical", "outcome": "hit"}
+
+
+def _force_critical_miss(eff: Dict[str, Any]) -> Dict[str, Any]:
+    return {"block": "force_critical", "outcome": "miss"}
+
+
 # Legacy BUILTIN_EFFECTS action → block translator. Actions absent here
 # (GrantAction, RemoveEffect, InjectPipelineDamageStep, …) are not yet foldable —
 # the spells that use them stay on the legacy engine until a later slice.
@@ -163,6 +171,8 @@ _ACTION_TO_BLOCK: Dict[str, Callable[[Dict[str, Any]], Dict[str, Any]]] = {
     "GrantAdvantage": _grant_advantage,
     "GrantDisadvantage": _grant_disadvantage,
     "Cancel": _cancel,
+    "ForceCriticalHit": _force_critical_hit,
+    "ForceCriticalMiss": _force_critical_miss,
 }
 
 
@@ -190,13 +200,28 @@ def _effect_fires_on(eff: Dict[str, Any], event_name: str) -> bool:
 _EVENT_REBIND = {"event.attacker", "event.defender", "event.source", "event.target"}
 
 
-def _triggers_from_rule(step: Dict[str, Any], rule: Any) -> List[Dict[str, Any]]:
+def rule_to_trigger_blocks(
+    rule: Any,
+    *,
+    holder: Optional[str] = None,
+    priority: Optional[int] = None,
+) -> List[Dict[str, Any]]:
     """One ``trigger`` block per event the rule reacts to, holding its effects.
 
-    The rule's ``condition`` (over ``entity``/``event``) becomes the trigger's
-    ``when`` firing guard; effects gated by ``on`` are routed to their event.
+    The single translation of a JSON ``Rule``'s reactive ``triggers``/``effects``
+    into ``trigger`` blocks, shared by both migration paths:
+
+    - **entity effects** (the ``add_entity_effect`` fold) pass ``holder`` so the
+      rider's ``entity``/``caster`` resolves to the effect-holder;
+    - **global rules** (``global_rules.install_global_rules``) pass ``priority=0``
+      and no holder — a global rule has no holder, and its event-modifier effects
+      ignore caster/target, reaching the live event instead.
+
+    The rule's ``condition`` becomes each trigger's ``when`` firing guard; effects
+    gated by ``on`` are routed to their event; a per-effect ``when`` becomes that
+    effect block's fire-time ``condition``; an effect that hits an event entity
+    rebinds the trigger's target to it.
     """
-    holder = _holder(step)
     blocks: List[Dict[str, Any]] = []
     for event_type in getattr(rule, "triggers", []) or []:
         event_name = event_type.name
@@ -223,15 +248,23 @@ def _triggers_from_rule(step: Dict[str, Any], rule: Any) -> List[Dict[str, Any]]
         tb: Dict[str, Any] = {
             "block": "trigger",
             "event": event_name,
-            "holder": holder,
             "then": then,
         }
+        if holder is not None:
+            tb["holder"] = holder
+        if priority is not None:
+            tb["priority"] = priority
         if trigger_target:
             tb["target"] = trigger_target
         if rule.condition:
             tb["when"] = rule.condition
         blocks.append(tb)
     return blocks
+
+
+def _triggers_from_rule(step: Dict[str, Any], rule: Any) -> List[Dict[str, Any]]:
+    """Entity-effect fold: trigger blocks holder-scoped from the step's ``on_caster``."""
+    return rule_to_trigger_blocks(rule, holder=_holder(step))
 
 
 def is_add_entity_effect(step: Dict[str, Any]) -> bool:
