@@ -14,19 +14,20 @@
 
 ---
 
-## 0. Current state — READ THIS FIRST (updated 2026-08-29)
+## 0. Current state — READ THIS FIRST (updated 2026-08-31)
 
-> This section is the live snapshot; **§1 below is the older end-of-Phase-1 baseline** kept for history
-> (do not read it as current). Phase 2 slices **4.1, 4.2, and 4.3b are complete**, and **§4.7 step 1
-> (the live-event mutation contract) has landed** — all committed on branch `feat/spell-system-rework`.
-> The full pure-event-flag modifier set has shipped (`modify_damage`, `force_critical`, `grant_advantage`,
-> `grant_disadvantage`, `cancel`), and **the first production repoint has landed** — the event-modifier
-> *global* rules (resistance/immunity/vulnerability, crits) now run on the block engine, not
-> `BUILTIN_EFFECTS`; **the spell migration is complete** — Charm Person (instance_fields as a trigger
-> closure) and Haste (the VT concentration+duration pattern) are folded, so **all 23 shipped spells run on
-> the new engine**; and **all seven `rules/global/*` rules now run on the block engine** (the last two —
-> concentration break + per-turn refill — migrated as forward blocks). The suite is green (**730 tests**);
-> `mypy src/` sits at a steady 44
+> **⚑ Phase 2 is complete. This document is now a historical record of how the block engine was built;
+> the live forward plan is [SPELL_SYSTEM_PHASE3_PLAN.md](SPELL_SYSTEM_PHASE3_PLAN.md).** Read this doc for
+> the *how* (the block contract, the fold, lifetimes/triggers, the global-rule install); read the Phase 3
+> doc for *what's left* (retiring the legacy pipeline / `BUILTIN_EFFECTS`, migrating Colossus, the native
+> content rewrite).
+>
+> **What landed in Phase 2** (all committed on `feat/spell-system-rework`): the block foundations (4.1–4.3),
+> the live-event mutation contract and the full event-modifier block family (§4.7 step 1), **all 23 shipped
+> spells** on the block engine (Charm Person via instance_fields→`bindings`, Haste via the VT
+> concentration+duration pattern), **all seven `rules/global/*` rules** installed on the block engine, and
+> **weapon attacks** (`AttackResolver` folded — one path for weapons and spells). The suite is green
+> (**735 tests**); `mypy src/` sits at a steady 44
 > pre-existing errors (one is `src/spells/blocks/damage.py:82`, a benign register-signature variance, not
 > from the new work); Black is pinned `==23.12.1` (see §9 in [CLAUDE.md](../CLAUDE.md) — do **not** run a
 > newer Black on modified files; the dev env resolves Black 26.x).
@@ -599,49 +600,18 @@ AST-whitelist expression sandbox · EventBus as the substrate for cross-cutting 
 
 ---
 
-## 6. The immediate next step
+## 6. Phase 2 complete — the plan continues in the Phase 3 doc
 
-**4.1, 4.2, and 4.3 are done**; **§4.7 step 1 is landed** (the pure-event-flag modifier set, parity-gated
-and fold-wired); **the spell migration is complete** (all 23 shipped spells on the new engine — Charm
-Person via instance_fields→`bindings`, Haste via the VT concentration+duration pattern); and **the global
-rules are fully migrated** — all seven `rules/global/*` install on the block engine and are disabled on the
-rule engine (the last two, concentration break + per-turn refill, as forward blocks). The `Invocation` →
-`CastEnv` split (§0.6.1) shipped as the prerequisite.
+**Phase 2 is done.** All 23 shipped spells, all seven `rules/global/*` rules, and weapon attacks
+(`AttackResolver`) now resolve on the block engine. The forward plan — retiring the legacy `EffectPipeline`
+and `BUILTIN_EFFECTS`, migrating Colossus Slayer to an `ATTACK_HIT` trigger, repointing `apply_effect`, the
+native content rewrite, and the deferred design threads — lives in
+**[SPELL_SYSTEM_PHASE3_PLAN.md](SPELL_SYSTEM_PHASE3_PLAN.md)**, which also carries forward the known
+deviations and debt (the Haste tick-on-caster deviation, `global_rules.py`'s dependency on the transitional
+`fold.py`, the caller-owned double-application safety, the `None`-caster global-rule invocation, and the
+transitional injection guard).
 
-> **Production finding (2026-08-30).** In `src/` + `web/`, `RuleEngine.apply_effect` is reached through
-> exactly one path — the legacy pipeline's `add_entity_effect` step — whose only shipped spells (Haste,
-> Charm Person) are now folded. **Nothing wires the condition library to `apply_effect`** (a spell applying
-> "blinded" adds the `Condition` but never its reactive rule), and **no loader applies creature features**
-> (Colossus Slayer). So the rule engine now backs **only** the `apply_effect` entity dispatch, exercised in
-> production by nothing — conditions/Colossus fire only in tests, and the router injection guard is dormant.
-
-**What still holds `BUILTIN_EFFECTS` alive:** only the `apply_effect` entity dispatch — conditions
-(test-only) and **Colossus Slayer's `InjectPipelineDamageStep`**, which injects a step into the *legacy
-weapon-attack pipeline*. Colossus is therefore **Phase-3-gated**: it can't become an `ATTACK_HIT` damage
-trigger until `AttackResolver` runs on the block engine. So `BUILTIN_EFFECTS` cannot be fully deleted in
-Phase 2. Remaining, in order:
-
-1. **Fold `AttackResolver` into the block engine** (deviation #9 / Phase 3 item 2) — the real unblock.
-   Puts weapon attacks on the one path, which lets Colossus become an `ATTACK_HIT` trigger, the router
-   injection guard be removed, and (with the `apply_effect` repoint) `BUILTIN_EFFECTS` be deleted.
-2. **Repoint `RuleEngine.apply_effect` at the block engine** — translate an entity effect to a
-   `lifetime{ trigger… }` program via `fold.rule_to_trigger_blocks` (all condition blocks + translators
-   exist). Best paired with wiring conditions to actually apply in production (the functional gap above),
-   or folded into the native content rewrite. Lower priority until the `AttackResolver` fold lands, since
-   it can't delete `BUILTIN_EFFECTS` or the guard on its own.
-
-Parity-gate every rule as it moves, the same way spells were.
-
-**Carried notes from the global-rule repoint (2026-08-30):** (a) a global-rule install invocation has no
-caster/target (`None`, with a `type: ignore`) — its event-modifier effects reach the live event, not an
-entity; if `Invocation.caster`/`target` ever want to be `Optional`, this is why. (b) `global_rules.py` (a
-permanent module) imports `fold.rule_to_trigger_blocks` from the *transitional* `fold.py`; when `fold.py`
-is deleted in Phase 3 that translation needs a new home (or global rules become native `program`s). (c)
-double-application is prevented only by the caller disabling handled rules on the rule engine — currently
-only the web handler loads global rules, so it is contained, but any new global-rule loader must do the
-same.
-
-_Reference — the 4.3 approach that this builds on: a `trigger` block captures its defining invocation and
+_Reference — the 4.3 approach the fold builds on: a `trigger` block captures its defining invocation and
 subscribes a holder-scoped, depth-guarded handler at priority −10; a `lifetime` scope owns each grant's
 and subscription's revoke handle; `fold.py` translates `add_entity_effect` + its rule into one
 `lifetime{ state + trigger }` program; the `TURN_END` clock ticks `LifetimeScope.rounds_remaining`._
