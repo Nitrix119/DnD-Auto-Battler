@@ -285,11 +285,18 @@ def foldable(step: Dict[str, Any], rule: Any) -> bool:
     """True if *step* translates cleanly into a ``lifetime`` block right now.
 
     Kept on the legacy engine (conservative) when: the rule can't be resolved
-    (can't prove what reactive behaviour would be dropped); an ``on_apply`` or rule
-    effect has no block translator (e.g. ``InjectPipelineDamageStep``); or it is a
-    concentration duration on a non-``on_caster`` effect (its clock would tick on the
-    wrong turn — Haste). Reactive ``triggers``, per-effect ``when`` guards, and
-    ``instance_fields`` (captured as a rider's ``bindings``) *are* folded.
+    (can't prove what reactive behaviour would be dropped), or an ``on_apply`` /
+    rule effect has no block translator (e.g. ``InjectPipelineDamageStep``).
+    Reactive ``triggers``, per-effect ``when`` guards, and ``instance_fields``
+    (captured as a rider's ``bindings``) *are* folded.
+
+    A concentration effect on a *targeted ally* (Haste — ``concentration`` +
+    ``duration_rounds``, not ``on_caster``) folds like Vampiric Touch: the
+    concentration scope carries the duration clock, so it ticks on the **caster's**
+    turn rather than the effect-holder's. That is a deliberate, accepted deviation
+    from legacy (both count the same number of rounds; identical when a caster
+    targets itself) — the split-holder machinery it would take to tick on the ally's
+    turn is rejected debt in this transitional module (decided 2026-08-30).
     """
     if not is_add_entity_effect(step):
         return False
@@ -297,17 +304,6 @@ def foldable(step: Dict[str, Any], rule: Any) -> bool:
         # Without the rule we cannot verify what reactive behaviour we would drop.
         return False
     if any(e.get("action") not in _ACTION_TO_BLOCK for e in step.get("on_apply", [])):
-        return False
-    # A concentration duration ticks on the caster's turn (its scope lives on the
-    # caster), but legacy ticks it on the effect-holder's turn. Those match only
-    # when the holder IS the caster (on_caster) — otherwise defer (e.g. Haste,
-    # concentration on a targeted ally). A rounds duration lives on the holder and
-    # ticks on the holder's turn either way, so it is always safe.
-    if (
-        getattr(rule, "duration_rounds", None)
-        and step.get("concentration")
-        and not step.get("on_caster")
-    ):
         return False
     # Reactive effects: every rule effect must map to a block (a per-effect `when`
     # is now folded, as the effect block's fire-time condition).

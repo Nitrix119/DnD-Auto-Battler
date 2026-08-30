@@ -9,7 +9,7 @@ on the legacy engine until 4.3b-2 folds the trigger side.
 
 import os
 
-from src.models import Entity, AbilityScores, StatBlock, SpellAction
+from src.models import Entity, AbilityScores, StatBlock, SpellAction, ACTION_COST
 from src.combat.event_bus import EventBus
 from src.combat.damage_processor import DamageProcessor
 from src.combat.events import EventType
@@ -41,10 +41,23 @@ class TestFoldRouting:
         # No rule to prove the effect has no reactive triggers → not foldable.
         assert can_run_on_blocks(_spell("shield_of_faith"), None) is False
 
-    def test_haste_stays_on_legacy(self):
-        # Haste stays on legacy: a concentration duration on a targeted ally, whose
-        # clock would tick on the wrong turn (the split-holder model, a later bite).
-        assert can_run_on_blocks(_spell("haste"), _rules()) is False
+    def test_haste_folds_onto_blocks(self):
+        # Haste folds like Vampiric Touch: a concentration lifetime carrying the
+        # duration clock, whose TURN_START rider grants the ally +1 action.
+        assert can_run_on_blocks(_spell("haste"), _rules()) is True
+        spell = _spell("haste")
+        program = to_program(spell.pipeline_effects, spell.targeting_type, _rules())
+        life = program[-1]
+        assert life.type == "lifetime"
+        assert life.get("kind") == "concentration"
+        assert life.get("duration_rounds") == 10
+        trig = life.then[0]
+        assert trig.type == "trigger"
+        assert trig.get("event") == "TURN_START"
+        assert trig.get("holder") == "defender"  # the hasted ally
+        add = trig.then[0]
+        assert add.type == "add_resource"
+        assert add.get("resource") == "actions"
 
     def test_charm_person_folds_with_instance_field_bindings(self):
         # Charm Person's instance_fields (charmer) fold as the rider's captured
@@ -305,3 +318,79 @@ class TestCharmPersonFold:
         assert self._declare(bus, victim_a, charmer_b).cancelled is False
         assert self._declare(bus, victim_b, charmer_b).cancelled is True
         assert self._declare(bus, victim_b, charmer_a).cancelled is False
+
+
+class TestHasteFold:
+    """Haste on the new engine — the VT pattern with the rider on a targeted ally."""
+
+    def _setup(self, caster, ally):
+        from src.combat.spell_resolver import SpellResolver
+
+        bus = EventBus()
+        dp = DamageProcessor(bus)
+        reg = EffectRegistry()
+        reg.scan_directory("rules/entity_effects")
+        engine = RuleEngine(bus, entities_getter=lambda: [caster, ally],
+                            damage_processor=dp, effect_registry=reg)
+        engine.load_from_file("rules/global/action_economy_refill.json")
+        engine.load_from_file("rules/global/concentration.json")
+        return bus, engine, SpellResolver(bus, dp, rule_engine=engine)
+
+    def _turn_start(self, bus, entity, round_num=2):
+        from src.combat.event_data import TurnEventData
+
+        bus.emit(EventType.TURN_START,
+                 TurnEventData(entity=entity, round_num=round_num, turn_num=1))
+
+    def _turn_end(self, bus, entity, round_num=1):
+        from src.combat.event_data import TurnEventData
+
+        bus.emit(EventType.TURN_END,
+                 TurnEventData(entity=entity, round_num=round_num, turn_num=1))
+
+    def test_grants_extra_action_on_the_ally_after_refill(self):
+        caster, ally = _cleric(), _cleric()
+        bus, engine, resolver = self._setup(caster, ally)
+        resolver.resolve(caster, [ally], _spell("haste"))
+
+        # Runs on the new engine: the caster concentrates, targeting the ally.
+        assert caster.concentration_scope is not None
+        assert caster.concentration_target is ally
+
+        base = ally.resources.actions
+        ally.spend_resources(ACTION_COST)  # actions -> 0
+        self._turn_start(bus, ally)
+        # Refilled to base, then the rider adds +1 (it fires at -10, after refill).
+        assert ally.resources.actions == base + 1
+
+    def test_breaking_concentration_stops_the_bonus(self):
+        from unittest.mock import patch
+
+        caster, ally = _cleric(), _cleric()
+        bus, engine, resolver = self._setup(caster, ally)
+        resolver.resolve(caster, [ally], _spell("haste"))
+
+        # A failed CON save from damage to the caster breaks concentration.
+        with patch("src.rules.effects.roll_d20", return_value=1):
+            bus.emit(EventType.DAMAGE_DEALT, defender=caster, damage_list=[], total=20)
+        assert not caster.has_concentration
+
+        ally.spend_resources(ACTION_COST)
+        self._turn_start(bus, ally)
+        assert ally.resources.actions == 1  # only the refill; the rider is revoked
+
+    def test_duration_expires_on_the_casters_turns(self):
+        """Accepted deviation: the 10-round clock lives on the caster's concentration
+        scope, so it ticks on the *caster's* turns, not the ally's (see fold.py)."""
+        caster, ally = _cleric(), _cleric()
+        bus, engine, resolver = self._setup(caster, ally)
+        resolver.resolve(caster, [ally], _spell("haste"))
+
+        for r in range(1, 11):
+            assert caster.has_concentration, f"round {r}: still concentrating"
+            self._turn_end(bus, caster, round_num=r)
+        assert not caster.has_concentration  # expired after 10 caster turns
+
+        ally.spend_resources(ACTION_COST)
+        self._turn_start(bus, ally, round_num=11)
+        assert ally.resources.actions == 1  # the bonus is gone
