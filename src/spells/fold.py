@@ -17,7 +17,7 @@ This module reunites them into one ``lifetime{ … }`` block:
 Still deferred (kept on legacy by :func:`foldable`): a *concentration* duration on
 a non-``on_caster`` effect (its clock would tick on the wrong turn — e.g. Haste),
 an ``instance_fields`` step, or any ``on_apply``/rule action without a block
-translator (``InjectPipelineDamageStep``).
+translator.
 
 ``foldable`` is the routing gate's check (does this step translate cleanly?);
 ``to_lifetime_block`` is the translation. Both take the referenced ``rule`` (or
@@ -164,9 +164,9 @@ def _refill_resources(eff: Dict[str, Any]) -> Dict[str, Any]:
     return {"block": "refill_resources"}
 
 
-# Legacy BUILTIN_EFFECTS action → block translator. Actions absent here
-# (GrantAction, RemoveEffect, InjectPipelineDamageStep, …) are not yet foldable —
-# the spells that use them stay on the legacy engine until a later slice.
+# Legacy BUILTIN_EFFECTS action → block translator. Actions absent here are not
+# yet foldable — the spells/effects that use them stay on the legacy engine until a
+# later slice.
 _ACTION_TO_BLOCK: Dict[str, Callable[[Dict[str, Any]], Dict[str, Any]]] = {
     "AddModifier": _add_modifier,
     "ApplyCondition": _apply_condition,
@@ -300,9 +300,8 @@ def foldable(step: Dict[str, Any], rule: Any) -> bool:
 
     Kept on the legacy engine (conservative) when: the rule can't be resolved
     (can't prove what reactive behaviour would be dropped), or an ``on_apply`` /
-    rule effect has no block translator (e.g. ``InjectPipelineDamageStep``).
-    Reactive ``triggers``, per-effect ``when`` guards, and ``instance_fields``
-    (captured as a rider's ``bindings``) *are* folded.
+    rule effect has no block translator. Reactive ``triggers``, per-effect ``when``
+    guards, and ``instance_fields`` (captured as a rider's ``bindings``) *are* folded.
 
     A concentration effect on a *targeted ally* (Haste — ``concentration`` +
     ``duration_rounds``, not ``on_caster``) folds like Vampiric Touch: the

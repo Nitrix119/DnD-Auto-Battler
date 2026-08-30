@@ -16,15 +16,44 @@ from __future__ import annotations
 
 from src.models.damage import Damage, DamageType
 from src.utils.dice import roll_formula, multiply_formula
+from src.rules.expressions import evaluate
 
 # Reused pure helper (slot-based dice scaling). Moves into this package when the
 # legacy pipeline is retired; imported here to keep the two engines identical.
 from src.combat.effect_pipeline import effective_damage_formula
 
 from ..contract import BlockContract, TargetArity
-from ..context import Invocation
+from ..context import Invocation, eval_context
 from ..block import Block
 from ..registry import REGISTRY
+
+
+def _resolve_damage_type(raw, inv: Invocation) -> DamageType:
+    """Resolve a block's ``damage_type`` to a DamageType member.
+
+    A literal enum name (``"FIRE"``) is looked up directly — the common case, no
+    expression evaluated. Anything else is treated as a sandboxed expression
+    evaluated at run time against the invocation, so a rider can deal *the
+    weapon's own type* (``event.action.primary_damage_type``), unknown until the
+    on-hit trigger fires. Falls back to ``GENERIC`` if neither resolves.
+    """
+    if isinstance(raw, DamageType):
+        return raw
+    name = str(raw)
+    try:
+        return DamageType[name.upper()]
+    except KeyError:
+        pass
+    try:
+        value = evaluate(name, eval_context(inv))
+    except Exception:
+        return DamageType.GENERIC
+    if isinstance(value, DamageType):
+        return value
+    try:
+        return DamageType[str(value).upper()]
+    except KeyError:
+        return DamageType.GENERIC
 
 
 def damage(block: Block, inv: Invocation) -> int:
@@ -63,7 +92,7 @@ def damage(block: Block, inv: Invocation) -> int:
     if amount <= 0:
         return 0
 
-    dtype = DamageType[str(block.get("damage_type", "GENERIC")).upper()]
+    dtype = _resolve_damage_type(block.get("damage_type", "GENERIC"), inv)
     dealt = inv.damage_processor.apply_damage(
         inv.target,
         [Damage(dtype, amount)],

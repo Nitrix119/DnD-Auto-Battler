@@ -172,15 +172,13 @@ class EffectPipeline:
         _dealt_damages: List[Damage] = []
         _damage_dealt_emitted = False
 
-        # Iterate a run-local copy of the steps. Some ATTACK_HIT handlers
-        # (e.g. InjectPipelineDamageStep / Colossus Slayer) append a damage step
-        # to the *shared* action.pipeline_effects so the bonus damage lands in the
-        # same run. We must (a) still execute those injected steps this run, but
-        # (b) never let them persist on the shared SpellAction — otherwise a second
-        # cast, or a later AoE target, would re-run and compound them. So we snapshot
-        # the base length, work from a local copy, and after each step move any
-        # freshly-injected steps into the local copy and truncate the shared list
-        # back to its original contents.
+        # Iterate a run-local copy of the steps, draining any steps a handler
+        # appended to the *shared* action.pipeline_effects mid-run into the local
+        # copy and truncating the shared list back to its original contents, so an
+        # injected step executes this run but never persists to compound on a later
+        # cast or AoE target. No shipped effect injects steps any more (Colossus
+        # Slayer is an ATTACK_HIT block trigger); this guard is vestigial and is
+        # removed with the whole legacy pipeline in Phase 3 §4.
         base_len = len(action.pipeline_effects)
         steps: List[Dict[str, Any]] = list(action.pipeline_effects)
 
@@ -344,7 +342,8 @@ class EffectPipeline:
         if hit:
             self._event_bus.emit(
                 EventType.ATTACK_HIT,
-                AttackHitData(attacker=caster, defender=defender, action=action, roll=total),
+                AttackHitData(attacker=caster, defender=defender, action=action,
+                              roll=total, critical_hit=critical_hit),
             )
 
         roll_mode = EffectPipeline._roll_mode_label(spell_declared)

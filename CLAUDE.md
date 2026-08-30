@@ -217,6 +217,20 @@ leave a brief note here.
 - **Rule going forward:** the concrete, testable rule.
 ```
 
+### 2026-08-31 — On the block path a weapon's `pipeline_effects` is empty at fire time
+- **Context:** Migrating Colossus Slayer to a native `ATTACK_HIT` trigger. The rider deals the *weapon's
+  own* damage type via `event.action.primary_damage_type`, which reads `Action.pipeline_effects`.
+- **What went wrong:** `AttackResolver._resolve_via_blocks` builds the `[attack_roll, damage…]` steps on the
+  fly and passes the **raw** `AttackAction` to the evaluator — it never assigns them to
+  `action.pipeline_effects` (deliberately, to avoid mutating the shared template). So at fire time the
+  action's `pipeline_effects` is `[]` and `primary_damage_type` returned `None`, silently degrading the
+  rider's damage to `GENERIC`. The legacy path had hidden this because it ran on a *copy* whose
+  `pipeline_effects` was populated.
+- **Rule going forward:** A reactive block reading off `event.action` at fire time must not assume the action
+  was compiled into `pipeline_effects` — a weapon's flat `damage`/`bonus_to_hit` list is the source of truth
+  on the block path. `Action.primary_damage_type` now falls back to `damage[0]`. When a rider reads any
+  action field, verify it is populated on the *raw* action the evaluator receives, not just on a compiled copy.
+
 ### 2026-08-29 — Black must be version-pinned; the repo predates the 2024 style
 - **Context:** Running `black src/ …` on files touched during the spell rework produced huge
   whole-file reformats (even on files with no functional change), inflating every diff.

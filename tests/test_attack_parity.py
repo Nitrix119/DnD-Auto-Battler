@@ -1,11 +1,10 @@
 """Weapon-attack parity: the block engine resolves an attack like the legacy one.
 
 `AttackResolver` now routes weapon attacks through the block engine (the same
-`[attack_roll, damage…]` a spell uses), keeping a legacy fallback only for an
-attacker carrying a pipeline-injecting effect (Colossus Slayer). These tests
-dual-run a weapon attack on both engines under one seed and assert identical
-outcomes, and pin the routing: ordinary attackers go to blocks; a Colossus
-attacker stays on legacy and still lands its bonus die.
+`[attack_roll, damage…]` a spell uses). These tests dual-run a weapon attack on the
+block engine and the legacy pipeline under one seed and assert identical outcomes,
+and pin that a Colossus attacker — now a native ATTACK_HIT block trigger — resolves
+on the block engine and still lands its bonus die.
 """
 
 from copy import copy
@@ -16,7 +15,6 @@ from src.combat.event_bus import EventBus
 from src.combat.damage_processor import DamageProcessor
 from src.combat.attack_resolver import AttackResolver, _build_pipeline_effects
 from src.combat.effect_pipeline import EffectPipeline
-from src.combat.reactive_guard import caster_has_injection_effect
 from src.models.spell_properties import TargetingType
 from src.rules import RuleEngine, RuleLoader
 from src.rules.effect_registry import EffectRegistry
@@ -91,12 +89,9 @@ class TestWeaponAttackParity:
 
 
 class TestAttackRouting:
-    def test_ordinary_attacker_has_no_injection_effect(self):
-        # No injection effect → AttackResolver.resolve takes the block path.
-        assert caster_has_injection_effect(_entity("A")) is False
-
-    def test_colossus_attacker_stays_on_legacy_with_bonus_die(self):
-        """A Colossus attacker keeps the legacy path (guard) and lands the bonus die."""
+    def test_colossus_attacker_lands_bonus_die_on_blocks(self):
+        """A Colossus attacker resolves on the block engine (its rider is an
+        ATTACK_HIT block trigger) and still lands the bonus die on a wounded target."""
         bus = EventBus()
         dp = DamageProcessor(bus)
         reg = EffectRegistry()
@@ -106,13 +101,14 @@ class TestAttackRouting:
         engine = RuleEngine(bus, entities_getter=lambda: [ranger, target],
                             damage_processor=dp, effect_registry=reg)
         engine.apply_effect(ranger, RuleLoader.load("rules/entity_effects/colossus_slayer.json"))
-        assert caster_has_injection_effect(ranger) is True  # routes to legacy
+        # Installed on the block engine — not filed as a legacy entity effect.
+        assert ranger.get_effects_for_trigger("attack_hit") == []
 
         target.take_damage(Damage(DamageType.SLASHING, 5))  # wound so Colossus fires
         hp_before = target.hp
         ar = AttackResolver(bus, dp, rule_engine=engine)
-        with patch("src.combat.effect_pipeline.roll_d20", return_value=15), \
-             patch("src.combat.effect_pipeline.roll_formula", return_value=3):
+        with patch("src.spells.blocks.rolls.roll_d20", return_value=15), \
+             patch("src.spells.blocks.damage.roll_formula", return_value=3):
             hit, damage, _log, _detail = ar.resolve(ranger, target, _weapon(20, [(DamageType.SLASHING, "1d8")]))
         assert hit
         assert hp_before - target.hp == 6  # weapon 1d8 (3) + Colossus 1d8 (3)

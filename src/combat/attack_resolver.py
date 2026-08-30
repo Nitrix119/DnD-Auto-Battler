@@ -2,13 +2,12 @@
 
 A weapon attack compiles to the same ``[attack_roll, damage…]`` steps a spell does,
 so it resolves on the block engine exactly like an attack-roll spell — the block
-``attack_roll`` mirrors the legacy pipeline's attack step line for line. The only
-exception is a caster carrying a pipeline-*injecting* reactive effect (Colossus
-Slayer), which still needs the legacy pipeline's drain loop; the shared router guard
-(:mod:`.reactive_guard`) keeps those attacks on legacy, matching ``SpellResolver``.
+``attack_roll`` mirrors the legacy pipeline's attack step line for line. Reactive
+riders (Colossus Slayer's on-hit bonus die) ride the shared EventBus as block
+triggers, so there is no longer a legacy fallback: every attack runs on the block
+engine.
 """
 
-import copy
 from typing import Optional, Tuple, List, Dict, Any
 
 from src.models.entity import Entity
@@ -16,8 +15,6 @@ from src.models.action import AttackAction
 from src.models.spell_properties import TargetingType
 from .event_bus import EventBus
 from .damage_processor import DamageProcessor
-from .effect_pipeline import EffectPipeline
-from .reactive_guard import caster_has_injection_effect
 
 
 def _build_pipeline_effects(action: AttackAction) -> List[Dict[str, Any]]:
@@ -36,7 +33,7 @@ def _build_pipeline_effects(action: AttackAction) -> List[Dict[str, Any]]:
 
 
 class AttackResolver:
-    """Resolves melee/ranged attack actions on the block engine (legacy fallback)."""
+    """Resolves melee/ranged attack actions on the block engine."""
 
     def __init__(self, event_bus: EventBus, damage_processor: DamageProcessor, rule_engine=None) -> None:
         self._event_bus = event_bus
@@ -56,28 +53,11 @@ class AttackResolver:
             log_message is empty string if the attack was cancelled.
             roll_detail is None when the attack was cancelled.
         """
-        # A pipeline-injecting effect (Colossus Slayer) needs the legacy drain loop;
-        # keep those attackers on legacy. Everything else runs on the block engine.
-        if caster_has_injection_effect(attacker):
-            result = self._resolve_legacy(attacker, defender, action)
-        else:
-            result = self._resolve_via_blocks(attacker, defender, action)
+        result = self._resolve_via_blocks(attacker, defender, action)
 
         if result.attack_cancelled:
             return False, 0, "", None
         return self._format(attacker, defender, action, result)
-
-    def _resolve_legacy(self, attacker, defender, action):
-        """The legacy path — an ``EffectPipeline`` run on a fresh copy of the action.
-
-        Kept for attackers with a pipeline-injecting reactive effect until Colossus
-        Slayer becomes an ATTACK_HIT trigger (Phase 3), after which this — and the
-        legacy pipeline — can go.
-        """
-        action_copy = copy.copy(action)
-        action_copy.pipeline_effects = _build_pipeline_effects(action)
-        pipeline = EffectPipeline(self._event_bus, self._damage_processor, self.rule_engine)
-        return pipeline.run(attacker, defender, action_copy)
 
     def _resolve_via_blocks(self, attacker, defender, action):
         """The block-engine path — the same ``[attack_roll, damage…]`` as a spell.

@@ -11,7 +11,6 @@ from .event_data import SpellCastData
 from .events import EventType
 from .damage_processor import DamageProcessor
 from .effect_pipeline import EffectPipeline, effective_damage_formula
-from .reactive_guard import caster_has_injection_effect
 
 logger = logging.getLogger(__name__)
 
@@ -75,9 +74,7 @@ class SpellResolver:
         from src.spells.adapter import can_run_on_blocks
 
         rule_lookup = self._rule_lookup()
-        if can_run_on_blocks(action, rule_lookup) and not self._caster_has_injection_effect(
-            caster
-        ):
+        if can_run_on_blocks(action, rule_lookup):
             return self._resolve_via_blocks(caster, defenders, action, slot_level)
 
         seed_damages = self._preroll_pipeline_damage(action, slot_level)
@@ -138,13 +135,6 @@ class SpellResolver:
         if reg is None:
             return None
         return lambda name: reg.get(name) if name in reg else None
-
-    @staticmethod
-    def _caster_has_injection_effect(caster: Entity) -> bool:
-        """Keep a cast on the legacy engine only when the caster has a pipeline-
-        *injecting* reactive effect. Delegates to the shared router guard, which
-        ``AttackResolver`` uses too (see :mod:`.reactive_guard`)."""
-        return caster_has_injection_effect(caster)
 
     def _resolve_via_blocks(
         self,

@@ -158,9 +158,10 @@ class TestEntityEffectDispatch:
         engine.apply_effect(ranger, rule)
 
         action = make_attack_action()
-        original_count = len(action.pipeline_effects)
-        bus.emit(EventType.ATTACK_HIT, attacker=ranger, defender=target, action=action)
-        assert len(action.pipeline_effects) == original_count + 1  # CS damage step injected
+        hp_before = target.hp
+        with patch("src.rules.effects.roll_formula", return_value=4):
+            bus.emit(EventType.ATTACK_HIT, attacker=ranger, defender=target, action=action)
+        assert hp_before - target.hp == 4  # Colossus 1d8 bonus damage dealt
 
     def test_colossus_slayer_does_not_fire_at_full_hp(self):
         ranger = make_entity("Ranger", hp=40)
@@ -174,9 +175,10 @@ class TestEntityEffectDispatch:
         engine.apply_effect(ranger, rule)
 
         action = make_attack_action()
-        original_count = len(action.pipeline_effects)
-        bus.emit(EventType.ATTACK_HIT, attacker=ranger, defender=target, action=action)
-        assert len(action.pipeline_effects) == original_count  # condition not met
+        hp_before = target.hp
+        with patch("src.rules.effects.roll_formula", return_value=4):
+            bus.emit(EventType.ATTACK_HIT, attacker=ranger, defender=target, action=action)
+        assert target.hp == hp_before  # full HP → condition not met, no bonus damage
 
     def test_colossus_slayer_does_not_fire_for_wrong_attacker(self):
         ranger = make_entity("Ranger", hp=40)
@@ -193,9 +195,10 @@ class TestEntityEffectDispatch:
 
         # The Fighter attacks — ranger's colossus slayer should NOT fire
         action = make_attack_action()
-        original_count = len(action.pipeline_effects)
-        bus.emit(EventType.ATTACK_HIT, attacker=other, defender=target, action=action)
-        assert len(action.pipeline_effects) == original_count
+        hp_before = target.hp
+        with patch("src.rules.effects.roll_formula", return_value=4):
+            bus.emit(EventType.ATTACK_HIT, attacker=other, defender=target, action=action)
+        assert target.hp == hp_before  # wrong attacker → no bonus damage
 
 
 # ── Duration ticking ─────────────────────────────────────────────────────────

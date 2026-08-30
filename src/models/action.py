@@ -52,7 +52,15 @@ class Action:
 
     @property
     def primary_damage_type(self) -> Optional[DamageType]:
-        """Return the DamageType of the first damage step in pipeline_effects, or None."""
+        """Return the DamageType of this action's first damage, or None.
+
+        Prefers the first ``damage`` step in ``pipeline_effects`` (spells, and a
+        weapon whose steps have been compiled). Falls back to the first entry in
+        ``damage`` (a weapon attack whose flat damage list is populated but whose
+        ``pipeline_effects`` is built on the fly and never assigned to the action),
+        so an on-hit rider resolves the weapon's type whether or not the action
+        has been compiled into steps.
+        """
         for step in self.pipeline_effects:
             if step.get("type") == "damage":
                 type_str = step.get("damage_type", "")
@@ -60,6 +68,8 @@ class Action:
                     return DamageType[type_str.upper()]
                 except KeyError:
                     return None
+        if self.damage:
+            return self.damage[0].damage_type
         return None
 
     def roll_damage(self) -> List[Damage]:

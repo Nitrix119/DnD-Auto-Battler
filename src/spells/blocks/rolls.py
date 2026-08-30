@@ -78,7 +78,8 @@ def attack_roll(block: Block, inv: Invocation) -> None:
     if hit:
         inv.event_bus.emit(
             EventType.ATTACK_HIT,
-            AttackHitData(attacker=caster, defender=defender, action=action, roll=total),
+            AttackHitData(attacker=caster, defender=defender, action=action,
+                          roll=total, critical_hit=crit_hit),
         )
 
 

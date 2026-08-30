@@ -105,14 +105,22 @@ def trigger(block: Block, inv: Invocation) -> None:
         depth = _depth_by_bus.get(bus, 0)
         if depth >= _MAX_TRIGGER_DEPTH:
             return
+        event_fields = dict(event.data)
         fired = inv.child(
             caster=holder,
             target=holder,
-            event_data=dict(event.data),
+            event_data=event_fields,
             live_event=event,
             instance_fields=bindings,
         )
         fired.owning_scope = owning_scope
+        # Seed roll-result flags the event carries into the fresh context, so a
+        # `damage` block in `then` continues from the attack's outcome — e.g. an
+        # on-hit bonus die doubles on a crit exactly as a mid-cast damage block
+        # does (5e RAW: extra on-hit dice double on a critical hit). General to
+        # any event carrying the flag (ATTACK_HIT), not a per-effect special case.
+        if "critical_hit" in event_fields:
+            fired.context["critical_hit"] = bool(event_fields["critical_hit"])
         if not _passes(when, fired):
             return
         if target_expr is not None:

@@ -111,11 +111,19 @@ class AttackRolledData(EventData):
 
 @dataclass
 class AttackHitData(EventData):
-    """Data for ATTACK_HIT events."""
+    """Data for ATTACK_HIT events.
+
+    ``critical_hit`` carries the attack's crit result onto the hit event so a
+    reactive rider (an ATTACK_HIT trigger dealing bonus damage) can double its
+    dice on a crit — the same way a mid-cast ``damage`` block reads
+    ``context["critical_hit"]``. Declared here so it is part of the event's field
+    schema rather than an untyped dynamic attribute.
+    """
     attacker: Entity
     defender: Entity
     action: Action
     roll: int
+    critical_hit: bool = False
 
 
 @dataclass

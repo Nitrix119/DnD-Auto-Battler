@@ -206,6 +206,25 @@ class RuleEngine:
                 rule expressions as ``instance_fields.<key>``.  Typical keys:
                 ``charmer`` (entity that applied charm), ``caster``, etc.
         """
+        # Prefer the block engine for a cleanly-foldable, permanent reactive rider
+        # (Phase 3 §3 slice): install it as holder-scoped triggers on the shared bus
+        # instead of filing an EffectInstance for legacy dispatch, so it fires once,
+        # on the block engine, and never double-applies. Needs a damage_processor for
+        # any damage the rider deals; without one (or for a duration/untranslatable
+        # effect) we fall back to the legacy path unchanged. Imported lazily to avoid
+        # a rules -> spells -> combat import cycle.
+        if self._damage_processor is not None:
+            from src.spells.entity_effects import install_entity_effect
+
+            if install_entity_effect(
+                entity,
+                rule,
+                event_bus=self.event_bus,
+                damage_processor=self._damage_processor,
+                instance_fields=instance_fields,
+            ):
+                return
+
         instance = EffectInstance(rule=rule, instance_fields=instance_fields or {})
         for trigger in rule.triggers:
             entity.add_effect(trigger.value, instance)
