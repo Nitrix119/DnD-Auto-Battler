@@ -12,3 +12,4 @@ from . import iterators  # noqa: F401
 from . import lifetime  # noqa: F401
 from . import triggers  # noqa: F401
 from . import event_mod  # noqa: F401
+from . import global_effects  # noqa: F401

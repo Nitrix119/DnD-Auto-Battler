@@ -9,9 +9,9 @@ the legacy engine (exactly what ``web/routers/combat.py`` does).
 
 import os
 
-from src.models import AbilityScores, StatBlock, Entity, Damage, DamageType
+from src.models import AbilityScores, StatBlock, Entity, Damage, DamageType, SpellAction
 from src.combat.event_bus import EventBus
-from src.combat.event_data import AttackRolledData
+from src.combat.event_data import AttackRolledData, TurnEventData
 from src.combat.events import EventType
 from src.combat.damage_processor import DamageProcessor
 from src.rules import RuleEngine, RuleLoader
@@ -51,11 +51,11 @@ class TestBlockEligible:
         for path in (RESISTANCE, IMMUNITY, VULN, CRIT_HIT, CRIT_MISS):
             assert block_eligible(RuleLoader.load(path)), path
 
-    def test_side_effecting_rules_are_not_eligible(self):
-        # ForceConcentrationCheck / RefillResources are forward effects, not event
-        # mutations — they stay on the legacy engine.
-        assert not block_eligible(RuleLoader.load(CONCENTRATION))
-        assert not block_eligible(RuleLoader.load(REFILL))
+    def test_forward_side_effect_rules_are_eligible(self):
+        # ForceConcentrationCheck / RefillResources now have forward blocks a global
+        # trigger can run, so the last two global rules are installable too.
+        assert block_eligible(RuleLoader.load(CONCENTRATION))
+        assert block_eligible(RuleLoader.load(REFILL))
 
 
 # ---------------------------------------------------------------------------
@@ -149,3 +149,79 @@ class TestNoDoubleApplication:
         entity = _entity(resistances=[DamageType.COLD])
         processor.apply_damage(entity, [Damage(DamageType.COLD, 10)])
         assert entity.hp == 28  # 30 - int(int(10*0.5)*0.5) = 30 - 2
+
+    def test_every_global_rule_is_handled_and_disabled(self):
+        """The whole rules/global/ directory now migrates: every rule is
+        block-installed and disabled on the legacy engine (nothing double-active)."""
+        bus = EventBus()
+        processor = DamageProcessor(bus)
+        engine = RuleEngine(bus, damage_processor=processor)
+        rules = engine.load_from_directory(_GLOBAL)
+        handled = install_global_rules(rules, event_bus=bus, damage_processor=processor)
+        for r in rules:
+            if r.name in handled:
+                r.enabled = False
+        assert {r.name for r in rules} == handled  # all seven eligible
+        assert all(not r.enabled for r in rules)
+
+
+# ---------------------------------------------------------------------------
+# The two forward global rules (concentration break + resource refill)
+# ---------------------------------------------------------------------------
+
+class TestForwardGlobalRules:
+    def test_refill_resets_resources_via_block_engine(self):
+        bus = EventBus()
+        install_global_rules([RuleLoader.load(REFILL)], event_bus=bus)
+        entity = _entity()
+        entity.resources.actions = 0  # spent
+        bus.emit(EventType.TURN_START,
+                 TurnEventData(entity=entity, round_num=2, turn_num=1))
+        assert entity.resources.actions == 1  # refilled to the stat-block default
+
+    def _concentrating_caster(self, bus, dp):
+        """A caster holding a real block-engine concentration + a +2 AC buff."""
+        from src.spells.evaluator import resolve as resolve_blocks
+        from src.spells.block import parse_program
+
+        caster = _entity()
+        program = parse_program([{
+            "block": "lifetime", "kind": "concentration", "source": "Shield of Faith",
+            "then": [{"block": "add_modifier", "target": "caster", "stat": "ac",
+                      "value": 2, "source": "Shield of Faith"}],
+        }])
+        resolve_blocks(caster, caster,
+                       SpellAction(name="Shield of Faith", description="", spell_level=1),
+                       program, event_bus=bus, damage_processor=dp)
+        return caster
+
+    def test_failed_save_breaks_concentration_via_block_engine(self):
+        from unittest.mock import patch
+
+        bus = EventBus()
+        dp = DamageProcessor(bus)
+        install_global_rules([RuleLoader.load(CONCENTRATION)],
+                             event_bus=bus, damage_processor=dp)
+        caster = self._concentrating_caster(bus, dp)
+        base = _entity().ac
+        assert caster.has_concentration and caster.ac == base + 2
+
+        with patch("src.spells.blocks.global_effects.roll_d20", return_value=1):
+            dp.apply_damage(caster, [Damage(DamageType.GENERIC, 20)])
+        assert not caster.has_concentration  # failed CON save
+        assert caster.ac == base            # the buff was revoked with the scope
+
+    def test_passed_save_holds_concentration_via_block_engine(self):
+        from unittest.mock import patch
+
+        bus = EventBus()
+        dp = DamageProcessor(bus)
+        install_global_rules([RuleLoader.load(CONCENTRATION)],
+                             event_bus=bus, damage_processor=dp)
+        caster = self._concentrating_caster(bus, dp)
+        base = _entity().ac
+
+        with patch("src.spells.blocks.global_effects.roll_d20", return_value=20):
+            dp.apply_damage(caster, [Damage(DamageType.GENERIC, 20)])
+        assert caster.has_concentration  # passed CON save
+        assert caster.ac == base + 2

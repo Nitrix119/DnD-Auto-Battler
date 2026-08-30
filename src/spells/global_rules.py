@@ -31,31 +31,37 @@ from .context import CastEnv, Invocation, seed_context
 from .fold import rule_to_trigger_blocks
 from .runner import run_program
 
-# The pure event-modifier actions — those whose block form mutates the live event
-# and needs no holder/target. A global rule is block-eligible iff every one of its
-# effects is one of these (so we can prove nothing forward-effecting is dropped).
-_EVENT_MODIFIER_ACTIONS = frozenset(
+# Actions a permanent global-rule trigger can run on the block engine: the pure
+# event-modifiers (mutate the live event) plus the two forward side-effects the
+# concentration-break and per-turn refill rules fire (act on the event entity via
+# the trigger's target rebind). A global rule is block-eligible iff every one of its
+# effects is one of these — so we can prove nothing unhandled is dropped.
+_GLOBAL_INSTALLABLE_ACTIONS = frozenset(
     {
+        # event-modifiers
         "ModifyDamage",
         "ForceCriticalHit",
         "ForceCriticalMiss",
         "GrantAdvantage",
         "GrantDisadvantage",
         "Cancel",
+        # forward side-effects
+        "ForceConcentrationCheck",
+        "RefillResources",
     }
 )
 
 
 def block_eligible(rule: Any) -> bool:
-    """True if *rule*'s every effect is a pure event-modifier with a block.
+    """True if every one of *rule*'s effects has a block a global trigger can run.
 
-    Conservative by construction: a rule with any non-event-modifier effect (a
-    forward side-effect such as ``ForceConcentrationCheck`` / ``RefillResources``,
-    or an action we have no block for) stays on the legacy engine.
+    Conservative by construction: a rule with any effect we have no
+    globally-installable block for (an action outside
+    :data:`_GLOBAL_INSTALLABLE_ACTIONS`) stays on the legacy engine.
     """
     effects = getattr(rule, "effects", None) or []
     return bool(effects) and all(
-        e.get("action") in _EVENT_MODIFIER_ACTIONS for e in effects
+        e.get("action") in _GLOBAL_INSTALLABLE_ACTIONS for e in effects
     )
 
 

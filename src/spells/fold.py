@@ -155,6 +155,15 @@ def _force_critical_miss(eff: Dict[str, Any]) -> Dict[str, Any]:
     return {"block": "force_critical", "outcome": "miss"}
 
 
+# Forward global-rule effects (the concentration-break and per-turn refill rules).
+def _force_concentration_check(eff: Dict[str, Any]) -> Dict[str, Any]:
+    return {"block": "force_concentration_check", "dc": eff.get("dc", 0)}
+
+
+def _refill_resources(eff: Dict[str, Any]) -> Dict[str, Any]:
+    return {"block": "refill_resources"}
+
+
 # Legacy BUILTIN_EFFECTS action → block translator. Actions absent here
 # (GrantAction, RemoveEffect, InjectPipelineDamageStep, …) are not yet foldable —
 # the spells that use them stay on the legacy engine until a later slice.
@@ -173,6 +182,8 @@ _ACTION_TO_BLOCK: Dict[str, Callable[[Dict[str, Any]], Dict[str, Any]]] = {
     "Cancel": _cancel,
     "ForceCriticalHit": _force_critical_hit,
     "ForceCriticalMiss": _force_critical_miss,
+    "ForceConcentrationCheck": _force_concentration_check,
+    "RefillResources": _refill_resources,
 }
 
 
@@ -197,7 +208,10 @@ def _effect_fires_on(eff: Dict[str, Any], event_name: str) -> bool:
 # Effect target expressions that name an entity *of the event* (not the holder or
 # spell caster/defender). A trigger whose effects hit one rebinds its current
 # target to it, and those effects then address the rebound target ("defender").
-_EVENT_REBIND = {"event.attacker", "event.defender", "event.source", "event.target"}
+_EVENT_REBIND = {
+    "event.attacker", "event.defender", "event.source", "event.target",
+    "event.entity",  # the per-turn refill rule targets whose turn it is
+}
 
 
 def rule_to_trigger_blocks(
