@@ -1,13 +1,23 @@
-"""Attack roll resolution via EffectPipeline."""
+"""Attack resolution on the block engine (Phase 3 — one path for weapons and spells).
+
+A weapon attack compiles to the same ``[attack_roll, damage…]`` steps a spell does,
+so it resolves on the block engine exactly like an attack-roll spell — the block
+``attack_roll`` mirrors the legacy pipeline's attack step line for line. The only
+exception is a caster carrying a pipeline-*injecting* reactive effect (Colossus
+Slayer), which still needs the legacy pipeline's drain loop; the shared router guard
+(:mod:`.reactive_guard`) keeps those attacks on legacy, matching ``SpellResolver``.
+"""
 
 import copy
 from typing import Optional, Tuple, List, Dict, Any
 
 from src.models.entity import Entity
 from src.models.action import AttackAction
+from src.models.spell_properties import TargetingType
 from .event_bus import EventBus
 from .damage_processor import DamageProcessor
 from .effect_pipeline import EffectPipeline
+from .reactive_guard import caster_has_injection_effect
 
 
 def _build_pipeline_effects(action: AttackAction) -> List[Dict[str, Any]]:
@@ -26,7 +36,7 @@ def _build_pipeline_effects(action: AttackAction) -> List[Dict[str, Any]]:
 
 
 class AttackResolver:
-    """Resolves melee/ranged attack actions via EffectPipeline."""
+    """Resolves melee/ranged attack actions on the block engine (legacy fallback)."""
 
     def __init__(self, event_bus: EventBus, damage_processor: DamageProcessor, rule_engine=None) -> None:
         self._event_bus = event_bus
@@ -39,22 +49,59 @@ class AttackResolver:
         defender: Entity,
         action: AttackAction,
     ) -> Tuple[bool, int, str, Optional[dict]]:
-        """Resolve an attack roll and damage via EffectPipeline.
+        """Resolve an attack roll and damage.
 
         Returns:
             Tuple of (hit, total_damage, log_message, roll_detail).
             log_message is empty string if the attack was cancelled.
             roll_detail is None when the attack was cancelled.
         """
-        action_copy = copy.copy(action)
-        action_copy.pipeline_effects = _build_pipeline_effects(action)
-
-        pipeline = EffectPipeline(self._event_bus, self._damage_processor, self.rule_engine)
-        result = pipeline.run(attacker, defender, action_copy)
+        # A pipeline-injecting effect (Colossus Slayer) needs the legacy drain loop;
+        # keep those attackers on legacy. Everything else runs on the block engine.
+        if caster_has_injection_effect(attacker):
+            result = self._resolve_legacy(attacker, defender, action)
+        else:
+            result = self._resolve_via_blocks(attacker, defender, action)
 
         if result.attack_cancelled:
             return False, 0, "", None
+        return self._format(attacker, defender, action, result)
 
+    def _resolve_legacy(self, attacker, defender, action):
+        """The legacy path — an ``EffectPipeline`` run on a fresh copy of the action.
+
+        Kept for attackers with a pipeline-injecting reactive effect until Colossus
+        Slayer becomes an ATTACK_HIT trigger (Phase 3), after which this — and the
+        legacy pipeline — can go.
+        """
+        action_copy = copy.copy(action)
+        action_copy.pipeline_effects = _build_pipeline_effects(action)
+        pipeline = EffectPipeline(self._event_bus, self._damage_processor, self.rule_engine)
+        return pipeline.run(attacker, defender, action_copy)
+
+    def _resolve_via_blocks(self, attacker, defender, action):
+        """The block-engine path — the same ``[attack_roll, damage…]`` as a spell.
+
+        Imported lazily to avoid a ``combat → spells → combat`` import cycle (as in
+        ``SpellResolver._resolve_via_blocks``).
+        """
+        from src.spells.evaluator import resolve as resolve_blocks
+        from src.spells.adapter import to_program
+
+        program = to_program(_build_pipeline_effects(action), TargetingType.SINGLE_TARGET)
+        return resolve_blocks(
+            attacker, defender, action, program,
+            event_bus=self._event_bus,
+            damage_processor=self._damage_processor,
+            rule_engine=self.rule_engine,
+        )
+
+    def _format(self, attacker, defender, action, result):
+        """Build the (hit, damage, log_msg, roll_detail) tuple from a resolver result.
+
+        ``InvocationResult`` (block engine) and ``PipelineResult`` (legacy) are
+        field-compatible, so this formats either identically.
+        """
         roll_mode = ""
         if result.had_advantage and not result.had_disadvantage:
             roll_mode = " (advantage)"

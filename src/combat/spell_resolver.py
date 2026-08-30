@@ -11,6 +11,7 @@ from .event_data import SpellCastData
 from .events import EventType
 from .damage_processor import DamageProcessor
 from .effect_pipeline import EffectPipeline, effective_damage_formula
+from .reactive_guard import caster_has_injection_effect
 
 logger = logging.getLogger(__name__)
 
@@ -138,33 +139,12 @@ class SpellResolver:
             return None
         return lambda name: reg.get(name) if name in reg else None
 
-    # Effect actions the new engine can't reproduce: they mutate the *running*
-    # attack's step list (Colossus Slayer's bonus die on ATTACK_HIT). Everything
-    # else an active effect does rides the EventBus and works on both engines.
-    _INJECTION_ACTIONS = frozenset(
-        {"InjectPipelineDamageStep", "AddDamageToAttackHit"}
-    )
-
-    @classmethod
-    def _caster_has_injection_effect(cls, caster: Entity) -> bool:
+    @staticmethod
+    def _caster_has_injection_effect(caster: Entity) -> bool:
         """Keep a cast on the legacy engine only when the caster has a pipeline-
-        *injecting* reactive effect (§4.3).
-
-        Narrowed from "any active effect": event-modifying effects (advantage,
-        resistance, retaliation, …) resolve identically on both engines, so only a
-        pipeline injection — which the new engine has no equivalent for — forces
-        legacy. Fully retiring even this waits on the entity-effect dispatch repoint
-        (the remainder of §4.3c).
-        """
-        for bucket in caster.active_effects.values():
-            for instance in bucket:
-                rule = getattr(instance, "rule", None)
-                effects = getattr(rule, "effects", None) or []
-                if any(
-                    e.get("action") in cls._INJECTION_ACTIONS for e in effects
-                ):
-                    return True
-        return False
+        *injecting* reactive effect. Delegates to the shared router guard, which
+        ``AttackResolver`` uses too (see :mod:`.reactive_guard`)."""
+        return caster_has_injection_effect(caster)
 
     def _resolve_via_blocks(
         self,
