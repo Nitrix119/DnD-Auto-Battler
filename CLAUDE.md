@@ -75,6 +75,14 @@ Non-negotiable. Every change should be justifiable against these.
    caught at load (E6 resolved).
 6. **Small, reversible changes.** Many small, well-tested commits over one large one.
    Keep `main` clean; do non-trivial work on a branch.
+7. **Debt and convolution are first-class.** In an engine whose whole value is modular
+   flexibility to absorb new mechanics, technical debt and tangle are not side concerns —
+   they are the thing that kills that flexibility. Treat a change's effect on them as a
+   design factor on par with correctness. Prefer the option that *removes* debt/convolution;
+   when a change adds either, that is a deliberate, justified trade, not an accident. Name
+   it explicitly (see [§6](#6-agent-working-agreement)). Watch especially for **inverted
+   dependencies** (new code depending on legacy), **duplicated vocabularies/engines**, and
+   **silent coupling** — the recurring smells this rework exists to remove.
 
 ---
 
@@ -159,16 +167,24 @@ TDD is the default workflow, not an afterthought. The suite is a genuine strengt
    existing patterns.
 2. **Plan non-trivial work.** State the approach before large or cross-cutting changes;
    prefer the smallest change that solves the problem.
-3. **Work test-first** per [§4](#4-test-driven-development-tdd).
-4. **Keep the tree green.** Run the formatter, linter, and full suite before declaring a
+3. **Account for debt and convolution — explicitly** ([§2.7](#2-core-principles)). When
+   planning a non-trivial change, include a short **debt & convolution note**: name where it
+   *removes* or *adds* technical debt and tangle, and why (e.g. "removes an inverted
+   dependency: the block engine no longer imports from the legacy module"; "collapses two
+   resolution paths into one"). Quantify when you can (lines/files/paths/errors deleted). This
+   is a first-class part of the plan and the commit message, not an afterthought — it is how
+   this modular engine keeps its flexibility. If a change *adds* debt, say so and justify it as
+   a deliberate trade, and record follow-up in [CODEBASE_REVIEW.md](docs/CODEBASE_REVIEW.md).
+4. **Work test-first** per [§4](#4-test-driven-development-tdd).
+5. **Keep the tree green.** Run the formatter, linter, and full suite before declaring a
    task done. If tests fail or a step was skipped, say so with the output.
-5. **Don't expand scope silently.** Note adjacent problems (in
+6. **Don't expand scope silently.** Note adjacent problems (in
    [CODEBASE_REVIEW.md](docs/CODEBASE_REVIEW.md)); don't fold unrelated fixes in.
-6. **Update docs with code.** Behaviour/command/structure changes update this file, the
+7. **Update docs with code.** Behaviour/command/structure changes update this file, the
    README, and the relevant guide in the same change.
-7. **Capture lessons.** When a non-obvious mistake is found and fixed, append to
+8. **Capture lessons.** When a non-obvious mistake is found and fixed, append to
    [§9](#9-lessons-learned-append-only).
-8. **Branch, don't touch `main`.** Do work on a feature branch; commit/push only when
+9. **Branch, don't touch `main`.** Do work on a feature branch; commit/push only when
    asked; write commit messages that explain the _why_.
 
 ---
