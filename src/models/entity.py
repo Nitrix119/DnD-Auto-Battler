@@ -155,8 +155,21 @@ class Entity:
         return RevokeHandle(_revoke, label="condition")
 
     def remove_condition(self, condition_index: int) -> None:
-        """Remove a condition by index."""
-        if 0 <= condition_index < len(self.conditions):
+        """Remove a condition by index.
+
+        A condition applied on the block engine owns a lifetime scope (its marker +
+        the installed reactive rider); disposing that scope removes the marker via
+        its own revoke handle *and* unsubscribes the rider, so the mechanics don't
+        leak on dispel. A legacy marker (no scope) is popped directly.
+        """
+        if not 0 <= condition_index < len(self.conditions):
+            return
+        condition = self.conditions[condition_index]
+        scope = getattr(condition, "owning_scope", None)
+        if scope is not None:
+            self.lifetimes = [s for s in self.lifetimes if s is not scope]
+            scope.dispose()  # revokes the marker handle + the rider (idempotent)
+        else:
             self.conditions.pop(condition_index)
 
     def get_active_conditions(self) -> List[Condition]:

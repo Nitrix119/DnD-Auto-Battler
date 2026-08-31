@@ -33,12 +33,14 @@ injection handler and the router guard (`reactive_guard.py`) are deleted, and bo
 the block engine. The drain loop in `EffectPipeline.run` is now vestigial (nothing injects) and goes with
 the whole pipeline in §4.
 
-**Production reality to keep in mind** (found during Phase 2.9): `apply_effect` is reached in production
-*only* via the legacy pipeline's `add_entity_effect` step, whose shipped spells are all folded now — so in
-production **nothing applies conditions or creature features via `apply_effect`** (a spell applying
-"blinded" adds the `Condition` but never its reactive rule; no loader applies Colossus). Conditions/Colossus
-fire only in tests today. Repointing `apply_effect` (§3) is therefore best paired with *wiring conditions to
-actually apply* — a real functional gap, not just a migration.
+**Production reality** (found during Phase 2.9): `apply_effect` is reached in production *only* via the
+legacy pipeline's `add_entity_effect` step, whose shipped spells are all folded now. The functional gap
+this exposed — a spell applying "blinded" added the `Condition` marker but never its reactive rule, so
+every condition except charm was mechanically dead in production — is now **closed (2026-08-31)**: the
+`apply_condition` block installs the condition's reactive rule under a lifetime scope (§3 below). Colossus
+is likewise a native trigger (§2). What remains on legacy: entity effects applied via `apply_effect` that
+carry a *rule*-level duration or need `remove_effect(name)` (poison-shaped rules) — the general repoint,
+still §3.
 
 ---
 
@@ -81,12 +83,25 @@ What landed:
 
 ## 3. Repoint `RuleEngine.apply_effect` onto the block engine — **partially done (2026-08-31)**
 
-**Done (the reactive-rider slice, with §2):** `apply_effect` installs a cleanly-foldable, **permanent**
+**Done — the reactive-rider slice (with §2):** `apply_effect` installs a cleanly-foldable, **permanent**
 reactive rider (Colossus) as holder-scoped block triggers on the shared bus via
-`src/spells/entity_effects.install_entity_effect`, and returns without filing an `EffectInstance` — the
-disable discipline. **Still to do:** duration-bound effects (→ the lifetime clock), `remove_effect(name)` (→
-dispose the installed scope), `instance_fields` on non-Colossus riders (→ captured `bindings`), and the real
-functional gap — **wiring conditions to actually apply in production** (§0). Those still fall back to legacy.
+`src/spells/entity_effects.install_entity_effect`, returning without filing an `EffectInstance`.
+
+**Done — conditions wired to actually apply (2026-08-31):** the `apply_condition` block
+([src/spells/blocks/state.py](../src/spells/blocks/state.py)) now, after adding the marker, looks up the
+condition's reactive rule (`inv.env.rule_engine.effect_registry`, keyed by `ConditionType.value`) and
+installs it as holder-scoped triggers **owned by a lifetime scope** — an enclosing scope (a concentration
+spell) if present, else a rounds scope on the target keyed to the condition's `duration`, else a permanent
+scope disposed only on dispel. The scope owns both the marker's revoke handle and the rider's unsubscribe,
+so expiry (`tick_lifetimes`), concentration loss (`end_concentration`), and dispel (`Entity.remove_condition`
+→ `scope.dispose()`) tear the mechanics down with the condition. The marker's `rounds_remaining` is left
+`None` so `_tick_durations` doesn't double-count. Degrades to marker-only when unwired. A `bindings` field
+carries Charmed-style `instance_fields`. The whole condition library is now live in production; covered by
+[tests/test_condition_wiring.py](../tests/test_condition_wiring.py). Suite green (738).
+
+**Still to do (the general repoint):** entity effects applied via `apply_effect` with a *rule*-level
+duration (→ the lifetime clock in `install_entity_effect`, currently refused) and `remove_effect(name)` (→
+dispose the installed scope) — the poison-shaped case. Those still fall back to legacy.
 
 Translate an entity effect to a `lifetime{ trigger… }` program via `fold.rule_to_trigger_blocks` (every
 condition-library block and translator already exists — see Phase 2.9) and install it through the evaluator,
@@ -153,7 +168,7 @@ authoring contract for the future "add a spell" skill.
 
 ## 8. Verification (whole system)
 
-- `pytest tests/ -q` green (currently 728). The parity harnesses are the safety net for each migration:
+- `pytest tests/ -q` green (currently 738). The parity harnesses are the safety net for each migration:
   `tests/test_block_parity.py` (spells), `tests/test_attack_parity.py` (weapons),
   `tests/test_global_rules_via_blocks.py` (global rules). Add one per migration in §2–§4.
 - `mypy src/` — no new errors beyond the steady 44. `flake8 src/` clean of non-E501 on changed files.

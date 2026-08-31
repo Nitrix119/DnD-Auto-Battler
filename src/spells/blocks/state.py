@@ -11,6 +11,7 @@ here: a state block just mutates the target and emits the same event.
 from __future__ import annotations
 
 from src.models.condition import Condition, ConditionType
+from src.models.lifetime import LifetimeScope, LifetimeKind
 from src.models.stat_modifier import StatModifier
 from src.models.action import AttackAction, ActionType
 from src.models.action_resources import ACTION_COST
@@ -21,8 +22,10 @@ from src.rules.expressions import resolve
 
 from ..contract import BlockContract, TargetArity
 from ..context import Invocation, eval_context
-from ..block import Block
+from ..block import Block, parse_program
+from ..fold import rule_to_trigger_blocks
 from ..registry import REGISTRY
+from ..runner import run_program
 
 
 def _target(block: Block, inv: Invocation):
@@ -39,8 +42,53 @@ def _own(inv: Invocation, handle) -> None:
         inv.active_scope.add(handle)
 
 
+def _condition_rule(inv: Invocation, ctype: ConditionType):
+    """The reactive rule that gives a condition its mechanics, or None.
+
+    Looked up by name (``ConditionType.value``) in the rule engine's effect
+    registry — the same registry ``rules/entity_effects/conditions/*.json`` is
+    scanned into. None when nothing is wired (a bare block run), so the block
+    degrades to a marker-only condition.
+    """
+    engine = getattr(inv.env, "rule_engine", None)
+    reg = getattr(engine, "effect_registry", None)
+    if reg is None:
+        return None
+    try:
+        return reg.get(ctype.value) if ctype.value in reg else None
+    except Exception:
+        return None
+
+
+def _install_condition_rider(inv, rule, holder, bindings, scope) -> None:
+    """Subscribe a condition's reactive rule as holder-scoped triggers into *scope*.
+
+    Folds the rule to ``trigger`` blocks and runs them on a child invocation whose
+    ``active_scope`` is *scope*, so each trigger registers its own unsubscribe as a
+    handle the scope owns — disposing the scope (on expiry, concentration loss, or
+    dispel) then tears the mechanics down with the condition. The child keeps this
+    cast's caster/target, so ``holder`` resolves to the conditioned entity and any
+    ``bindings`` (e.g. Charmed's ``charmer``) evaluate against the caster's context.
+    """
+    blocks = rule_to_trigger_blocks(rule, holder=holder)
+    if bindings:
+        for tb in blocks:
+            tb["bindings"] = bindings
+    child = inv.child()
+    child.active_scope = scope
+    run_program(parse_program(blocks), child)
+
+
 def apply_condition(block: Block, inv: Invocation) -> None:
-    """Add a status condition to the target, emitting CONDITION_ADDED."""
+    """Add a status condition to the target and install its reactive mechanics.
+
+    The condition's marker (``Condition``) is inert on its own; its behaviour lives
+    in a reactive rule (``blinded`` → disadvantage, etc.). This block adds the marker
+    **and** installs that rule, both owned by one lifetime scope so they end together:
+    an enclosing scope (a concentration spell) when present, else a rounds scope on
+    the target keyed to ``duration``, else a permanent scope disposed only on dispel.
+    Emits CONDITION_ADDED. Degrades to marker-only when no reactive rule is wired.
+    """
     target = _target(block, inv)
     ctype = ConditionType[str(block.get("condition_type", "")).upper()]
     raw_duration = block.get("duration")
@@ -51,7 +99,33 @@ def apply_condition(block: Block, inv: Invocation) -> None:
         source=str(block.get("source", "")),
         effect_name=str(block.get("effect_name", "")),
     )
-    _own(inv, target.add_condition(condition))
+    handle = target.add_condition(condition)
+
+    rule = _condition_rule(inv, ctype)
+    if rule is None:
+        # No reactive rule wired: today's behaviour — the marker alone, owned by any
+        # enclosing lifetime (else instantaneous/permanent).
+        _own(inv, handle)
+    else:
+        holder = "caster" if block.get("target") == "caster" else "defender"
+        if inv.active_scope is not None:
+            scope = inv.active_scope  # e.g. a concentration spell (Hold Person)
+        else:
+            scope = LifetimeScope(
+                kind=LifetimeKind.ROUNDS,
+                source=condition.source or ctype.value,
+                rounds_remaining=duration,  # None → permanent until dispelled
+            )
+            target.lifetimes.append(scope)
+        scope.add(handle)
+        condition.owning_scope = scope
+        condition.rounds_remaining = None  # the scope is the sole duration clock
+        # `instance_fields` is the legacy-step field name (see the authoring guide);
+        # `bindings` is the native block spelling. Accept either — the rider captures
+        # them as closure values (Charmed's `charmer`).
+        bindings = block.get("bindings") or block.get("instance_fields")
+        _install_condition_rider(inv, rule, holder, bindings, scope)
+
     inv.event_bus.emit(
         EventType.CONDITION_ADDED,
         ConditionAddedData(entity=target, condition=condition),

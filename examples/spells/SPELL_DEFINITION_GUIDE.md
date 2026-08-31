@@ -499,7 +499,13 @@ Grants temporary hit points directly via the pipeline (without needing an entity
 
 ### `apply_condition`
 
-Applies a status condition via the rule engine's `ApplyCondition` handler.
+Applies a status condition **and installs its mechanics**. On the block engine this adds the
+`Condition` marker *and* installs the condition's reactive rule from the library
+(`rules/entity_effects/conditions/<condition_type>.json`, e.g. `blinded` → the creature attacks at
+disadvantage and is attacked at advantage), so the condition actually functions. Both are owned by one
+lifetime scope, so the mechanics end exactly when the condition does — on `duration` expiry, on the loss
+of an enclosing concentration spell, or on dispel. If no matching reactive rule is found the marker is
+still applied (it just has no mechanical effect).
 
 ```json
 {
@@ -517,9 +523,11 @@ Applies a status condition via the rule engine's `ApplyCondition` handler.
 | `target` | ❌ | `"defender"` or `"caster"` | `"defender"` | Who receives the condition |
 | `duration` | ❌ | object | — | Duration of the condition; same structure as the spell-level [Duration](#duration) object |
 | `source` | ❌ | string | — | Human-readable source label |
-| `instance_fields` | ❌ | object | `{}` | Per-instance data for the condition; values are expressions |
+| `instance_fields` | ❌ | object | `{}` | Per-instance closure values for the condition's rider; values are expressions evaluated at cast time (e.g. Charmed's `{ "charmer": "event.caster" }`) |
 
-Requires a `RuleEngine` with an `ApplyCondition` handler registered. Silently skips if unavailable.
+The condition's mechanics come from its reactive rule in `rules/entity_effects/conditions/`, installed
+automatically. Requires the resolver to be wired with a rule engine + effect registry (the web app is);
+without one, only the inert marker is applied.
 
 ---
 

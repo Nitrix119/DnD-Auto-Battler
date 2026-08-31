@@ -217,6 +217,20 @@ leave a brief note here.
 - **Rule going forward:** the concrete, testable rule.
 ```
 
+### 2026-08-31 — A condition's marker and its mechanics were joined only by a name string
+- **Context:** Wiring conditions to apply in production (Phase 3 §3). A condition has two parts: a
+  `Condition` marker (inert data on `entity.conditions`) and a reactive rule
+  (`rules/entity_effects/conditions/<name>.json`) that makes it *do* something.
+- **What went wrong:** `apply_condition` added only the marker; nothing installed the reactive rule. The
+  two shared nothing but a name string, so every applied condition except charm was mechanically dead in
+  production — yet it looked complete (marker model + full rule library + passing tests), because the tests
+  installed the *rule* directly via `apply_effect` and never exercised `apply_condition`. Charm worked only
+  because it bypassed `apply_condition` entirely (via `add_entity_effect` → the rule).
+- **Rule going forward:** When one representation of a thing (a marker/flag/record) is meant to trigger
+  behaviour defined elsewhere (a rule/handler), verify the code path that creates it also installs the
+  behaviour — a shared *name* is not a wire. Test the real entry point (`apply_condition`), not the
+  behaviour-half in isolation. (Same seam-auditing lesson as 2026-08-08; this is a fresh instance.)
+
 ### 2026-08-31 — On the block path a weapon's `pipeline_effects` is empty at fire time
 - **Context:** Migrating Colossus Slayer to a native `ATTACK_HIT` trigger. The rider deals the *weapon's
   own* damage type via `event.action.primary_damage_type`, which reads `Action.pipeline_effects`.

@@ -2,7 +2,10 @@
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
+
+if TYPE_CHECKING:
+    from src.models.lifetime import LifetimeScope
 
 
 class ConditionType(Enum):
@@ -44,6 +47,13 @@ class Condition:
     rounds_remaining: Optional[int] = field(default=None, init=False)
     source: str = ""
     effect_name: str = ""  # rule/effect name; used by Entity.remove_effect for cleanup
+    # The lifetime scope that owns this condition's marker + its installed reactive
+    # rider (set when applied on the block engine). When present, the scope is the
+    # sole duration clock and disposing it tears the condition (and its mechanics)
+    # down; ``rounds_remaining`` is left None so the legacy tick doesn't double-count.
+    owning_scope: Optional["LifetimeScope"] = field(
+        default=None, init=False, repr=False, compare=False
+    )
 
     def __post_init__(self) -> None:
         self.rounds_remaining = self.duration_rounds
