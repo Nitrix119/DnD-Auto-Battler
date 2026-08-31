@@ -189,12 +189,19 @@ class Entity:
         self.active_effects.setdefault(trigger, []).append(effect)
 
     def remove_effect(self, name: str) -> None:
-        """Remove all effects matching this name across all trigger buckets.
+        """Remove all effects matching this name.
 
-        Also removes any :class:`StatModifier` entries, granted actions, and
-        :class:`Condition` objects tagged with this effect name so that all
-        bonuses and status effects are cleaned up automatically.
+        Handles both engines: a block-installed rider is owned by a
+        :class:`LifetimeScope` on ``lifetimes`` keyed to the effect name — disposing
+        it unsubscribes the rider and revokes its grants by identity. A legacy effect
+        is a string-tagged entry, so any :class:`StatModifier`, granted action, and
+        :class:`Condition` carrying this name is stripped too.
         """
+        scopes = [s for s in self.lifetimes if s.source == name]
+        if scopes:
+            for scope in scopes:
+                scope.dispose()
+            self.lifetimes = [s for s in self.lifetimes if s.source != name]
         for bucket in self.active_effects.values():
             bucket[:] = [e for e in bucket if e.name != name]
         self.stat_modifiers = [m for m in self.stat_modifiers if m.effect_name != name]

@@ -24,7 +24,7 @@ at a steady 44 pre-existing errors; Black pinned `==23.12.1` (do **not** run a n
 | Legacy piece | Still load-bearing for | Retired by (below) |
 |---|---|---|
 | `EffectPipeline` (`src/combat/effect_pipeline.py`) | the parity oracle only (no shipped effect injects any more) | §4 |
-| `BUILTIN_EFFECTS` + `RuleEngine` entity dispatch | `apply_effect` entity effects that don't cleanly fold — duration/removal-bound effects and (in test-only setups) conditions | §3 → §4 |
+| `BUILTIN_EFFECTS` + `RuleEngine` entity dispatch | only `apply_effect` effects that can't fold (untranslatable action) or are applied without a damage_processor; the `_tick_durations` TURN_END clock **driver** | §4 |
 | `adapter.py` + `fold.py` (transitional shims) | translating legacy step/rule shapes into block programs | §4, after §5 |
 
 **The single knot — untied (2026-08-31).** Colossus Slayer's `InjectPipelineDamageStep` was the last thing
@@ -38,9 +38,11 @@ legacy pipeline's `add_entity_effect` step, whose shipped spells are all folded 
 this exposed — a spell applying "blinded" added the `Condition` marker but never its reactive rule, so
 every condition except charm was mechanically dead in production — is now **closed (2026-08-31)**: the
 `apply_condition` block installs the condition's reactive rule under a lifetime scope (§3 below). Colossus
-is likewise a native trigger (§2). What remains on legacy: entity effects applied via `apply_effect` that
-carry a *rule*-level duration or need `remove_effect(name)` (poison-shaped rules) — the general repoint,
-still §3.
+is likewise a native trigger (§2), and **§3 is now complete** — every cleanly-foldable entity effect
+applied via `apply_effect` (with a damage_processor) installs on the block engine, durations and removal
+included. What remains on the legacy `RuleEngine` dispatch: effects applied without a damage_processor or
+with an untranslatable action, plus the `TURN_END` tick *driver* (`_tick_durations`), which §4 moves onto a
+standalone clock.
 
 ---
 
@@ -99,9 +101,15 @@ so expiry (`tick_lifetimes`), concentration loss (`end_concentration`), and disp
 carries Charmed-style `instance_fields`. The whole condition library is now live in production; covered by
 [tests/test_condition_wiring.py](../tests/test_condition_wiring.py). Suite green (738).
 
-**Still to do (the general repoint):** entity effects applied via `apply_effect` with a *rule*-level
-duration (→ the lifetime clock in `install_entity_effect`, currently refused) and `remove_effect(name)` (→
-dispose the installed scope) — the poison-shaped case. Those still fall back to legacy.
+**Done — the general repoint (2026-08-31):** `install_entity_effect` now owns its triggers with a
+`LifetimeScope` on `entity.lifetimes` keyed to `rule.name`. A `duration_rounds` rule expires on the
+holder's turn via `Entity.tick_lifetimes`; a rule with no duration is a permanent scope. `remove_effect`
+disposes the scope by name (`Entity.remove_effect` now handles both the block scope and the legacy
+string-tags). So **every cleanly-foldable entity effect applied via `apply_effect` with a damage_processor
+now installs on the block engine** — durations and removal included (proven with the poison DoT,
+[tests/test_block_entity_effects.py](../tests/test_block_entity_effects.py)). `instance_fields` → `bindings`
+was already handled. **§3 is complete.** What stays on legacy dispatch: an effect with an untranslatable
+action, or one applied without a damage_processor.
 
 Translate an entity effect to a `lifetime{ trigger… }` program via `fold.rule_to_trigger_blocks` (every
 condition-library block and translator already exists — see Phase 2.9) and install it through the evaluator,
@@ -168,7 +176,7 @@ authoring contract for the future "add a spell" skill.
 
 ## 8. Verification (whole system)
 
-- `pytest tests/ -q` green (currently 738). The parity harnesses are the safety net for each migration:
+- `pytest tests/ -q` green (currently 744). The parity harnesses are the safety net for each migration:
   `tests/test_block_parity.py` (spells), `tests/test_attack_parity.py` (weapons),
   `tests/test_global_rules_via_blocks.py` (global rules). Add one per migration in §2–§4.
 - `mypy src/` — no new errors beyond the steady 44. `flake8 src/` clean of non-E501 on changed files.
