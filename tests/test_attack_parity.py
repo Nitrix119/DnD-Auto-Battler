@@ -1,24 +1,20 @@
-"""Weapon-attack parity: the block engine resolves an attack like the legacy one.
+"""Weapon-attack resolution on the block engine (the only engine).
 
-`AttackResolver` now routes weapon attacks through the block engine (the same
-`[attack_roll, damage…]` a spell uses). These tests dual-run a weapon attack on the
-block engine and the legacy pipeline under one seed and assert identical outcomes,
-and pin that a Colossus attacker — now a native ATTACK_HIT block trigger — resolves
-on the block engine and still lands its bonus die.
+`AttackResolver` resolves a weapon attack through the block engine (the same
+`[attack_roll, damage…]` a spell uses). These tests drive the real `AttackResolver`
+with controlled rolls to pin hit / miss / multi-type damage, and that a Colossus
+attacker — a native ATTACK_HIT block trigger — resolves on blocks and lands its
+bonus die.
 """
 
-from copy import copy
 from unittest.mock import patch
 
 from src.models import AbilityScores, StatBlock, Entity, AttackAction, Damage, DamageType
 from src.combat.event_bus import EventBus
 from src.combat.damage_processor import DamageProcessor
-from src.combat.attack_resolver import AttackResolver, _build_pipeline_effects
-from src.combat.effect_pipeline import EffectPipeline
-from src.models.spell_properties import TargetingType
+from src.combat.attack_resolver import AttackResolver
 from src.rules import RuleEngine, RuleLoader
 from src.rules.effect_registry import EffectRegistry
-import src.utils.dice as dice
 
 
 def _entity(name="E", ac=10, hp=200):
@@ -38,54 +34,34 @@ def _weapon(bonus, damage):
     )
 
 
-def _legacy_result(attacker, defender, action, bus, dp):
-    ac = copy(action)
-    ac.pipeline_effects = _build_pipeline_effects(action)
-    return EffectPipeline(bus, dp).run(attacker, defender, ac)
+class TestWeaponAttack:
+    """AttackResolver resolves a weapon attack on the block engine."""
 
-
-def _block_result(attacker, defender, action, bus, dp):
-    from src.spells.evaluator import resolve as resolve_blocks
-    from src.spells.adapter import to_program
-
-    program = to_program(_build_pipeline_effects(action), TargetingType.SINGLE_TARGET)
-    return resolve_blocks(attacker, defender, action, program,
-                          event_bus=bus, damage_processor=dp)
-
-
-def _run(engine_fn, seed, *, bonus, ac, damage):
-    """Resolve one weapon attack on a fresh, seeded battle; return the outcome tuple."""
-    dice.seed_rng(seed)
-    attacker = _entity("A")
-    defender = _entity("D", ac=ac)
-    bus = EventBus()
-    dp = DamageProcessor(bus)
-    result = engine_fn(attacker, defender, _weapon(bonus, damage), bus, dp)
-    return (result.hit, result.damage_dealt, result.attack_roll,
-            result.attack_total, defender.hp)
-
-
-class TestWeaponAttackParity:
-    """The block path matches the legacy pipeline field-for-field under one seed."""
-
-    def _assert_parity(self, **kw):
-        for seed in (1, 7, 42, 1000):
-            legacy = _run(_legacy_result, seed, **kw)
-            block = _run(_block_result, seed, **kw)
-            assert block == legacy, f"seed={seed}: {block} != {legacy}"
+    def _resolve(self, *, bonus, ac, damage, d20):
+        bus = EventBus()
+        dp = DamageProcessor(bus)
+        attacker, defender = _entity("A"), _entity("D", ac=ac)
+        ar = AttackResolver(bus, dp)
+        with patch("src.spells.blocks.rolls.roll_d20", return_value=d20), \
+             patch("src.spells.blocks.damage.roll_formula", return_value=4):
+            hit, dmg, _log, _detail = ar.resolve(attacker, defender, _weapon(bonus, damage))
+        return hit, dmg, defender
 
     def test_hit(self):
-        self._assert_parity(bonus=10, ac=5, damage=[(DamageType.SLASHING, "1d8")])
+        hit, dmg, defender = self._resolve(
+            bonus=10, ac=5, damage=[(DamageType.SLASHING, "1d8")], d20=10)
+        assert hit and dmg == 4 and defender.hp == 196
 
     def test_miss(self):
-        # High AC, low bonus — the attack misses on both engines, no damage.
-        self._assert_parity(bonus=0, ac=40, damage=[(DamageType.SLASHING, "1d8")])
+        hit, dmg, defender = self._resolve(
+            bonus=0, ac=40, damage=[(DamageType.SLASHING, "1d8")], d20=2)
+        assert not hit and dmg == 0 and defender.hp == 200
 
     def test_multi_type_damage(self):
-        self._assert_parity(
+        hit, dmg, defender = self._resolve(
             bonus=10, ac=5,
-            damage=[(DamageType.SLASHING, "1d8"), (DamageType.FIRE, "1d6")],
-        )
+            damage=[(DamageType.SLASHING, "1d8"), (DamageType.FIRE, "1d6")], d20=10)
+        assert hit and dmg == 8 and defender.hp == 192  # 4 slashing + 4 fire
 
 
 class TestAttackRouting:

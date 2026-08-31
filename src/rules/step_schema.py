@@ -1,7 +1,7 @@
 """Declarative schema + linter for spell pipeline steps (design stage 1).
 
-A spell's ``effects`` array is an ordered list of typed steps executed by
-:class:`~src.combat.effect_pipeline.EffectPipeline`. Historically the only
+A spell's ``effects`` array is an ordered list of typed steps, translated into a
+block program and run by the block evaluator (``src/spells/``). Historically the only
 validation was "does it parse as JSON" — an unknown step type, a typo'd field,
 a bad enum, or a ``context.X`` reference to a key nothing writes all failed
 silently (a warning-and-skip at run time, or a no-op) rather than at authoring
@@ -44,9 +44,9 @@ _ABILITIES = (
     "intelligence", "wisdom", "charisma",
 )
 
-# The keys EffectPipeline.run seeds into its context dict. A ``context.X``
+# The keys the block engine seeds into its per-invocation context. A ``context.X``
 # reference in any expression must name one of these; anything else is a typo.
-# Keep in sync with EffectPipeline.run's context initialisation.
+# Keep in sync with ``src.spells.context.seed_context``.
 CONTEXT_KEYS = frozenset({
     "hit", "critical_hit", "critical_miss",
     "save_success", "save_roll", "save_dc",

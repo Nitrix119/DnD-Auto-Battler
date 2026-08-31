@@ -23,7 +23,7 @@ at a steady 44 pre-existing errors; Black pinned `==23.12.1` (do **not** run a n
 
 | Legacy piece | Still load-bearing for | Retired by (below) |
 |---|---|---|
-| `EffectPipeline` (`src/combat/effect_pipeline.py`) | the parity oracle only (no shipped effect injects any more) | §4 |
+| ~~`EffectPipeline`~~ | **deleted (2026-08-31)** — one resolution path now; `can_run_on_blocks` is a loud validator | ✅ §4 |
 | `BUILTIN_EFFECTS` + `RuleEngine` entity dispatch | only `apply_effect` effects that can't fold (untranslatable action) or are applied without a damage_processor; the `_tick_durations` TURN_END clock **driver** | §4 |
 | `adapter.py` + `fold.py` (transitional shims) | translating legacy step/rule shapes into block programs | §4, after §5 |
 
@@ -134,10 +134,17 @@ removal (the removed path must have a block equivalent already green).
   duration/concentration clock no longer depends on the legacy rule engine — that inverted dependency is
   gone, and `_tick_durations`/`RuleEngine` dispatch can be deleted without taking the clock with them. Suite
   744 green; the three duration/concentration-expiry tests now install the clock directly.
-- **Still to delete (the big removals):** `EffectPipeline` (the parity oracle — deleting it means retiring
-  the dual-run harnesses), `adapter.py`/`fold.py` (needs §5's native content so spells stop being translated
-  at cast time), `BUILTIN_EFFECTS` + `RuleEngine` entity dispatch (once no non-foldable effect and no
-  no-`damage_processor` path remains), and `_tick_durations` itself.
+- **✅ `EffectPipeline` deleted (2026-08-31).** The ~750-line legacy interpreter and its `PipelineResult`
+  are gone. `SpellResolver.resolve` now has **one path** — the block engine — with `can_run_on_blocks`
+  flipped from a silent router (fall back to legacy) into a **loud validator** (raise on a spell the block
+  engine can't express). The one non-legacy coupling — `effective_damage_formula`, which the block engine
+  imported from the pipeline module — was rehomed to [src/spells/scaling.py](../src/spells/scaling.py). The
+  five parity harnesses became block-only tests (the two behaviours whose only oracle was the pipeline —
+  save-honours-disadvantage and temp-HP-from-an-expression — got block-engine tests first). Suite 734 green;
+  `mypy src/` down to 41 (the pipeline's own errors went with it).
+- **Still to delete (the big removals):** `adapter.py`/`fold.py` (needs §5's native content so spells stop
+  being translated at cast time), `BUILTIN_EFFECTS` + `RuleEngine` entity dispatch (once no non-foldable
+  effect and no no-`damage_processor` path remains), and `_tick_durations` itself.
 
 ## 5. Native content rewrite
 
@@ -188,7 +195,7 @@ authoring contract for the future "add a spell" skill.
 
 ## 8. Verification (whole system)
 
-- `pytest tests/ -q` green (currently 744). The parity harnesses are the safety net for each migration:
+- `pytest tests/ -q` green (currently 734). The parity harnesses are the safety net for each migration:
   `tests/test_block_parity.py` (spells), `tests/test_attack_parity.py` (weapons),
   `tests/test_global_rules_via_blocks.py` (global rules). Add one per migration in §2–§4.
 - `mypy src/` — no new errors beyond the steady 44. `flake8 src/` clean of non-E501 on changed files.

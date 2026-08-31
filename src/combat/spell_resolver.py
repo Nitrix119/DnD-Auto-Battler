@@ -1,16 +1,14 @@
 """Spell resolution."""
 
 import logging
-from typing import Dict, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
 from src.models.entity import Entity
 from src.models.action import SpellAction
-from src.utils.dice import roll_formula
 from .event_bus import EventBus
 from .event_data import SpellCastData
 from .events import EventType
 from .damage_processor import DamageProcessor
-from .effect_pipeline import EffectPipeline, effective_damage_formula
 
 logger = logging.getLogger(__name__)
 
@@ -69,59 +67,19 @@ class SpellResolver:
         if slot_level is None:
             slot_level = action.spell_level
 
-        # Route to the new block evaluator for spells it can express identically;
-        # everything else stays on the legacy pipeline (Phase 1/2 boundary).
+        # One resolution path: the block engine. `can_run_on_blocks` is now a loud
+        # validator, not a router — a spell it can't express (an unported step, or an
+        # entity effect whose rule/action doesn't fold) is an authoring error we raise
+        # on, rather than silently degrading. The legacy pipeline is gone (Phase 3 §4).
         from src.spells.adapter import can_run_on_blocks
 
         rule_lookup = self._rule_lookup()
-        if can_run_on_blocks(action, rule_lookup):
-            return self._resolve_via_blocks(caster, defenders, action, slot_level)
-
-        seed_damages = self._preroll_pipeline_damage(action, slot_level)
-        results: List[Tuple[bool, int, str, Optional[dict]]] = []
-        for defender in defenders:
-            results.append(
-                self._run_pipeline_spell(
-                    caster, defender, action, seed_damages, slot_level
-                )
+        if not can_run_on_blocks(action, rule_lookup):
+            raise ValueError(
+                f"Spell '{action.name}' cannot be expressed on the block engine "
+                f"(an unported step, or an entity effect whose rule/action does not fold)."
             )
-        return results
-
-    def _preroll_pipeline_damage(
-        self, action: SpellAction, slot_level: Optional[int] = None
-    ) -> Dict[int, int]:
-        """Pre-roll damage for any ``roll_once: true`` steps before the target loop.
-
-        This ensures all targets of an AoE spell receive the same damage total,
-        matching D&D 5e rules (e.g. Fireball rolls 8d6 once for every creature
-        in the blast). Slot-based ``scaling`` is applied here too so an upcast
-        AoE shares its (larger) rolled total across all targets.
-
-        Returns:
-            Dict mapping step index → pre-rolled amount.
-        """
-        seed: Dict[int, int] = {}
-        for i, step in enumerate(action.pipeline_effects):
-            if step.get("type") == "damage" and step.get("roll_once"):
-                seed[i] = roll_formula(effective_damage_formula(step, slot_level))
-        return seed
-
-    def _run_pipeline_spell(
-        self,
-        caster: Entity,
-        defender: Entity,
-        action: SpellAction,
-        seed_damages: Dict[int, int],
-        slot_level: Optional[int] = None,
-    ) -> Tuple[bool, int, str, Optional[dict], int, Optional[Entity]]:
-        """Execute the effect pipeline for one caster/defender pair and format the result."""
-        pipeline = EffectPipeline(
-            self._event_bus, self._damage_processor, self.rule_engine
-        )
-        result = pipeline.run(
-            caster, defender, action, seed_damages=seed_damages, slot_level=slot_level
-        )
-        return self._format_result(caster, defender, action, result)
+        return self._resolve_via_blocks(caster, defenders, action, slot_level)
 
     def _rule_lookup(self):
         """Return a ``name -> Rule | None`` lookup over the entity-effect rules.

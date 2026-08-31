@@ -1,7 +1,8 @@
 """The block registry — one catalogue, dict dispatch, no ``if/elif``.
 
-This replaces both the old ``EffectPipeline`` ``if/elif`` ladder *and* the
-separate ``BUILTIN_EFFECTS`` vocabulary with a single registry of block types.
+This replaced the old ``EffectPipeline`` ``if/elif`` ladder (now deleted) — and
+supersedes the separate ``BUILTIN_EFFECTS`` vocabulary — with one registry of block
+types.
 A block type is registered once with its handler and :class:`BlockContract`;
 the evaluator dispatches by name and the linter validates against the same
 contract.

@@ -20,10 +20,7 @@ from typing import Dict, List
 
 from src.utils.dice import roll_formula
 
-# Reused pure helper (slot-based dice scaling); shared with the damage block and
-# the legacy pipeline so all three roll identical totals. Moves into this package
-# when the legacy pipeline retires.
-from src.combat.effect_pipeline import effective_damage_formula
+from ..scaling import effective_damage_formula
 
 from ..contract import BlockContract, TargetArity
 from ..context import Invocation

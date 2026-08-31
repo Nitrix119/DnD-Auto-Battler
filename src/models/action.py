@@ -122,8 +122,9 @@ class SpellAction(Action):
         components: Verbal, somatic, and/or material requirements
         higher_level_scaling: Placeholder description of upcast scaling (structured
                               rules will be added in a future task)
-        pipeline_effects: Sequential effect steps processed by EffectPipeline.
-            Each entry is a dict with a ``type`` key (e.g. ``"attack_roll"``,
+        pipeline_effects: Sequential effect steps (authored as ``effects`` in JSON),
+            translated by ``adapter.to_program`` into a block program run by the block
+            evaluator. Each entry is a dict with a ``type`` key (e.g. ``"attack_roll"``,
             ``"saving_throw"``, ``"damage"``, ``"healing"``, ``"add_entity_effect"``)
             and type-specific fields. Steps run in order; each may write keys into
             an ephemeral ``context`` dict readable by subsequent steps.

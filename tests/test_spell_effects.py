@@ -5,21 +5,18 @@ that saving throws gate their application via ``condition``, and that
 ``instance_fields`` expressions are evaluated correctly at spell-hit time.
 """
 
-import os
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
-from src.models import Entity, SpellAction, DamageType
-from src.models.damage import Damage
+from src.models import Entity, SpellAction
 from src.combat import EventBus, EventType
 from src.combat.event_data import TurnEventData
 from src.combat.spell_resolver import SpellResolver
 from src.combat.damage_processor import DamageProcessor
-from src.combat.attack_resolver import AttackResolver
 from src.loaders.stat_block_loader import StatBlockLoader
-from src.rules import EffectRegistry, RuleEngine, RuleLoader
+from src.rules import EffectRegistry, RuleEngine
 
 EXAMPLES_DIR = Path(__file__).parent.parent / "examples"
 SPELLS_DIR = EXAMPLES_DIR / "spells"
@@ -229,22 +226,20 @@ class TestSpellEffectApplicationOnFailedSave:
 
 class TestSpellEffectsWithoutRuleEngine:
 
-    def test_spell_effects_silently_skipped_without_rule_engine(self):
-        """If no rule_engine is set, spell effects do nothing and no error is raised."""
+    def test_spell_with_entity_effect_raises_without_rule_engine(self):
+        """A spell whose entity effect can't be resolved (no rule engine to supply the
+        effect registry) now fails **loudly** rather than silently skipping the effect
+        — the block engine has one resolution path and refuses what it can't express
+        (fail-loud, CLAUDE.md §2.5), instead of the legacy silent no-op."""
         wizard = load_wizard()
         goblin = load_goblin()
         bus = EventBus()
-        damage_proc = DamageProcessor(bus)
-        resolver = SpellResolver(bus, damage_proc, rule_engine=None)
+        resolver = SpellResolver(bus, DamageProcessor(bus), rule_engine=None)
 
         spell = charm_person_spell(save_dc=30)
 
-        with patch("src.utils.saving_throw.roll_d20", return_value=1):
-            results = resolver.resolve(wizard, [goblin], spell)
-
-        # Resolves without error; no active effects on goblin
-        assert results[0][0] is True  # hit (auto-hit for save spell)
-        assert goblin.active_effects == {}
+        with pytest.raises(ValueError):
+            resolver.resolve(wizard, [goblin], spell)
 
 
 # ── Rule caching ──────────────────────────────────────────────────────────────

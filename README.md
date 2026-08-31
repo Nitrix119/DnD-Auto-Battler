@@ -25,7 +25,8 @@ A Python-based D&D 5e combat simulator with a browser-based UI, WebSocket-driven
 src/
 ├── models/          # Core data structures: StatBlock, Entity, Action, Condition, SpellSlots, etc.
 ├── combat/          # Combat simulation: CombatSystem, TurnManager, AttackResolver,
-│                    #   SpellResolver, EffectPipeline, EventBus, InitiativeTracker
+│                    #   SpellResolver, EventBus, InitiativeTracker, lifetime clock
+├── spells/          # The block engine: the single spell/attack resolution path
 ├── loaders/         # JSON stat block loading and deserialization (StatBlockLoader)
 ├── rules/           # Rule engine, entity effects, expressions sandbox
 ├── spatial/         # AoE geometry, range checking, 3D grid math

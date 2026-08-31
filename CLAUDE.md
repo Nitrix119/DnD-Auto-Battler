@@ -80,17 +80,21 @@ Non-negotiable. Every change should be justifiable against these.
 
 ## 3. Architecture & modularity rules
 
-- **One pipeline for everything.** A `SpellAction` carries `pipeline_effects`: an
-  ordered list of typed steps (`attack_roll`, `saving_throw`, `damage`, `healing`,
-  `add_entity_effect`, `apply_condition`, `add_modifier`, `grant_temporary_hp`) run by
-  `EffectPipeline.run` over a shared ephemeral `context`. Earlier steps write results
-  (`context.hit`, `context.damage_dealt`, `context.save_success`); later steps read
-  them. **Weapon attacks are compiled into the same steps** by
-  `AttackResolver._build_pipeline_effects` — never add a second attack path.
-- **Registry, never `if/elif` on type.** New step type → add a handler in
-  `effect_pipeline.py` and dispatch on `step["type"]`. New rule effect → add a function
-  in `effects.py` and register it in `BUILTIN_EFFECTS`. New spell → drop a JSON file in
-  `examples/spells/` (auto-scanned at startup). Do **not** branch on a spell's name.
+- **One resolution path for everything.** A `SpellAction` carries `pipeline_effects`
+  (authored as `effects` in JSON): an ordered list of typed steps (`attack_roll`,
+  `saving_throw`, `damage`, `healing`, `add_entity_effect`, `apply_condition`,
+  `add_modifier`, `grant_temporary_hp`). `adapter.to_program` translates them into a
+  **block program** run by the block **evaluator** (`src/spells/evaluator.py`) over a
+  shared ephemeral `context`. Earlier blocks write results (`context.hit`,
+  `context.damage_dealt`, `context.save_success`); later blocks read them. **Weapon
+  attacks compile into the same blocks** via `AttackResolver._build_pipeline_effects` —
+  never add a second resolution path. (The legacy `EffectPipeline` is deleted.)
+- **Registry, never `if/elif` on type.** New block type → add a handler under
+  `src/spells/blocks/` and register it in the block `REGISTRY` (`src/spells/registry.py`),
+  dispatched on the block's type. New spell → drop a JSON file in `examples/spells/`
+  (auto-scanned at startup). Do **not** branch on a spell's name. (The legacy
+  `BUILTIN_EFFECTS`/`effects.py` rule-effect vocabulary is transitional — reached only via
+  the `fold`/`adapter` shims — and retires in §5.)
 - **Cross-cutting behaviour rides the EventBus.** Resolvers emit typed events
   (`ATTACK_DECLARED`, `ATTACK_ROLLED`, `SAVING_THROW_DECLARED`, `DAMAGE_INCOMING`,
   `DAMAGE_DEALT`, `SPELL_HIT`, …). Rules and entity effects subscribe and may modify or

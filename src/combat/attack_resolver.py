@@ -77,11 +77,8 @@ class AttackResolver:
         )
 
     def _format(self, attacker, defender, action, result):
-        """Build the (hit, damage, log_msg, roll_detail) tuple from a resolver result.
-
-        ``InvocationResult`` (block engine) and ``PipelineResult`` (legacy) are
-        field-compatible, so this formats either identically.
-        """
+        """Build the (hit, damage, log_msg, roll_detail) tuple from an
+        ``InvocationResult`` (the block engine's result type)."""
         roll_mode = ""
         if result.had_advantage and not result.had_disadvantage:
             roll_mode = " (advantage)"

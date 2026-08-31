@@ -34,8 +34,8 @@ def test_schema_covers_all_dispatched_step_types():
 
 
 def test_context_keys_match_pipeline_seed_defaults():
-    # These are the keys EffectPipeline.run seeds; a context.X ref outside this
-    # set is a typo the linter should catch.
+    # These are the keys the block engine seeds into context; a context.X ref
+    # outside this set is a typo the linter should catch.
     assert {"hit", "damage_dealt", "save_success", "attack_total"} <= CONTEXT_KEYS
 
 

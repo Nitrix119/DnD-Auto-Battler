@@ -15,7 +15,7 @@ from src.models import AbilityScores, StatBlock, Entity, SpellAction
 from src.combat.event_bus import EventBus
 from src.combat.damage_processor import DamageProcessor
 from src.combat.spell_resolver import SpellResolver
-from src.combat.effect_pipeline import effective_damage_formula
+from src.spells.scaling import effective_damage_formula
 from src.combat import CombatSystem
 from src.rules.step_schema import CONTEXT_KEYS, lint_effects
 

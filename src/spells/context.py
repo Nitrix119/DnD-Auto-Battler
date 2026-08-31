@@ -197,8 +197,8 @@ class Invocation:
 class InvocationResult:
     """Outcome of resolving a block program for one caster/target pair.
 
-    Field-compatible with the legacy ``PipelineResult`` so the two can be
-    compared directly by the parity harness.
+    The single result type the resolvers format from (it replaced the legacy
+    pipeline's ``PipelineResult``, whose fields it mirrors).
     """
 
     hit: bool = True

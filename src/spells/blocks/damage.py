@@ -18,9 +18,7 @@ from src.models.damage import Damage, DamageType
 from src.utils.dice import roll_formula, multiply_formula
 from src.rules.expressions import evaluate
 
-# Reused pure helper (slot-based dice scaling). Moves into this package when the
-# legacy pipeline is retired; imported here to keep the two engines identical.
-from src.combat.effect_pipeline import effective_damage_formula
+from ..scaling import effective_damage_formula
 
 from ..contract import BlockContract, TargetArity
 from ..context import Invocation, eval_context
