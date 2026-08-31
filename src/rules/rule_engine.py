@@ -369,14 +369,13 @@ class RuleEngine:
         entity — conditions whose ``rounds_remaining`` reaches zero are removed
         automatically, unifying duration tracking under one mechanism.
 
-        Also ticks the entity's new-engine lifetime scopes (the block engine owns
-        that logic in ``Entity.tick_lifetimes``; this is the single TURN_END clock
-        that drives it — it moves to a standalone clock when the rule engine is
-        retired in Phase 3).
+        The block-engine lifetime scopes are **no longer** ticked here: that clock is
+        a standalone ``TURN_END`` subscriber (``combat.lifetime_clock``) so it does not
+        depend on this legacy method, which is itself retired in Phase 3 §4. This now
+        ticks only the legacy effect-instance and condition-marker durations.
         """
         if entity is None:
             return
-        entity.tick_lifetimes()
         expired_instances: set = set()  # id(instance) of instances that expired this tick
         ticked: set = set()             # id(instance) already ticked (avoid double-decrement
                                         # when the same instance appears in multiple trigger buckets)

@@ -191,6 +191,10 @@ class CombatSystem:
             if entity is not None and entity.legendary_actions is not None:
                 entity.legendary_actions.refill()
         self.event_bus.subscribe(_ET.TURN_START, _on_turn_start)
+        # Drive the block-engine lifetime clock (durations / concentration) on TURN_END,
+        # independent of the legacy rule engine (§4).
+        from .lifetime_clock import install_lifetime_clock
+        install_lifetime_clock(self.event_bus)
 
         self._log_action(self.initiative_tracker.get_current_entity(),
                         "Combat started!")

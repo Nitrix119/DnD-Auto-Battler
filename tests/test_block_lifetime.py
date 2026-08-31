@@ -160,15 +160,15 @@ def test_concentration_break_on_damage_revokes_the_buff_end_to_end():
 def test_duration_lifetime_expires_via_the_real_turn_end_clock():
     """A rounds-duration lifetime disposes after N of the holder's TURN_ENDs.
 
-    Drives the actual clock: RuleEngine._tick_durations on TURN_END calls
-    Entity.tick_lifetimes. After the duration elapses the buff is revoked.
+    Drives the actual clock: the standalone lifetime clock ticks Entity.tick_lifetimes
+    on TURN_END. After the duration elapses the buff is revoked.
     """
-    from src.rules import RuleEngine
+    from src.combat.lifetime_clock import install_lifetime_clock
     from src.combat.event_data import TurnEventData
 
     caster, target = _caster(), _target(ac=12)
     bus = EventBus()
-    RuleEngine(bus, entities_getter=lambda: [caster, target])
+    install_lifetime_clock(bus)
 
     program = [{
         "block": "lifetime", "kind": "rounds", "duration_rounds": 2,

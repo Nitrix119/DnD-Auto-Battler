@@ -289,8 +289,10 @@ class TestHasteFold:
 
     def _setup(self, caster, ally):
         from src.combat.spell_resolver import SpellResolver
+        from src.combat.lifetime_clock import install_lifetime_clock
 
         bus = EventBus()
+        install_lifetime_clock(bus)  # ticks concentration/duration on TURN_END
         dp = DamageProcessor(bus)
         reg = EffectRegistry()
         reg.scan_directory("rules/entity_effects")

@@ -15,6 +15,7 @@ from src.models import AbilityScores, StatBlock, Entity
 from src.combat.event_bus import EventBus
 from src.combat.damage_processor import DamageProcessor
 from src.combat.events import EventType
+from src.combat.lifetime_clock import install_lifetime_clock
 from src.rules import RuleEngine, RuleLoader
 from src.rules.effect_registry import EffectRegistry
 
@@ -31,6 +32,7 @@ def _ent(name="E", hp=40):
 
 def _wire(*entities, with_dp=True):
     bus = EventBus()
+    install_lifetime_clock(bus)  # drives duration expiry on TURN_END
     dp = DamageProcessor(bus) if with_dp else None
     reg = EffectRegistry()
     reg.scan_directory("rules/entity_effects")

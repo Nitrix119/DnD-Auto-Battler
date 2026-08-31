@@ -123,9 +123,21 @@ library + Colossus onto the block engine and empties `active_effects` of reactiv
 ## 4. Delete the legacy machinery
 
 Once §2 and §3 leave nothing routing to them: delete `EffectPipeline`, `adapter.py`, `fold.py`,
-`BUILTIN_EFFECTS` (`src/rules/effects.py`), and the `RuleEngine` entity-effect dispatch; move the `TURN_END`
-lifetime tick from `RuleEngine._tick_durations` onto a standalone block-engine clock. Parity-gate each
+`BUILTIN_EFFECTS` (`src/rules/effects.py`), and the `RuleEngine` entity-effect dispatch. Parity-gate each
 removal (the removed path must have a block equivalent already green).
+
+- **✅ Standalone lifetime clock (2026-08-31).** The `TURN_END` lifetime tick is off
+  `RuleEngine._tick_durations` and onto a self-contained subscriber
+  ([src/combat/lifetime_clock.py](../src/combat/lifetime_clock.py) `install_lifetime_clock`), installed once
+  per battle by `CombatSystem.start_combat`. `_tick_durations` no longer calls `Entity.tick_lifetimes` (it
+  now ticks only the legacy effect-instance/condition-marker durations), so the block engine's
+  duration/concentration clock no longer depends on the legacy rule engine — that inverted dependency is
+  gone, and `_tick_durations`/`RuleEngine` dispatch can be deleted without taking the clock with them. Suite
+  744 green; the three duration/concentration-expiry tests now install the clock directly.
+- **Still to delete (the big removals):** `EffectPipeline` (the parity oracle — deleting it means retiring
+  the dual-run harnesses), `adapter.py`/`fold.py` (needs §5's native content so spells stop being translated
+  at cast time), `BUILTIN_EFFECTS` + `RuleEngine` entity dispatch (once no non-foldable effect and no
+  no-`damage_processor` path remains), and `_tick_durations` itself.
 
 ## 5. Native content rewrite
 
