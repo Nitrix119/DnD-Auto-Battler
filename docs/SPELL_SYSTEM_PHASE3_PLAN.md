@@ -12,10 +12,12 @@
 
 ## 0. Where we are (2026-08-31)
 
-> **Update (2026-09-02):** §5's **foundation + pilot** has landed — spells can now be authored as native
-> block `program`s (validated at load), and Fire Bolt, Fireball, and Vampiric Touch are migrated (VT inlined
-> to one file). See [§5a](#5a-foundation--pilot--done-2026-09-02). Suite **757 green**; `mypy src/` at 41.
-> The adapter/fold/`BUILTIN_EFFECTS` remain load-bearing for the other 20 spells and all `rules/*` content.
+> **Update (2026-09-02):** §5 is landed for the **whole spell corpus** — all 23 shipped spells are now
+> native block `program`s (validated at load; parity-gated against frozen legacy snapshots), and 5
+> two-file entity-effect rules were absorbed and deleted. See [§5a](#5a-foundation--pilot--done-2026-09-02)
+> and [§5b](#5b-full-spell-corpus-migration--done-2026-09-02). Suite **831 green**; `mypy src/` at 41.
+> `adapter.to_program` now backs only **weapon attacks**; `fold.rule_to_trigger_blocks` backs only
+> **conditions/global rules**; the `add_entity_effect`-fold path is dead from spells (a §4-removal candidate).
 
 **On the block engine (`src/spells/`):** all 23 shipped spells; all seven `rules/global/*` rules (damage
 resistance/immunity/vulnerability, the nat-20/nat-1 crit rules, concentration break, per-turn refill); and
@@ -184,11 +186,36 @@ What shipped:
   paths by [tests/test_validate_program.py](../tests/test_validate_program.py). Suite **757 green**;
   `mypy src/` steady at 41.
 
+### 5b. Full spell-corpus migration — ✅ DONE (2026-09-02)
+
+The remaining **20 spells** are now native `program`s — the whole shipped corpus (23) is off the legacy
+`effects` vocabulary. What shipped:
+
+- **Guardrail first.** A snapshot parity harness freezes each spell's pre-migration legacy shape in
+  `tests/legacy_snapshots/*.json` (effects + the referenced entity-effect rule for persistent spells);
+  [tests/test_native_corpus_parity.py](../tests/test_native_corpus_parity.py) resolves each migrated
+  spell's native program and its folded snapshot under four seeds and asserts identical result fields, with
+  a sentinel that fails until every spell is native. `test_block_parity.py`'s corpus smoke tests are now
+  native-aware (`parse_program` when `program` is set).
+- **15 instantaneous spells** (8 flat single-target + 7 set-targeted wrapped in an explicit
+  `for_each_target`) migrated as pure `effects`→`program` / `type`→`block` renames — delegated to two
+  Sonnet subagents, each gated on the parity harness. Per-spell structure tests
+  (`test_spells.py`/`test_save_outcomes.py`/`test_multi_target.py`) were made native-aware via
+  `_damage_entries`/`_save_entries`/`_block_types` helpers.
+- **5 persistent spells** (shield_of_faith, armor_of_agathys, longstrider, haste, charm_person) **inlined**
+  into self-contained programs (`lifetime`/`trigger`/`grant_action`/`apply_condition`), absorbing and
+  **deleting** their 4 `rules/entity_effects/*.json` files (charm_person uses the native condition-wiring
+  path, keeping the shared `conditions/charmed.json`). The obsolete adapter fold-shape/routing tests were
+  removed; the dedicated haste/longstrider effect tests were rewired to install the rider by *casting the
+  spell* (native path), preserving their granular coverage.
+- **Result:** `rules/entity_effects/` now holds only `colossus_slayer.json` + `conditions/`. The
+  `add_entity_effect`-fold path in `fold.py`/`adapter.py` is **spell-userless** (a §4-removal candidate);
+  `adapter.to_program` stays for weapon attacks; `fold.rule_to_trigger_blocks` stays for conditions/globals.
+  Suite **831 green**; `mypy src/` steady at 41.
+
 **Remaining §5 slices (follow-on):**
 
-- **Migrate the other 20 spells** to native `program`, parity-gated per spell (same harness). Absorb and
-  delete the remaining 5 `rules/entity_effects/*` files as their spells go native.
-- **Migrate `rules/global/*` and `rules/entity_effects/*`** off the `action`-verb `Rule` vocabulary onto
+- **Migrate `rules/global/*` and `rules/entity_effects/conditions/*`** off the `action`-verb `Rule` vocabulary onto
   native trigger-block programs (or give `install_global_rules` a native home) — the precondition for
   deleting `fold.py`, which still backs conditions, entity effects, and global rules.
 - **Delete the shims** (§4's big removals) once no file uses `effects` and no rule uses `action`-verbs:
