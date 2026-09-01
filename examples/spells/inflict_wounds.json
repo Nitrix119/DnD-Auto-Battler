@@ -20,14 +20,14 @@
     "material": []
   },
   "higher_level_scaling": "When you cast this spell using a spell slot of 2nd level or higher, the damage increases by 1d10 for each slot level above 1st.",
-  "effects": [
+  "program": [
     {
-      "type": "attack_roll",
+      "block": "attack_roll",
       "attack_bonus": "use_caster_bonus",
       "target": "defender"
     },
     {
-      "type": "damage",
+      "block": "damage",
       "target": "defender",
       "damage_type": "NECROTIC",
       "formula": "3d10",

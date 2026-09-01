@@ -41,6 +41,21 @@ def _damage_entries(spell):
     return walk(spell.pipeline_effects, "type")
 
 
+def _save_entries(spell):
+    """saving_throw steps of a spell, native (`program`) or legacy (`pipeline_effects`)."""
+    def walk(blocks, key):
+        out = []
+        for b in blocks:
+            if b.get(key) == "saving_throw":
+                out.append(b)
+            out.extend(walk(b.get("then", []), key))
+        return out
+
+    if spell.program:
+        return walk(spell.program, "block")
+    return walk(spell.pipeline_effects, "type")
+
+
 class TestSpellLoading:
     """Verify that spell JSON files round-trip through the loader correctly."""
 
@@ -87,7 +102,7 @@ class TestSpellLoading:
         assert spell.spell_range.range_type == RangeType.TOUCH
         assert spell.aoe is None
         assert not spell.components.requires_material
-        damage_steps = [s for s in spell.pipeline_effects if s.get("type") == "damage"]
+        damage_steps = _damage_entries(spell)
         assert len(damage_steps) == 1
         assert damage_steps[0]["damage_type"] == "NECROTIC"
         assert damage_steps[0]["formula"] == "3d10"
@@ -221,7 +236,7 @@ class TestSpellCombat:
         hit = attack_total >= target.ac
 
         if hit:
-            damage_step = next(s for s in inflict_wounds.pipeline_effects if s.get("type") == "damage")
+            damage_step = _damage_entries(inflict_wounds)[0]
             damage = roll_formula(damage_step["formula"])
             target.take_damage(Damage(DamageType[damage_step["damage_type"]], damage))
             assert target.hp < target.max_hp
@@ -249,7 +264,7 @@ class TestRayOfFrostLoading:
         assert spell.components.verbal
         assert spell.components.somatic
         assert not spell.components.requires_material
-        damage_steps = [s for s in spell.pipeline_effects if s.get("type") == "damage"]
+        damage_steps = _damage_entries(spell)
         assert len(damage_steps) == 1
         assert damage_steps[0]["damage_type"] == "COLD"
         assert damage_steps[0]["formula"] == "1d8"
@@ -265,9 +280,9 @@ class TestSacredFlameLoading:
         assert spell.targeting_type == TargetingType.SINGLE_TARGET
         assert spell.spell_range.range_type == RangeType.FEET
         assert spell.spell_range.distance_ft == 60
-        save_steps = [s for s in spell.pipeline_effects if s.get("type") == "saving_throw"]
+        save_steps = _save_entries(spell)
         assert save_steps[0]["attribute"] == "dexterity"
-        damage_steps = [s for s in spell.pipeline_effects if s.get("type") == "damage"]
+        damage_steps = _damage_entries(spell)
         assert len(damage_steps) == 1
         assert damage_steps[0]["damage_type"] == "RADIANT"
         assert damage_steps[0]["formula"] == "1d8"
@@ -285,7 +300,7 @@ class TestChillTouchLoading:
         assert spell.spell_range.distance_ft == 120
         assert spell.duration.unit == DurationUnit.ROUND
         assert spell.duration.count == 1
-        damage_steps = [s for s in spell.pipeline_effects if s.get("type") == "damage"]
+        damage_steps = _damage_entries(spell)
         assert len(damage_steps) == 1
         assert damage_steps[0]["damage_type"] == "NECROTIC"
         assert damage_steps[0]["formula"] == "1d8"
@@ -303,7 +318,7 @@ class TestEldritchBlastLoading:
         assert spell.spell_range.range_type == RangeType.FEET
         assert spell.spell_range.distance_ft == 120
         assert spell.duration.unit == DurationUnit.INSTANTANEOUS
-        damage_steps = [s for s in spell.pipeline_effects if s.get("type") == "damage"]
+        damage_steps = _damage_entries(spell)
         assert len(damage_steps) == 1
         assert damage_steps[0]["damage_type"] == "FORCE"
         assert damage_steps[0]["formula"] == "1d10"
@@ -319,9 +334,9 @@ class TestPoisonSprayLoading:
         assert spell.targeting_type == TargetingType.SINGLE_TARGET
         assert spell.spell_range.range_type == RangeType.FEET
         assert spell.spell_range.distance_ft == 10
-        save_steps = [s for s in spell.pipeline_effects if s.get("type") == "saving_throw"]
+        save_steps = _save_entries(spell)
         assert save_steps[0]["attribute"] == "constitution"
-        damage_steps = [s for s in spell.pipeline_effects if s.get("type") == "damage"]
+        damage_steps = _damage_entries(spell)
         assert len(damage_steps) == 1
         assert damage_steps[0]["damage_type"] == "POISON"
         assert damage_steps[0]["formula"] == "1d12"
@@ -337,9 +352,9 @@ class TestAcidSplashLoading:
         assert spell.targeting_type == TargetingType.SINGLE_TARGET
         assert spell.spell_range.range_type == RangeType.FEET
         assert spell.spell_range.distance_ft == 60
-        save_steps = [s for s in spell.pipeline_effects if s.get("type") == "saving_throw"]
+        save_steps = _save_entries(spell)
         assert save_steps[0]["attribute"] == "dexterity"
-        damage_steps = [s for s in spell.pipeline_effects if s.get("type") == "damage"]
+        damage_steps = _damage_entries(spell)
         assert len(damage_steps) == 1
         assert damage_steps[0]["damage_type"] == "ACID"
         assert damage_steps[0]["formula"] == "1d6"
@@ -359,7 +374,7 @@ class TestGuidingBoltLoading:
         assert spell.duration.count == 1
         assert not spell.components.requires_material
         assert spell.higher_level_scaling is not None
-        damage_steps = [s for s in spell.pipeline_effects if s.get("type") == "damage"]
+        damage_steps = _damage_entries(spell)
         assert len(damage_steps) == 1
         assert damage_steps[0]["damage_type"] == "RADIANT"
         assert damage_steps[0]["formula"] == "4d6"
@@ -380,7 +395,7 @@ class TestMagicMissileLoading:
         assert spell.duration.unit == DurationUnit.INSTANTANEOUS
         assert not spell.components.requires_material
         assert spell.higher_level_scaling is not None
-        damage_steps = [s for s in spell.pipeline_effects if s.get("type") == "damage"]
+        damage_steps = _damage_entries(spell)
         assert len(damage_steps) == 1
         assert damage_steps[0]["damage_type"] == "FORCE"
         assert damage_steps[0]["formula"] == "1d4+1"
@@ -414,9 +429,9 @@ class TestThunderwaveLoading:
         assert spell.aoe.shape == AOEShape.CUBE
         assert spell.aoe.size_ft == 15
         assert spell.higher_level_scaling is not None
-        save_steps = [s for s in spell.pipeline_effects if s.get("type") == "saving_throw"]
+        save_steps = _save_entries(spell)
         assert save_steps[0]["attribute"] == "constitution"
-        damage_steps = [s for s in spell.pipeline_effects if s.get("type") == "damage"]
+        damage_steps = _damage_entries(spell)
         assert len(damage_steps) == 1
         assert damage_steps[0]["damage_type"] == "THUNDER"
         assert damage_steps[0]["formula"] == "2d8"
@@ -435,9 +450,9 @@ class TestBurningHandsLoading:
         assert spell.aoe.shape == AOEShape.CONE
         assert spell.aoe.size_ft == 15
         assert spell.higher_level_scaling is not None
-        save_steps = [s for s in spell.pipeline_effects if s.get("type") == "saving_throw"]
+        save_steps = _save_entries(spell)
         assert save_steps[0]["attribute"] == "dexterity"
-        damage_steps = [s for s in spell.pipeline_effects if s.get("type") == "damage"]
+        damage_steps = _damage_entries(spell)
         assert len(damage_steps) == 1
         assert damage_steps[0]["damage_type"] == "FIRE"
         assert damage_steps[0]["formula"] == "3d6"
@@ -516,7 +531,7 @@ class TestNewSpellsCombat:
         roll = roll_d20()
         attack_total = roll + wizard.spell_attack_bonus
         if attack_total >= target.ac:
-            damage_step = next(s for s in spell.pipeline_effects if s.get("type") == "damage")
+            damage_step = _damage_entries(spell)[0]
             damage = roll_formula(damage_step["formula"])
             target.take_damage(Damage(DamageType[damage_step["damage_type"]], damage))
             assert target.hp < target.max_hp
@@ -539,7 +554,7 @@ class TestNewSpellsCombat:
         roll = roll_d20()
         attack_total = roll + wizard.spell_attack_bonus
         if attack_total >= target.ac:
-            damage_step = next(s for s in spell.pipeline_effects if s.get("type") == "damage")
+            damage_step = _damage_entries(spell)[0]
             damage = roll_formula(damage_step["formula"])
             target.take_damage(Damage(DamageType[damage_step["damage_type"]], damage))
             assert target.hp < target.max_hp
@@ -559,7 +574,7 @@ class TestNewSpellsCombat:
         target = goblins[0]
         initial_hp = target.hp
 
-        damage_step = next(s for s in spell.pipeline_effects if s.get("type") == "damage")
+        damage_step = _damage_entries(spell)[0]
         damage = roll_formula(damage_step["formula"])
         target.take_damage(Damage(DamageType[damage_step["damage_type"]], damage))
         assert target.hp < initial_hp
@@ -577,7 +592,7 @@ class TestNewSpellsCombat:
         roll = roll_d20()
         attack_total = roll + wizard.spell_attack_bonus
         if attack_total >= target.ac:
-            damage_step = next(s for s in spell.pipeline_effects if s.get("type") == "damage")
+            damage_step = _damage_entries(spell)[0]
             damage = roll_formula(damage_step["formula"])
             target.take_damage(Damage(DamageType[damage_step["damage_type"]], damage))
             assert target.hp < target.max_hp

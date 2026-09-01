@@ -24,6 +24,32 @@ import os
 SPELLS_DIR = os.path.join(os.path.dirname(__file__), "..", "examples", "spells")
 
 
+def _block_types(spell):
+    """Top-level block/step type names, native (`program`) or legacy, flattening a
+    single top-level ``for_each_target`` wrapper (native set-targeted spells)."""
+    if spell.program:
+        blocks = spell.program
+        if len(blocks) == 1 and blocks[0].get("block") == "for_each_target":
+            blocks = blocks[0].get("then", [])
+        return [b.get("block") for b in blocks]
+    return [s.get("type") for s in spell.pipeline_effects]
+
+
+def _damage_entries(spell):
+    """damage steps of a spell, native (`program`) or legacy (`pipeline_effects`)."""
+    def walk(blocks, key):
+        out = []
+        for b in blocks:
+            if b.get(key) == "damage":
+                out.append(b)
+            out.extend(walk(b.get("then", []), key))
+        return out
+
+    if spell.program:
+        return walk(spell.program, "block")
+    return walk(spell.pipeline_effects, "type")
+
+
 def _entity(name="E", hp=100, ac=10):
     sb = StatBlock(name=name, ability_scores=AbilityScores(10, 10, 10, 10, 10, 10),
                    hit_points_max=hp, armor_class=ac)
@@ -44,13 +70,13 @@ class TestMultiTargetContent:
     def test_magic_missile_is_multi_target(self):
         spell = StatBlockLoader.load_spell_from_json(os.path.join(SPELLS_DIR, "magic_missile.json"))
         assert spell.targeting_type == TargetingType.MULTI_TARGET
-        dmg = next(s for s in spell.pipeline_effects if s.get("type") == "damage")
+        dmg = _damage_entries(spell)[0]
         assert dmg["formula"] == "1d4+1"
 
     def test_scorching_ray_loads(self):
         spell = StatBlockLoader.load_spell_from_json(os.path.join(SPELLS_DIR, "scorching_ray.json"))
         assert spell.targeting_type == TargetingType.MULTI_TARGET
-        types = [s["type"] for s in spell.pipeline_effects]
+        types = _block_types(spell)
         assert types == ["attack_roll", "damage"]
 
     def test_eldritch_blast_is_multi_target(self):

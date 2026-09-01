@@ -21,18 +21,23 @@
     "material": []
   },
   "higher_level_scaling": "When you cast this spell using a spell slot of 3rd level or higher, you create one additional ray for each slot level above 2nd.",
-  "effects": [
+  "program": [
     {
-      "type": "attack_roll",
-      "attack_bonus": "use_caster_bonus",
-      "target": "defender"
-    },
-    {
-      "type": "damage",
-      "target": "defender",
-      "damage_type": "FIRE",
-      "formula": "2d6",
-      "requires_hit": true
+      "block": "for_each_target",
+      "then": [
+        {
+          "block": "attack_roll",
+          "attack_bonus": "use_caster_bonus",
+          "target": "defender"
+        },
+        {
+          "block": "damage",
+          "target": "defender",
+          "damage_type": "FIRE",
+          "formula": "2d6",
+          "requires_hit": true
+        }
+      ]
     }
   ],
   "animation": [

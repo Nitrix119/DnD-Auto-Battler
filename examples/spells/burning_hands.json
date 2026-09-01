@@ -24,18 +24,23 @@
     "material": []
   },
   "higher_level_scaling": "When you cast this spell using a spell slot of 2nd level or higher, the damage increases by 1d6 for each slot level above 1st.",
-  "effects": [
+  "program": [
     {
-      "type": "saving_throw",
-      "attribute": "dexterity",
-      "dc": "use_caster_dc"
-    },
-    {
-      "type": "damage",
-      "damage_type": "FIRE",
-      "formula": "3d6",
-      "roll_once": true,
-      "save_result": {"on_success": "half_damage"}
+      "block": "for_each_target",
+      "then": [
+        {
+          "block": "saving_throw",
+          "attribute": "dexterity",
+          "dc": "use_caster_dc"
+        },
+        {
+          "block": "damage",
+          "damage_type": "FIRE",
+          "formula": "3d6",
+          "roll_once": true,
+          "save_result": {"on_success": "half_damage"}
+        }
+      ]
     }
   ],
   "animation": [

@@ -63,6 +63,21 @@ def _damage_entries(spell):
     return walk(spell.pipeline_effects, "type")
 
 
+def _save_entries(spell):
+    """saving_throw steps of a spell, native (`program`) or legacy (`pipeline_effects`)."""
+    def walk(blocks, key):
+        out = []
+        for b in blocks:
+            if b.get(key) == "saving_throw":
+                out.append(b)
+            out.extend(walk(b.get("then", []), key))
+        return out
+
+    if spell.program:
+        return walk(spell.program, "block")
+    return walk(spell.pipeline_effects, "type")
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -154,39 +169,39 @@ class TestSaveOutcomeLoading:
 
     def test_burning_hands_has_half_damage_on_success(self):
         spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "burning_hands.json"))
-        damage_steps = [s for s in spell.pipeline_effects if s.get("type") == "damage"]
+        damage_steps = _damage_entries(spell)
         assert damage_steps[0].get("save_result", {}).get("on_success") == "half_damage"
 
     def test_thunderwave_has_half_damage_on_success(self):
         spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "thunderwave.json"))
-        damage_steps = [s for s in spell.pipeline_effects if s.get("type") == "damage"]
+        damage_steps = _damage_entries(spell)
         assert damage_steps[0].get("save_result", {}).get("on_success") == "half_damage"
 
     def test_acid_splash_has_no_damage_on_success(self):
         spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "acid_splash.json"))
-        damage_steps = [s for s in spell.pipeline_effects if s.get("type") == "damage"]
+        damage_steps = _damage_entries(spell)
         assert damage_steps[0].get("save_result", {}).get("on_success") == "no_damage"
 
     def test_sacred_flame_has_no_damage_on_success(self):
         spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "sacred_flame.json"))
-        damage_steps = [s for s in spell.pipeline_effects if s.get("type") == "damage"]
+        damage_steps = _damage_entries(spell)
         assert damage_steps[0].get("save_result", {}).get("on_success") == "no_damage"
 
     def test_poison_spray_has_no_damage_on_success(self):
         spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "poison_spray.json"))
-        damage_steps = [s for s in spell.pipeline_effects if s.get("type") == "damage"]
+        damage_steps = _damage_entries(spell)
         assert damage_steps[0].get("save_result", {}).get("on_success") == "no_damage"
 
     def test_firebolt_has_no_save_step(self):
         """Attack-roll spells have no saving throw step in the pipeline."""
         spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "firebolt.json"))
-        save_steps = [s for s in spell.pipeline_effects if s.get("type") == "saving_throw"]
+        save_steps = _save_entries(spell)
         assert len(save_steps) == 0
 
     def test_magic_missile_has_no_save_step(self):
         """Auto-hit spells with no save have no saving throw step in the pipeline."""
         spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "magic_missile.json"))
-        save_steps = [s for s in spell.pipeline_effects if s.get("type") == "saving_throw"]
+        save_steps = _save_entries(spell)
         assert len(save_steps) == 0
 
 

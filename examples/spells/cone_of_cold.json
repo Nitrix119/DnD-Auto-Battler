@@ -26,18 +26,23 @@
     "material": ["a small crystal or glass cone"]
   },
   "higher_level_scaling": "When you cast this spell using a spell slot of 6th level or higher, the damage increases by 1d8 for each slot level above 5th.",
-  "effects": [
+  "program": [
     {
-      "type": "saving_throw",
-      "attribute": "constitution",
-      "dc": "use_caster_dc"
-    },
-    {
-      "type": "damage",
-      "damage_type": "COLD",
-      "formula": "8d8",
-      "roll_once": true,
-      "save_result": {"on_success": "half_damage"}
+      "block": "for_each_target",
+      "then": [
+        {
+          "block": "saving_throw",
+          "attribute": "constitution",
+          "dc": "use_caster_dc"
+        },
+        {
+          "block": "damage",
+          "damage_type": "COLD",
+          "formula": "8d8",
+          "roll_once": true,
+          "save_result": {"on_success": "half_damage"}
+        }
+      ]
     }
   ],
   "animation": [

@@ -20,14 +20,14 @@
     "somatic": true,
     "material": []
   },
-  "effects": [
+  "program": [
     {
-      "type": "attack_roll",
+      "block": "attack_roll",
       "attack_bonus": "use_caster_bonus",
       "target": "defender"
     },
     {
-      "type": "damage",
+      "block": "damage",
       "target": "defender",
       "damage_type": "COLD",
       "formula": "1d8",

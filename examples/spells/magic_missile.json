@@ -21,12 +21,17 @@
     "material": []
   },
   "higher_level_scaling": "When you cast this spell using a spell slot of 2nd level or higher, the spell creates one more dart for each slot level above 1st.",
-  "effects": [
+  "program": [
     {
-      "type": "damage",
-      "target": "defender",
-      "damage_type": "FORCE",
-      "formula": "1d4+1"
+      "block": "for_each_target",
+      "then": [
+        {
+          "block": "damage",
+          "target": "defender",
+          "damage_type": "FORCE",
+          "formula": "1d4+1"
+        }
+      ]
     }
   ],
   "animation": [
