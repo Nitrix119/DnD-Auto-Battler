@@ -1,0 +1,19 @@
+{
+  "effects": [
+    {
+      "type": "saving_throw",
+      "attribute": "dexterity",
+      "dc": "use_caster_dc",
+      "target": "defender"
+    },
+    {
+      "type": "damage",
+      "target": "defender",
+      "damage_type": "RADIANT",
+      "formula": "1d8",
+      "save_result": {
+        "on_success": "no_damage"
+      }
+    }
+  ]
+}

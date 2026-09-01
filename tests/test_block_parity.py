@@ -135,20 +135,35 @@ def test_resolve_program_rejects_single_block_beside_iterator():
 
 # ── Corpus smoke: every expressible shipped spell resolves on the block engine ──
 
+def _corpus_program(spell):
+    """The block program for a shipped spell, native or legacy.
+
+    A native spell (``spell.program`` set) is parsed directly; a legacy spell is
+    adapter-translated. Returns None when the legacy engine can't express it (kept
+    off the smoke set, as before). Keeps full-corpus coverage as spells migrate.
+    """
+    if spell.program:
+        return parse_program(spell.program)
+    if can_run_on_blocks(spell):
+        return to_program(spell.pipeline_effects, spell.targeting_type)
+    return None
+
+
 def test_single_target_corpus_resolves_on_blocks():
     """Every shipped single-target instantaneous spell resolves without error and
-    returns a result — a regression net against a spell that stops folding."""
+    returns a result — a regression net against a spell that stops resolving."""
     files = sorted(glob.glob(os.path.join(SPELLS_DIR, "*.json")))
     assert files, "no spell files found"
     tested = []
     for f in files:
         spell = StatBlockLoader.load_spell_from_json(f)
-        if can_run_on_blocks(spell) and spell.targeting_type == TargetingType.SINGLE_TARGET:
+        program = _corpus_program(spell)
+        if program is not None and spell.targeting_type == TargetingType.SINGLE_TARGET:
             dice.seed_rng(7)
             caster, target = _caster(), _target(90)
             target.take_damage(Damage(DamageType.GENERIC, 35))  # room to hit/heal
             bus = EventBus()
-            result = resolve_blocks(caster, target, spell, to_program(spell.pipeline_effects),
+            result = resolve_blocks(caster, target, spell, program,
                                     event_bus=bus, damage_processor=DamageProcessor(bus))
             assert result.hit in (True, False)
             tested.append(spell.name)
@@ -161,13 +176,13 @@ def test_set_targeted_corpus_resolves_on_blocks():
     tested = []
     for f in files:
         spell = StatBlockLoader.load_spell_from_json(f)
-        if can_run_on_blocks(spell) and spell.targeting_type in (
+        program = _corpus_program(spell)
+        if program is not None and spell.targeting_type in (
             TargetingType.AOE, TargetingType.MULTI_TARGET
         ):
             dice.seed_rng(7)
             caster = _caster()
             targets = [_target(90) for _ in range(4)]
-            program = to_program(spell.pipeline_effects, spell.targeting_type)
             bus = EventBus()
             results = resolve_program(caster, targets, spell, program,
                                       event_bus=bus, damage_processor=DamageProcessor(bus),

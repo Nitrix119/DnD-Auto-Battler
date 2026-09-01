@@ -1,0 +1,26 @@
+{
+  "effects": [
+    {
+      "type": "add_entity_effect",
+      "entity_effect_name": "longstrider",
+      "target": "defender"
+    }
+  ],
+  "rule": {
+    "name": "longstrider",
+    "triggers": [
+      "TURN_START"
+    ],
+    "condition": "event.entity == entity",
+    "effects": [
+      {
+        "action": "AddResource",
+        "target": "entity",
+        "resource": "movement",
+        "amount": 10
+      }
+    ],
+    "source": "Longstrider"
+  },
+  "rule_name": "longstrider"
+}

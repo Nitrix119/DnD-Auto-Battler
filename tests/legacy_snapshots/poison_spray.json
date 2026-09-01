@@ -1,0 +1,19 @@
+{
+  "effects": [
+    {
+      "type": "saving_throw",
+      "attribute": "constitution",
+      "dc": "use_caster_dc",
+      "target": "defender"
+    },
+    {
+      "type": "damage",
+      "target": "defender",
+      "damage_type": "POISON",
+      "formula": "1d12",
+      "save_result": {
+        "on_success": "no_damage"
+      }
+    }
+  ]
+}

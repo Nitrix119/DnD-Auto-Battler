@@ -1,0 +1,18 @@
+{
+  "effects": [
+    {
+      "type": "saving_throw",
+      "attribute": "constitution",
+      "dc": "use_caster_dc"
+    },
+    {
+      "type": "damage",
+      "damage_type": "THUNDER",
+      "formula": "2d8",
+      "roll_once": true,
+      "save_result": {
+        "on_success": "half_damage"
+      }
+    }
+  ]
+}

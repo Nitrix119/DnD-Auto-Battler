@@ -1,0 +1,10 @@
+{
+  "effects": [
+    {
+      "type": "healing",
+      "target": "defender",
+      "formula": "1d8",
+      "bonus": "event.caster.spellcasting_modifier"
+    }
+  ]
+}

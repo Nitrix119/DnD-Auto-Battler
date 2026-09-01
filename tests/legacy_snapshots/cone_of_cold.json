@@ -1,0 +1,18 @@
+{
+  "effects": [
+    {
+      "type": "saving_throw",
+      "attribute": "constitution",
+      "dc": "use_caster_dc"
+    },
+    {
+      "type": "damage",
+      "damage_type": "COLD",
+      "formula": "8d8",
+      "roll_once": true,
+      "save_result": {
+        "on_success": "half_damage"
+      }
+    }
+  ]
+}

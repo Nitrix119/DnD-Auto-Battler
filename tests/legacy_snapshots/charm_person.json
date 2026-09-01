@@ -1,0 +1,34 @@
+{
+  "effects": [
+    {
+      "type": "saving_throw",
+      "attribute": "wisdom",
+      "dc": "use_caster_dc",
+      "target": "defender"
+    },
+    {
+      "type": "add_entity_effect",
+      "entity_effect_name": "charmed",
+      "target": "defender",
+      "condition": "not context.save_success",
+      "instance_fields": {
+        "charmer": "event.caster"
+      }
+    }
+  ],
+  "rule": {
+    "name": "charmed",
+    "triggers": [
+      "ATTACK_DECLARED"
+    ],
+    "condition": "event.attacker == entity",
+    "effects": [
+      {
+        "action": "Cancel",
+        "when": "event.defender == instance_fields.charmer"
+      }
+    ],
+    "_note": "Apply via engine.apply_effect(target, rule, instance_fields={'charmer': caster_entity}). Charmer has advantage on social ability checks against the charmed creature (pending ability check system)."
+  },
+  "rule_name": "charmed"
+}

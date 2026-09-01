@@ -20,15 +20,15 @@
     "somatic": true,
     "material": []
   },
-  "effects": [
+  "program": [
     {
-      "type": "saving_throw",
+      "block": "saving_throw",
       "attribute": "dexterity",
       "dc": "use_caster_dc",
       "target": "defender"
     },
     {
-      "type": "damage",
+      "block": "damage",
       "target": "defender",
       "damage_type": "ACID",
       "formula": "1d6",

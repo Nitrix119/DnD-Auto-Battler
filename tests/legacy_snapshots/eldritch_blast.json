@@ -1,0 +1,16 @@
+{
+  "effects": [
+    {
+      "type": "attack_roll",
+      "attack_bonus": "use_caster_bonus",
+      "target": "defender"
+    },
+    {
+      "type": "damage",
+      "target": "defender",
+      "damage_type": "FORCE",
+      "formula": "1d10",
+      "requires_hit": true
+    }
+  ]
+}
