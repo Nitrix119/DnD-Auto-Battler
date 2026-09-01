@@ -8,7 +8,6 @@ that saving throws gate their application via ``condition``, and that
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
 
 from src.models import Entity, SpellAction
 from src.combat import EventBus, EventType
@@ -51,11 +50,15 @@ def setup_engine_and_resolver(*entities):
 
 
 def charm_person_spell(save_dc: int = 13) -> SpellAction:
-    """Load Charm Person from the example spell file, overriding the save DC."""
+    """Load Charm Person from the example spell file, overriding the save DC.
+
+    Charm Person is a native ``program`` (Phase 3 §5); its saving-throw block lives
+    in ``program``, so the DC override targets that.
+    """
     spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "charm_person.json"))
-    for step in spell.pipeline_effects:
-        if step.get("type") == "saving_throw":
-            step["dc"] = save_dc
+    for block in spell.program:
+        if block.get("block") == "saving_throw":
+            block["dc"] = save_dc
     return spell
 
 
@@ -63,19 +66,21 @@ def charm_person_spell(save_dc: int = 13) -> SpellAction:
 
 class TestSpellEffectLoading:
 
-    def test_charm_person_loads_effects(self):
-        """charm_person.json should parse its effects list into pipeline_effects."""
+    def test_charm_person_loads_program(self):
+        """charm_person.json parses into a native program: a save then an
+        apply_condition for ``charmed``, gated on a failed save, binding the charmer."""
         spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "charm_person.json"))
-        effect_steps = [s for s in spell.pipeline_effects if s.get("type") == "add_entity_effect"]
-        assert len(effect_steps) == 1
-        step = effect_steps[0]
-        assert step.get("entity_effect_name") == "charmed"
-        assert step.get("condition") == "not context.save_success"
-        assert step.get("instance_fields", {}).get("charmer") == "event.caster"
+        assert spell.program and not spell.pipeline_effects
+        cond = [b for b in spell.program if b.get("block") == "apply_condition"]
+        assert len(cond) == 1
+        block = cond[0]
+        assert block.get("condition_type") == "charmed"
+        assert block.get("condition") == "not context.save_success"
+        assert block.get("bindings", {}).get("charmer") == "event.caster"
 
     def test_charm_person_save_ability(self):
         spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "charm_person.json"))
-        save_steps = [s for s in spell.pipeline_effects if s.get("type") == "saving_throw"]
+        save_steps = [b for b in spell.program if b.get("block") == "saving_throw"]
         assert save_steps[0]["attribute"] == "wisdom"
         assert save_steps[0]["dc"] == "use_caster_dc"
 
@@ -226,20 +231,23 @@ class TestSpellEffectApplicationOnFailedSave:
 
 class TestSpellEffectsWithoutRuleEngine:
 
-    def test_spell_with_entity_effect_raises_without_rule_engine(self):
-        """A spell whose entity effect can't be resolved (no rule engine to supply the
-        effect registry) now fails **loudly** rather than silently skipping the effect
-        — the block engine has one resolution path and refuses what it can't express
-        (fail-loud, CLAUDE.md §2.5), instead of the legacy silent no-op."""
+    def test_native_condition_degrades_without_rule_engine(self):
+        """Without a rule engine (no effect registry), a native ``apply_condition``
+        still adds the condition *marker* but installs no reactive rider — a graceful
+        degrade, not a crash. (Loud-fail for unexpressable native content is at load,
+        via ``validate_program``; see tests/test_validate_program.py.)"""
         wizard = load_wizard()
         goblin = load_goblin()
         bus = EventBus()
         resolver = SpellResolver(bus, DamageProcessor(bus), rule_engine=None)
 
-        spell = charm_person_spell(save_dc=30)
+        spell = charm_person_spell(save_dc=30)  # save auto-fails → charm applies
+        resolver.resolve(wizard, [goblin], spell)
 
-        with pytest.raises(ValueError):
-            resolver.resolve(wizard, [goblin], spell)
+        charmed = [c for c in goblin.get_active_conditions()
+                   if c.condition_type.value == "charmed"]
+        assert len(charmed) == 1          # marker applied
+        assert goblin.lifetimes == []     # but no rider installed without a registry
 
 
 # ── Rule caching ──────────────────────────────────────────────────────────────
@@ -442,18 +450,25 @@ def longstrider_spell() -> SpellAction:
 
 class TestLongstriderSpellEffects:
 
-    def test_longstrider_loads_effects(self):
-        """longstrider.json should parse its effects list into pipeline_effects."""
+    def test_longstrider_loads_program(self):
+        """longstrider.json parses into a native program: a rounds lifetime whose
+        TURN_START rider grants movement (its effect is inline, not a second file)."""
         spell = longstrider_spell()
-        effect_steps = [s for s in spell.pipeline_effects if s.get("type") == "add_entity_effect"]
-        assert len(effect_steps) == 1
-        assert effect_steps[0]["entity_effect_name"] == "longstrider"
+        assert spell.program and not spell.pipeline_effects
+        life = spell.program[0]
+        assert life["block"] == "lifetime" and life.get("kind") == "rounds"
+        assert life["then"][0]["block"] == "trigger"
 
     def test_longstrider_no_save(self):
-        """Longstrider has no saving throw step in the pipeline."""
+        """Longstrider has no saving throw block in the program."""
         spell = longstrider_spell()
-        save_steps = [s for s in spell.pipeline_effects if s.get("type") == "saving_throw"]
-        assert save_steps == []
+
+        def walk(blocks):
+            for b in blocks:
+                yield b.get("block")
+                yield from walk(b.get("then", []))
+
+        assert "saving_throw" not in set(walk(spell.program))
 
     def test_longstrider_applies_effect_on_cast(self):
         """Casting Longstrider installs the movement effect on the target.

@@ -1,19 +1,25 @@
-"""Tests for the Haste entity effect.
+"""Tests for the Haste spell's per-turn action grant (native block program).
 
-Verifies that Haste grants +1 action per turn, fires after the global
-resource refill rule, and expires correctly after its duration.
+Verifies that Haste grants +1 action per turn, fires after the global resource
+refill rule, and expires correctly after its duration. Haste is now authored as a
+native ``program`` (Phase 3 §5) — its rider is installed by **casting the spell**
+(self-cast here), not by applying a standalone entity-effect rule. The block-native
+end-to-end coverage on a targeted ally lives in
+``tests/test_entity_effect_fold.py::TestHasteFold``.
 """
-
-import pytest
 
 from src.models import AbilityScores, StatBlock, Entity, ACTION_COST
 from src.combat.event_bus import EventBus
 from src.combat.events import EventType
 from src.combat.event_data import TurnEventData
+from src.combat.damage_processor import DamageProcessor
+from src.combat.spell_resolver import SpellResolver
+from src.combat.lifetime_clock import install_lifetime_clock
 from src.rules.rule_engine import RuleEngine
-from src.rules.rule_loader import RuleLoader
+from src.rules.effect_registry import EffectRegistry
+from src.loaders import StatBlockLoader
 
-HASTE_RULE_PATH = "rules/entity_effects/haste.json"
+HASTE_SPELL_PATH = "examples/spells/haste.json"
 REFILL_RULE_PATH = "rules/global/action_economy_refill.json"
 
 
@@ -33,24 +39,35 @@ def _emit_turn(bus, entity, round_num=1, turn_num=1):
 
 
 def _emit_turn_end(bus, entity, round_num=1, turn_num=1):
-    """Emit a TURN_END event for *entity* (ticks durations)."""
+    """Emit a TURN_END event for *entity* (ticks lifetimes/durations)."""
     bus.emit(EventType.TURN_END, TurnEventData(
         entity=entity, round_num=round_num, turn_num=turn_num,
     ))
 
 
-def _setup(entity):
-    """Wire up an EventBus + RuleEngine with refill rule and haste applied."""
-    bus = EventBus()
-    engine = RuleEngine(
-        bus,
-        entities_getter=lambda: [entity],
-        damage_processor=None,
-    )
+def _engine(bus, entities):
+    reg = EffectRegistry()
+    reg.scan_directory("rules/entity_effects")
+    engine = RuleEngine(bus, entities_getter=lambda: list(entities),
+                        damage_processor=DamageProcessor(bus), effect_registry=reg)
     engine.load_from_file(REFILL_RULE_PATH)
-    haste_rule = RuleLoader.load(HASTE_RULE_PATH)
-    engine.apply_effect(entity, haste_rule)
+    return engine
+
+
+def _cast_haste_on(entity, *others):
+    """Cast Haste (self-cast) so its native rider is installed on *entity*."""
+    bus = EventBus()
+    install_lifetime_clock(bus)  # ticks the concentration duration on TURN_END
+    engine = _engine(bus, [entity, *others])
+    resolver = SpellResolver(bus, engine._damage_processor, rule_engine=engine)
+    resolver.resolve(entity, [entity],
+                     StatBlockLoader.load_spell_from_json(HASTE_SPELL_PATH))
     return bus, engine
+
+
+def _setup(entity):
+    """Cast Haste on *entity* and return its (bus, engine)."""
+    return _cast_haste_on(entity)
 
 
 # ── Tests ────────────────────────────────────────────────────────────────────
@@ -82,16 +99,7 @@ class TestHaste:
         """Haste on entity A does not give extra actions to entity B."""
         entity_a = _make_entity("Hasted Fighter")
         entity_b = _make_entity("Normal Fighter")
-        bus = EventBus()
-        all_entities = [entity_a, entity_b]
-        engine = RuleEngine(
-            bus,
-            entities_getter=lambda: all_entities,
-            damage_processor=None,
-        )
-        engine.load_from_file(REFILL_RULE_PATH)
-        haste_rule = RuleLoader.load(HASTE_RULE_PATH)
-        engine.apply_effect(entity_a, haste_rule)
+        bus, engine = _cast_haste_on(entity_a, entity_b)
 
         # Entity B's turn — should get normal resources only
         _emit_turn(bus, entity_b, round_num=1)

@@ -9,129 +9,29 @@ on the legacy engine until 4.3b-2 folds the trigger side.
 
 import os
 
-from src.models import Entity, AbilityScores, StatBlock, SpellAction, ACTION_COST
+from src.models import Entity, AbilityScores, StatBlock, ACTION_COST
 from src.combat.event_bus import EventBus
 from src.combat.damage_processor import DamageProcessor
 from src.combat.events import EventType
 from src.rules import EffectRegistry, RuleEngine
 from src.loaders import StatBlockLoader
-from src.spells.adapter import can_run_on_blocks, to_program
 
 SPELLS_DIR = os.path.join(os.path.dirname(__file__), "..", "examples", "spells")
-
-
-def _rules():
-    reg = EffectRegistry()
-    reg.scan_directory("rules/entity_effects")
-    return lambda name: reg.get(name) if name in reg else None
 
 
 def _spell(name):
     return StatBlockLoader.load_spell_from_json(os.path.join(SPELLS_DIR, f"{name}.json"))
 
 
-# ── Routing boundary ────────────────────────────────────────────────────────────
-
-class TestFoldRouting:
-
-    def test_shield_of_faith_is_foldable_with_the_rule_lookup(self):
-        assert can_run_on_blocks(_spell("shield_of_faith"), _rules()) is True
-
-    def test_add_entity_effect_stays_legacy_without_a_rule_lookup(self):
-        # No rule to prove the effect has no reactive triggers → not foldable.
-        assert can_run_on_blocks(_spell("shield_of_faith"), None) is False
-
-    def test_haste_folds_onto_blocks(self):
-        # Haste folds like Vampiric Touch: a concentration lifetime carrying the
-        # duration clock, whose TURN_START rider grants the ally +1 action.
-        assert can_run_on_blocks(_spell("haste"), _rules()) is True
-        spell = _spell("haste")
-        program = to_program(spell.pipeline_effects, spell.targeting_type, _rules())
-        life = program[-1]
-        assert life.type == "lifetime"
-        assert life.get("kind") == "concentration"
-        assert life.get("duration_rounds") == 10
-        trig = life.then[0]
-        assert trig.type == "trigger"
-        assert trig.get("event") == "TURN_START"
-        assert trig.get("holder") == "defender"  # the hasted ally
-        add = trig.then[0]
-        assert add.type == "add_resource"
-        assert add.get("resource") == "actions"
-
-    def test_charm_person_folds_with_instance_field_bindings(self):
-        # Charm Person's instance_fields (charmer) fold as the rider's captured
-        # ``bindings``; the charmed Cancel keeps its per-effect ``when`` as a
-        # fire-time condition referencing ``instance_fields.charmer``.
-        assert can_run_on_blocks(_spell("charm_person"), _rules()) is True
-        spell = _spell("charm_person")
-        program = to_program(spell.pipeline_effects, spell.targeting_type, _rules())
-        life = program[-1]
-        assert life.type == "lifetime"
-        trig = life.then[0]
-        assert trig.type == "trigger"
-        assert trig.get("event") == "ATTACK_DECLARED"
-        assert trig.get("bindings") == {"charmer": "event.caster"}
-        cancel = trig.then[0]
-        assert cancel.type == "cancel"
-        assert cancel.get("condition") == "event.defender == instance_fields.charmer"
-
-
-# ── Fold shape ────────────────────────────────────────────────────────────────
-
-class TestFoldShape:
-
-    def test_shield_of_faith_folds_to_a_concentration_lifetime(self):
-        spell = _spell("shield_of_faith")
-        program = to_program(spell.pipeline_effects, spell.targeting_type, _rules())
-        assert len(program) == 1
-        life = program[0]
-        assert life.type == "lifetime"
-        assert life.get("kind") == "concentration"
-        assert [b.type for b in life.then] == ["add_modifier"]
-        mod = life.then[0]
-        assert mod.get("stat") == "ac" and mod.get("value") == 2
-        assert mod.get("target") == "defender"
-
-    def test_armor_of_agathys_folds_with_retaliation_and_self_dispose(self):
-        spell = _spell("armor_of_agathys")
-        assert can_run_on_blocks(spell, _rules()) is True
-        program = to_program(spell.pipeline_effects, spell.targeting_type, _rules())
-        life = program[-1]
-        assert life.type == "lifetime"
-        kinds = [b.type for b in life.then]
-        assert kinds[0] == "grant_temporary_hp"
-        triggers = [b for b in life.then if b.type == "trigger"]
-        by_event = {t.get("event"): t for t in triggers}
-        # Retaliation: on a hit, damage the attacker, only while temp HP remain.
-        hit = by_event["ATTACK_HIT"]
-        assert hit.get("target") == "event.attacker"  # rebinds to the attacker
-        assert hit.then[0].type == "damage"
-        assert hit.then[0].get("condition") == "entity.temporary_hp > 0"
-        # Self-dispose: when temp HP are gone, end the effect.
-        dealt = by_event["DAMAGE_DEALT"]
-        assert dealt.then[0].type == "end_lifetime"
-        assert dealt.then[0].get("condition") == "entity.temporary_hp <= 0"
-
-    # Vampiric Touch is now authored as a native ``program`` (Phase 3 §5) — its
-    # granted-action + heal-rider lifetime is inline, not folded from a second file.
-    # The native shape and its parity with the old fold live in
-    # ``tests/test_native_program.py``; the fold itself stays covered by the
-    # still-legacy spells above (Shield of Faith, Haste, Charm Person, Armor of Agathys).
-
-    def test_longstrider_folds_to_a_rounds_lifetime_with_a_turn_start_rider(self):
-        spell = _spell("longstrider")
-        program = to_program(spell.pipeline_effects, spell.targeting_type, _rules())
-        assert len(program) == 1
-        life = program[0]
-        assert life.type == "lifetime" and life.get("kind") == "rounds"
-        assert [b.type for b in life.then] == ["trigger"]
-        rider = life.then[0]
-        assert rider.get("event") == "TURN_START"
-        assert rider.get("holder") == "defender"  # applied to the target, not caster
-        assert [b.type for b in rider.then] == ["add_resource"]
-        grant = rider.then[0]
-        assert grant.get("resource") == "movement" and grant.get("amount") == 10
+# NOTE: The former TestFoldRouting / TestFoldShape classes asserted the *shape* the
+# adapter/fold produced from a spell's legacy ``add_entity_effect`` step (Shield of
+# Faith, Haste, Charm Person, Armor of Agathys, Vampiric Touch, Longstrider). All of
+# those spells are now authored as native ``program``s (Phase 3 §5), so they no longer
+# have any ``pipeline_effects`` to fold — the assertions are obsolete and were removed.
+# The behaviour those effects deliver is covered end-to-end against the native path by
+# the classes below and by tests/test_native_corpus_parity.py. (The fold's
+# add_entity_effect path is now spell-userless — a candidate for the §4 removals; it
+# still backs conditions/global rules via rule_to_trigger_blocks.)
 
 
 class TestLongstriderFoldEndToEnd:

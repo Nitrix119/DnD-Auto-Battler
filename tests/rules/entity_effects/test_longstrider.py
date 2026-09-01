@@ -1,19 +1,25 @@
-"""Tests for the Longstrider entity effect.
+"""Tests for the Longstrider spell's per-turn movement grant (native block program).
 
 Verifies that Longstrider grants +10 movement per turn, fires after the global
-resource refill rule, and only affects the targeted entity.
+resource refill rule, only affects the targeted entity, and persists (no duration).
+Longstrider is now authored as a native ``program`` (Phase 3 §5) — its rider is
+installed by **casting the spell** (self-cast here), not by applying a standalone
+entity-effect rule. The refill-ordering end-to-end proof lives in
+``tests/test_entity_effect_fold.py::TestLongstriderFoldEndToEnd``.
 """
 
-import pytest
-
-from src.models import AbilityScores, StatBlock, Entity, ACTION_COST
+from src.models import AbilityScores, StatBlock, Entity
 from src.combat.event_bus import EventBus
 from src.combat.events import EventType
 from src.combat.event_data import TurnEventData
+from src.combat.damage_processor import DamageProcessor
+from src.combat.spell_resolver import SpellResolver
+from src.combat.lifetime_clock import install_lifetime_clock
 from src.rules.rule_engine import RuleEngine
-from src.rules.rule_loader import RuleLoader
+from src.rules.effect_registry import EffectRegistry
+from src.loaders import StatBlockLoader
 
-LONGSTRIDER_RULE_PATH = "rules/entity_effects/longstrider.json"
+LONGSTRIDER_SPELL_PATH = "examples/spells/longstrider.json"
 REFILL_RULE_PATH = "rules/global/action_economy_refill.json"
 
 
@@ -36,24 +42,30 @@ def _emit_turn(bus, entity, round_num=1, turn_num=1):
 
 
 def _emit_turn_end(bus, entity, round_num=1, turn_num=1):
-    """Emit a TURN_END event for *entity* (ticks durations)."""
+    """Emit a TURN_END event for *entity* (ticks lifetimes/durations)."""
     bus.emit(EventType.TURN_END, TurnEventData(
         entity=entity, round_num=round_num, turn_num=turn_num,
     ))
 
 
-def _setup(entity):
-    """Wire up an EventBus + RuleEngine with refill rule and longstrider applied."""
+def _cast_longstrider_on(entity, *others):
+    """Cast Longstrider (self-cast) so its native rider is installed on *entity*."""
     bus = EventBus()
-    engine = RuleEngine(
-        bus,
-        entities_getter=lambda: [entity],
-        damage_processor=None,
-    )
+    install_lifetime_clock(bus)
+    reg = EffectRegistry()
+    reg.scan_directory("rules/entity_effects")
+    engine = RuleEngine(bus, entities_getter=lambda: [entity, *others],
+                        damage_processor=DamageProcessor(bus), effect_registry=reg)
     engine.load_from_file(REFILL_RULE_PATH)
-    longstrider_rule = RuleLoader.load(LONGSTRIDER_RULE_PATH)
-    engine.apply_effect(entity, longstrider_rule)
+    resolver = SpellResolver(bus, engine._damage_processor, rule_engine=engine)
+    resolver.resolve(entity, [entity],
+                     StatBlockLoader.load_spell_from_json(LONGSTRIDER_SPELL_PATH))
     return bus, engine
+
+
+def _setup(entity):
+    """Cast Longstrider on *entity* and return its (bus, engine)."""
+    return _cast_longstrider_on(entity)
 
 
 # -- Tests --------------------------------------------------------------------
@@ -86,16 +98,7 @@ class TestLongstrider:
         """Longstrider on entity A does not give extra movement to entity B."""
         entity_a = _make_entity("Enchanted Fighter")
         entity_b = _make_entity("Normal Fighter")
-        bus = EventBus()
-        all_entities = [entity_a, entity_b]
-        engine = RuleEngine(
-            bus,
-            entities_getter=lambda: all_entities,
-            damage_processor=None,
-        )
-        engine.load_from_file(REFILL_RULE_PATH)
-        longstrider_rule = RuleLoader.load(LONGSTRIDER_RULE_PATH)
-        engine.apply_effect(entity_a, longstrider_rule)
+        bus, engine = _cast_longstrider_on(entity_a, entity_b)
 
         # Entity B's turn -- should get normal movement only
         _emit_turn(bus, entity_b, round_num=1)

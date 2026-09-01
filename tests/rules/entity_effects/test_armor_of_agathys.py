@@ -83,21 +83,28 @@ def _load_spell():
 
 class TestArmorOfAgathysLoading:
 
-    def test_loads_spell_effects(self):
+    def test_loads_native_program(self):
+        """Armor of Agathys is a native program: a lifetime granting temp HP with a
+        retaliation trigger (its effect is inline, not a separate entity-effect file)."""
         spell = _load_spell()
-        effect_steps = [s for s in spell.pipeline_effects if s.get("type") == "add_entity_effect"]
-        assert len(effect_steps) == 1
-        step = effect_steps[0]
-        assert step["entity_effect_name"] == "armor_of_agathys"
-        assert len(step["on_apply"]) == 1
-        assert step["on_apply"][0]["action"] == "GrantTemporaryHP"
+        assert spell.program and not spell.pipeline_effects
+        life = spell.program[0]
+        assert life["block"] == "lifetime"
+        inner = [b["block"] for b in life["then"]]
+        assert inner[0] == "grant_temporary_hp"
+        assert "trigger" in inner  # the on-hit cold retaliation rider
 
     def test_no_save_no_attack_roll(self):
         spell = _load_spell()
-        save_steps = [s for s in spell.pipeline_effects if s.get("type") == "saving_throw"]
-        attack_steps = [s for s in spell.pipeline_effects if s.get("type") == "attack_roll"]
-        assert len(save_steps) == 0
-        assert len(attack_steps) == 0
+
+        def walk(blocks):
+            for b in blocks:
+                yield b.get("block", b.get("type"))
+                yield from walk(b.get("then", []))
+
+        types = set(walk(spell.program or spell.pipeline_effects))
+        assert "saving_throw" not in types
+        assert "attack_roll" not in types
 
     def test_spell_level_1_no_concentration(self):
         spell = _load_spell()
