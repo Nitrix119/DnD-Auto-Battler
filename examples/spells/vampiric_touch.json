@@ -22,34 +22,34 @@
     "somatic": true,
     "material": []
   },
-  "effects": [
+  "program": [
     {
-      "type": "attack_roll",
+      "block": "attack_roll",
       "attack_bonus": "use_caster_bonus",
       "target": "defender"
     },
     {
-      "type": "damage",
+      "block": "damage",
       "target": "defender",
       "damage_type": "NECROTIC",
       "formula": "3d6",
       "requires_hit": true
     },
     {
-      "type": "healing",
+      "block": "healing",
       "target": "caster",
       "amount": "context.damage_dealt // 2",
       "condition": "context.damage_dealt > 0"
     },
     {
-      "type": "add_entity_effect",
-      "entity_effect_name": "vampiric_touch",
-      "on_caster": true,
-      "concentration": true,
-      "on_apply": [
+      "block": "lifetime",
+      "kind": "concentration",
+      "source": "vampiric_touch",
+      "duration_rounds": 10,
+      "then": [
         {
-          "action": "GrantAction",
-          "target": "event.caster",
+          "block": "grant_action",
+          "target": "caster",
           "name": "Vampiric Touch",
           "description": "Melee spell attack granted by Vampiric Touch concentration.",
           "bonus_to_hit": "event.caster.spell_attack_bonus",
@@ -59,8 +59,21 @@
               "type": "NECROTIC",
               "formula": "3d6"
             }
-          ],
-          "source_effect": "vampiric_touch"
+          ]
+        },
+        {
+          "block": "trigger",
+          "event": "DAMAGE_DEALT",
+          "holder": "caster",
+          "when": "event.source == entity and event.action_name == 'Vampiric Touch'",
+          "then": [
+            {
+              "block": "healing",
+              "target": "caster",
+              "formula": "0",
+              "bonus": "event.total // 2"
+            }
+          ]
         }
       ]
     }

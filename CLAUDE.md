@@ -88,15 +88,17 @@ Non-negotiable. Every change should be justifiable against these.
 
 ## 3. Architecture & modularity rules
 
-- **One resolution path for everything.** A `SpellAction` carries `pipeline_effects`
-  (authored as `effects` in JSON): an ordered list of typed steps (`attack_roll`,
-  `saving_throw`, `damage`, `healing`, `add_entity_effect`, `apply_condition`,
-  `add_modifier`, `grant_temporary_hp`). `adapter.to_program` translates them into a
-  **block program** run by the block **evaluator** (`src/spells/evaluator.py`) over a
-  shared ephemeral `context`. Earlier blocks write results (`context.hit`,
-  `context.damage_dealt`, `context.save_success`); later blocks read them. **Weapon
-  attacks compile into the same blocks** via `AttackResolver._build_pipeline_effects` —
-  never add a second resolution path. (The legacy `EffectPipeline` is deleted.)
+- **One resolution path for everything.** A `SpellAction` is authored either natively
+  (`program` in JSON, keyed by `block`) or legacily (`effects`, keyed by `type`). A native
+  `program` is parsed by `block.parse_program` and validated at load by
+  `spells.validate.validate_program`; a legacy `effects` list is translated at cast time by
+  `adapter.to_program`. Both become a **block program** run by the block **evaluator**
+  (`src/spells/evaluator.py`) over a shared ephemeral `context`: earlier blocks write results
+  (`context.hit`, `context.damage_dealt`, `context.save_success`), later blocks read them.
+  **Weapon attacks compile into the same blocks** via `AttackResolver._build_pipeline_effects`
+  — never add a second resolution path. Prefer native `program` for new content; the legacy
+  `effects` form retires as the corpus migrates (Phase 3 §5). (The legacy `EffectPipeline` is
+  deleted.)
 - **Registry, never `if/elif` on type.** New block type → add a handler under
   `src/spells/blocks/` and register it in the block `REGISTRY` (`src/spells/registry.py`),
   dispatched on the block's type. New spell → drop a JSON file in `examples/spells/`
@@ -236,6 +238,20 @@ leave a brief note here.
 - **What went wrong:** the mistake or surprise.
 - **Rule going forward:** the concrete, testable rule.
 ```
+
+### 2026-09-02 — A load-time validator needed the block catalogue, which nothing had imported
+- **Context:** Building `spells.validate.validate_program`, the loader-boundary validator for native block
+  `program`s (Phase 3 §5a). It checks each block against the process-global block `REGISTRY`.
+- **What went wrong:** The full test suite passed, but a *loader-first* process (load a native spell before
+  anything imports the evaluator/adapter) raised "unknown block type … registered: (none)". The block
+  catalogue only populates when `src.spells.blocks` is imported (each block module self-registers on import);
+  the evaluator and adapter do this via `from . import blocks`, but `validate.py` did not — so in the suite it
+  worked only because some *other* import had already registered the catalogue. A registry-dependent module
+  must not assume someone else populated the registry.
+- **Rule going forward:** Any module that reads the block `REGISTRY` must itself import the catalogue
+  (`from . import blocks as _blocks  # noqa: F401`) so it is self-sufficient regardless of import order. Smoke-
+  test new loader/validation paths in a **fresh, minimal process** (a one-off script), not only via the full
+  suite whose broad imports mask missing self-registration.
 
 ### 2026-08-31 — A condition's marker and its mechanics were joined only by a name string
 - **Context:** Wiring conditions to apply in production (Phase 3 §3). A condition has two parts: a

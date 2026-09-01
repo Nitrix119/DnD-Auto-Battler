@@ -40,6 +40,11 @@ class BlockContract:
     Args:
         reads: context keys the block may read (for the linter's flow check).
         writes: context keys the block writes.
+        required_args: arg names that must be present on the block. Empty (the
+            default) means no requirement — the handler tolerates absence via a
+            default. Names an arg only where its absence is an unambiguous authoring
+            error the load-time validator should reject (a ``damage`` with no
+            ``formula``). Enforced by ``src.spells.validate.validate_program``.
         target_arity: how the block addresses targets (see :class:`TargetArity`).
         is_gate: True for pre-effect roll/gate blocks (``attack_roll``,
             ``saving_throw``). The evaluator emits ``SPELL_HIT`` just before the
@@ -60,6 +65,7 @@ class BlockContract:
 
     reads: Tuple[str, ...] = ()
     writes: Tuple[str, ...] = ()
+    required_args: Tuple[str, ...] = ()
     target_arity: TargetArity = TargetArity.SINGLE
     is_gate: bool = False
     installs_reactions: bool = False

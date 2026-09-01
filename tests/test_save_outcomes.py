@@ -46,6 +46,23 @@ CHARACTERS_DIR = EXAMPLES_DIR / "creatures/characters"
 _DC = 15  # wizard's spell_save_dc
 
 
+def _damage_entries(spell):
+    """Damage steps of a spell, whether authored natively (``program``, keyed by
+    ``block``, possibly nested under ``then``) or legacily (``pipeline_effects``,
+    keyed by ``type``). The ``save_result`` field is the same under both."""
+    def walk(blocks, key):
+        out = []
+        for b in blocks:
+            if b.get(key) == "damage":
+                out.append(b)
+            out.extend(walk(b.get("then", []), key))
+        return out
+
+    if spell.program:
+        return walk(spell.program, "block")
+    return walk(spell.pipeline_effects, "type")
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -131,7 +148,7 @@ class TestSaveOutcomeLoading:
 
     def test_fireball_has_half_damage_on_success(self):
         spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "fireball.json"))
-        damage_steps = [s for s in spell.pipeline_effects if s.get("type") == "damage"]
+        damage_steps = _damage_entries(spell)
         assert len(damage_steps) >= 1
         assert damage_steps[0].get("save_result", {}).get("on_success") == "half_damage"
 

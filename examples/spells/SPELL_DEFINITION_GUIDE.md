@@ -4,6 +4,88 @@ This document describes how to define weapon attacks and spells as JSON for the 
 Both live in a creature's stat block under the `"actions"` array, or as standalone spell files under
 `examples/spells/`.
 
+> **Two authoring forms (migration in progress).** A spell is authored either as a **native block
+> `program`** (the target form — keyed by `block`) or a **legacy `effects` pipeline** (keyed by `type`).
+> They are mutually exclusive per spell; the loader accepts either. New spells should be authored as a
+> native `program` — see [Native Block Programs](#native-block-programs). The legacy `effects` form
+> (documented in [The Effects Pipeline](#the-effects-pipeline)) is retiring as the corpus migrates
+> (Phase 3 §5).
+
+---
+
+## Native Block Programs
+
+A native spell replaces the `effects` array with a **`program`**: an ordered list of **blocks**, each an
+object with a `"block"` type key and type-specific fields. A block may nest a sub-program under `"then"`
+(iterators, lifetimes, and triggers use this). Unlike the legacy `effects` form, a spell's *entire*
+identity — including its persistent, concentration-bound, and reactive parts — lives in this one field,
+with **no separate entity-effect file**.
+
+The block vocabulary is the same catalogue the engine runs (`src/spells/blocks/`); the block types share
+their names with the legacy step types (`attack_roll`, `saving_throw`, `damage`, `healing`,
+`apply_condition`, `add_modifier`, `grant_temporary_hp`), plus the composition blocks
+(`for_each_target`, `lifetime`, `trigger`, `grant_action`, `add_resource`, and the event-modifiers).
+Every native `program` is validated at load by `src.spells.validate.validate_program`, which rejects an
+unknown block, a missing required arg, a target-arity error, or a `context.X` reference to a key nothing
+writes — a named error at load rather than a silent no-op at cast.
+
+**Renaming from legacy:** `effects` → `program`, and within each entry `"type"` → `"block"`. AoE and
+multi-target spells author their fan-out **explicitly** with a top-level `for_each_target` block (the
+legacy form injected this implicitly).
+
+### Single-target (Fire Bolt)
+
+```json
+"program": [
+  { "block": "attack_roll", "attack_bonus": "use_caster_bonus", "target": "defender" },
+  { "block": "damage", "target": "defender", "damage_type": "FIRE", "formula": "1d10", "requires_hit": true }
+]
+```
+
+### Area of effect — explicit fan-out + shared roll (Fireball)
+
+The `for_each_target` block iterates the target set; `roll_once` inside it rolls the damage once and
+applies that shared total to every target (save-for-half applied per target).
+
+```json
+"program": [
+  { "block": "for_each_target", "then": [
+    { "block": "saving_throw", "attribute": "dexterity", "dc": "use_caster_dc" },
+    { "block": "damage", "damage_type": "FIRE", "formula": "8d6", "roll_once": true,
+      "save_result": { "on_success": "half_damage" } }
+  ]}
+]
+```
+
+### Persistent + concentration + reactive rider, all inline (Vampiric Touch)
+
+The immediate attack/damage/heal are flat blocks; the granted repeatable action and the concentration-
+bound heal rider live inside a `lifetime` block (`kind: "concentration"`). Ending concentration disposes
+the scope, which revokes the granted action and unsubscribes the rider — no second file.
+
+```json
+"program": [
+  { "block": "attack_roll", "attack_bonus": "use_caster_bonus", "target": "defender" },
+  { "block": "damage", "target": "defender", "damage_type": "NECROTIC", "formula": "3d6", "requires_hit": true },
+  { "block": "healing", "target": "caster", "amount": "context.damage_dealt // 2",
+    "condition": "context.damage_dealt > 0" },
+  { "block": "lifetime", "kind": "concentration", "source": "vampiric_touch", "duration_rounds": 10, "then": [
+    { "block": "grant_action", "target": "caster", "name": "Vampiric Touch",
+      "description": "Melee spell attack granted by Vampiric Touch concentration.",
+      "bonus_to_hit": "event.caster.spell_attack_bonus", "range_ft": 5,
+      "damage": [ { "type": "NECROTIC", "formula": "3d6" } ] },
+    { "block": "trigger", "event": "DAMAGE_DEALT", "holder": "caster",
+      "when": "event.source == entity and event.action_name == 'Vampiric Touch'", "then": [
+      { "block": "healing", "target": "caster", "formula": "0", "bonus": "event.total // 2" }
+    ]}
+  ]}
+]
+```
+
+The per-block fields (`damage_type`, `formula`, `save_result`, `requires_hit`, `condition`, targeting,
+expressions) are identical to their legacy counterparts below — read [The Effects Pipeline](#the-effects-pipeline)
+for field semantics, substituting `"block"` for `"type"`.
+
 ---
 
 ## Table of Contents
@@ -15,7 +97,8 @@ Both live in a creature's stat block under the `"actions"` array, or as standalo
    - [Casting Time](#casting-time)
    - [Duration](#duration)
    - [Components](#components)
-3. [The Effects Pipeline](#the-effects-pipeline)
+3. [Native Block Programs](#native-block-programs) — the target authoring form
+4. [The Effects Pipeline](#the-effects-pipeline) — legacy form, retiring
    - [attack_roll](#attack_roll)
    - [saving_throw](#saving_throw)
    - [damage](#damage)

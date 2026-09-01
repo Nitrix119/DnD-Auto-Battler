@@ -146,5 +146,9 @@ def trigger(block: Block, inv: Invocation) -> None:
 REGISTRY.register(
     "trigger",
     trigger,
-    BlockContract(target_arity=TargetArity.SINGLE, installs_reactions=True),
+    BlockContract(
+        required_args=("event",),
+        target_arity=TargetArity.SINGLE,
+        installs_reactions=True,
+    ),
 )

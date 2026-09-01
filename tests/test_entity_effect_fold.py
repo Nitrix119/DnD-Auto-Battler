@@ -113,21 +113,11 @@ class TestFoldShape:
         assert dealt.then[0].type == "end_lifetime"
         assert dealt.then[0].get("condition") == "entity.temporary_hp <= 0"
 
-    def test_vampiric_touch_folds_with_a_granted_action_and_a_heal_rider(self):
-        spell = _spell("vampiric_touch")
-        assert can_run_on_blocks(spell, _rules()) is True
-        program = to_program(spell.pipeline_effects, spell.targeting_type, _rules())
-        # attack_roll, damage, healing (instantaneous), then the lifetime.
-        assert [b.type for b in program] == [
-            "attack_roll", "damage", "healing", "lifetime",
-        ]
-        life = program[-1]
-        assert life.get("kind") == "concentration"
-        assert life.get("duration_rounds") == 10  # ticks via the clock, on_caster
-        assert [b.type for b in life.then] == ["grant_action", "trigger"]
-        rider = life.then[1]
-        assert rider.get("event") == "DAMAGE_DEALT" and rider.get("holder") == "caster"
-        assert [b.type for b in rider.then] == ["healing"]
+    # Vampiric Touch is now authored as a native ``program`` (Phase 3 §5) — its
+    # granted-action + heal-rider lifetime is inline, not folded from a second file.
+    # The native shape and its parity with the old fold live in
+    # ``tests/test_native_program.py``; the fold itself stays covered by the
+    # still-legacy spells above (Shield of Faith, Haste, Charm Person, Armor of Agathys).
 
     def test_longstrider_folds_to_a_rounds_lifetime_with_a_turn_start_rider(self):
         spell = _spell("longstrider")

@@ -3,7 +3,7 @@
 import json
 import re
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, List, Optional
 
 # Full-match validator for damage formulas. Accepts one or more terms, each a
 # dice term (NdM) or flat modifier (N), joined by + / -, e.g. "3d8+6",
@@ -318,21 +318,30 @@ class StatBlockLoader:
                 else SpellComponents(verbal=True, somatic=True)
             )
 
-            effects = action_data.get("effects", [])
-            # Validate the pipeline steps at the loader boundary: an unknown step
-            # type, typo'd field, bad enum, or a context.X reference to a key
-            # nothing writes becomes a named error here instead of a silent
-            # run-time no-op (see docs/SPELL_SYSTEM_DESIGN.md §6.9, §7 stage 1).
-            # Imported lazily to avoid a module-load import cycle
+            # A spell is authored either natively (``program``, keyed by ``block``)
+            # or legacily (``effects``, keyed by ``type``). Validate whichever is
+            # present at the loader boundary so an unknown block/step, a typo'd
+            # field, a bad enum, an arity error, or a context.X reference to a key
+            # nothing writes becomes a named error here instead of a silent run-time
+            # no-op. Imported lazily to avoid a module-load import cycle
             # (loaders -> rules -> combat -> spell_registry -> loaders).
-            from src.rules.step_schema import validate_effects
-            validate_effects(effects, spell_name=name)
+            program = action_data.get("program")
+            if program is not None:
+                from src.spells.validate import validate_program
+                validate_program(program, spell_name=name)
+                effects: List[Dict[str, Any]] = []
+            else:
+                program = []
+                effects = action_data.get("effects", [])
+                from src.rules.step_schema import validate_effects
+                validate_effects(effects, spell_name=name)
 
             return SpellAction(
                 name=name,
                 description=description,
                 spell_level=action_data.get("spell_level", 0),
                 pipeline_effects=effects,
+                program=program,
                 recharge=recharge,
                 spell_range=spell_range,
                 targeting_type=targeting_type,
@@ -412,7 +421,9 @@ class StatBlockLoader:
 
         elif isinstance(action, SpellAction):
             base["spell_level"] = action.spell_level
-            if action.pipeline_effects:
+            if action.program:
+                base["program"] = action.program
+            elif action.pipeline_effects:
                 base["effects"] = action.pipeline_effects
 
             # spell_range

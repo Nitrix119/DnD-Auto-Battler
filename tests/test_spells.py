@@ -21,6 +21,26 @@ SPELLS_DIR = EXAMPLES_DIR / "spells"
 CHARACTERS_DIR = EXAMPLES_DIR / "creatures/characters"
 
 
+def _damage_entries(spell):
+    """Damage steps of a spell, whether authored natively or legacily.
+
+    A native spell keys blocks by ``block`` (in ``program``, possibly nested under
+    ``then``); a legacy spell keys steps by ``type`` (flat in ``pipeline_effects``).
+    Both spell ``damage_type``/``formula`` fields under the same names.
+    """
+    def walk(blocks, key):
+        out = []
+        for b in blocks:
+            if b.get(key) == "damage":
+                out.append(b)
+            out.extend(walk(b.get("then", []), key))
+        return out
+
+    if spell.program:
+        return walk(spell.program, "block")
+    return walk(spell.pipeline_effects, "type")
+
+
 class TestSpellLoading:
     """Verify that spell JSON files round-trip through the loader correctly."""
 
@@ -37,7 +57,7 @@ class TestSpellLoading:
         assert spell.components.verbal
         assert spell.components.somatic
         assert not spell.components.requires_material
-        damage_steps = [s for s in spell.pipeline_effects if s.get("type") == "damage"]
+        damage_steps = _damage_entries(spell)
         assert len(damage_steps) == 1
         assert damage_steps[0]["damage_type"] == "FIRE"
         assert damage_steps[0]["formula"] == "1d10"
@@ -54,7 +74,7 @@ class TestSpellLoading:
         assert spell.aoe.size_ft == 20
         assert spell.components.requires_material
         assert spell.higher_level_scaling is not None
-        damage_steps = [s for s in spell.pipeline_effects if s.get("type") == "damage"]
+        damage_steps = _damage_entries(spell)
         assert len(damage_steps) == 1
         assert damage_steps[0]["damage_type"] == "FIRE"
         assert damage_steps[0]["formula"] == "8d6"
@@ -144,7 +164,7 @@ class TestSpellCombat:
         hit = attack_total >= target.ac
 
         if hit:
-            damage_step = next(s for s in firebolt.pipeline_effects if s.get("type") == "damage")
+            damage_step = _damage_entries(firebolt)[0]
             damage = roll_formula(damage_step["formula"])
             target.take_damage(Damage(DamageType[damage_step["damage_type"]], damage))
             assert target.hp < target.max_hp
@@ -689,7 +709,7 @@ class TestVampiricTouch:
         assert spell.name == "Vampiric Touch"
         assert spell.spell_level == 3
         assert spell.duration.concentration
-        damage_steps = [s for s in spell.pipeline_effects if s.get("type") == "damage"]
+        damage_steps = _damage_entries(spell)
         assert len(damage_steps) == 1
         assert damage_steps[0]["damage_type"] == "NECROTIC"
         assert damage_steps[0]["formula"] == "3d6"

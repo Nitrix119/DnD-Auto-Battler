@@ -44,6 +44,11 @@ class Action:
     cost: ActionCost = field(default_factory=lambda: ACTION_COST)
     source_effect: str = ""  # non-empty → revoked when that entity effect is removed
     pipeline_effects: List[Dict[str, Any]] = field(default_factory=list)
+    # Native block program (authored as ``program`` in JSON, keyed by ``block``).
+    # When non-empty the action is *native* and resolves via ``parse_program`` with
+    # no cast-time adapter translation; when empty the legacy ``pipeline_effects``
+    # path runs. Both coexist while spells migrate (Phase 3 §5).
+    program: List[Dict[str, Any]] = field(default_factory=list)
     legendary_action_cost: int = 0  # > 0 → usable only as a legendary action
 
     def __hash__(self) -> int:
@@ -122,12 +127,13 @@ class SpellAction(Action):
         components: Verbal, somatic, and/or material requirements
         higher_level_scaling: Placeholder description of upcast scaling (structured
                               rules will be added in a future task)
-        pipeline_effects: Sequential effect steps (authored as ``effects`` in JSON),
-            translated by ``adapter.to_program`` into a block program run by the block
-            evaluator. Each entry is a dict with a ``type`` key (e.g. ``"attack_roll"``,
-            ``"saving_throw"``, ``"damage"``, ``"healing"``, ``"add_entity_effect"``)
-            and type-specific fields. Steps run in order; each may write keys into
-            an ephemeral ``context`` dict readable by subsequent steps.
+        pipeline_effects: Legacy sequential effect steps (authored as ``effects`` in
+            JSON, keyed by ``type``), translated by ``adapter.to_program`` into a block
+            program at cast time. Used only when ``program`` is empty.
+        program: Native block program (authored as ``program`` in JSON, keyed by
+            ``block``). When non-empty the spell resolves via ``parse_program`` with no
+            cast-time translation — the target authoring form (Phase 3 §5). The two are
+            mutually exclusive per spell and coexist across the corpus while it migrates.
     """
 
     action_type: ActionType = ActionType.SPELL
@@ -143,6 +149,7 @@ class SpellAction(Action):
     cannot_cause_self_damage: bool = False
     animation: List[Any] = field(default_factory=list)
     pipeline_effects: List[Dict[str, Any]] = field(default_factory=list)
+    program: List[Dict[str, Any]] = field(default_factory=list)
 
     _CASTING_TIME_COST_MAP = {
         CastingTimeType.ACTION: ACTION_COST,

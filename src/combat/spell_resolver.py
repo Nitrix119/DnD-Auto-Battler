@@ -67,18 +67,23 @@ class SpellResolver:
         if slot_level is None:
             slot_level = action.spell_level
 
-        # One resolution path: the block engine. `can_run_on_blocks` is now a loud
-        # validator, not a router — a spell it can't express (an unported step, or an
-        # entity effect whose rule/action doesn't fold) is an authoring error we raise
-        # on, rather than silently degrading. The legacy pipeline is gone (Phase 3 §4).
-        from src.spells.adapter import can_run_on_blocks
+        # One resolution path: the block engine. A native spell (``action.program``)
+        # is validated at load (``src.spells.validate.validate_program``) and runs its
+        # authored program directly. A legacy spell (``action.pipeline_effects``) is
+        # translated at cast time by the adapter; `can_run_on_blocks` is a loud
+        # validator there, not a router — a spell it can't express (an unported step,
+        # or an entity effect whose rule/action doesn't fold) is an authoring error we
+        # raise on rather than silently degrading. The legacy pipeline is gone (§4);
+        # the adapter path retires as the corpus goes native (§5).
+        if not action.program:
+            from src.spells.adapter import can_run_on_blocks
 
-        rule_lookup = self._rule_lookup()
-        if not can_run_on_blocks(action, rule_lookup):
-            raise ValueError(
-                f"Spell '{action.name}' cannot be expressed on the block engine "
-                f"(an unported step, or an entity effect whose rule/action does not fold)."
-            )
+            if not can_run_on_blocks(action, self._rule_lookup()):
+                raise ValueError(
+                    f"Spell '{action.name}' cannot be expressed on the block engine "
+                    f"(an unported step, or an entity effect whose rule/action does "
+                    f"not fold)."
+                )
         return self._resolve_via_blocks(caster, defenders, action, slot_level)
 
     def _rule_lookup(self):
@@ -101,23 +106,28 @@ class SpellResolver:
         action: SpellAction,
         slot_level: Optional[int],
     ) -> List[Tuple[bool, int, str, Optional[dict], int, Optional[Entity]]]:
-        """Resolve via the new block evaluator (one invocation per defender).
+        """Resolve via the block evaluator (one invocation per defender).
 
-        Reached only for spells the new engine can express identically (see
-        ``src.spells.adapter.can_run_on_blocks``); everything else uses the
-        legacy pipeline above. Imported lazily to avoid an import cycle
-        (combat → spells → combat).
+        A native spell runs ``action.program`` directly (``parse_program``); a legacy
+        spell is translated at cast time (``adapter.to_program``). Imported lazily to
+        avoid an import cycle (combat → spells → combat).
 
         Fan-out (including AoE ``roll_once`` sharing) lives in the program: the
         evaluator is called once with the whole defender set and returns one
         result per defender, in order.
         """
         from src.spells.evaluator import resolve_program
-        from src.spells.adapter import to_program
 
-        program = to_program(
-            action.pipeline_effects, action.targeting_type, self._rule_lookup()
-        )
+        if action.program:
+            from src.spells.block import parse_program
+
+            program = parse_program(action.program)
+        else:
+            from src.spells.adapter import to_program
+
+            program = to_program(
+                action.pipeline_effects, action.targeting_type, self._rule_lookup()
+            )
         results = resolve_program(
             caster,
             defenders,

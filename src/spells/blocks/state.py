@@ -207,21 +207,23 @@ def grant_action(block: Block, inv: Invocation) -> None:
 
 REGISTRY.register(
     "apply_condition", apply_condition,
-    BlockContract(target_arity=TargetArity.SINGLE),
+    BlockContract(required_args=("condition_type",), target_arity=TargetArity.SINGLE),
 )
 REGISTRY.register(
     "add_modifier", add_modifier,
-    BlockContract(target_arity=TargetArity.SINGLE),
+    BlockContract(required_args=("stat", "value"), target_arity=TargetArity.SINGLE),
 )
 REGISTRY.register(
     "grant_temporary_hp", grant_temporary_hp,
-    BlockContract(writes=("temp_hp_granted",), target_arity=TargetArity.SINGLE),
+    BlockContract(writes=("temp_hp_granted",), required_args=("amount",),
+                  target_arity=TargetArity.SINGLE),
 )
 REGISTRY.register(
     "add_resource", add_resource,
-    BlockContract(target_arity=TargetArity.SINGLE),
+    BlockContract(required_args=("resource", "amount"),
+                  target_arity=TargetArity.SINGLE),
 )
 REGISTRY.register(
     "grant_action", grant_action,
-    BlockContract(target_arity=TargetArity.SINGLE),
+    BlockContract(required_args=("name",), target_arity=TargetArity.SINGLE),
 )

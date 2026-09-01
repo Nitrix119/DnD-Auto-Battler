@@ -110,6 +110,7 @@ REGISTRY.register(
     BlockContract(
         reads=("hit", "save_success", "save_roll", "critical_hit", "slot_level"),
         writes=("damage_dealt", "damage_rolled"),
+        required_args=("formula", "damage_type"),
         target_arity=TargetArity.SINGLE,
     ),
 )

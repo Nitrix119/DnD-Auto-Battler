@@ -132,6 +132,7 @@ REGISTRY.register(
     saving_throw,
     BlockContract(
         writes=("save_roll", "save_dc", "save_success"),
+        required_args=("attribute", "dc"),
         target_arity=TargetArity.SINGLE,
         is_gate=True,
     ),

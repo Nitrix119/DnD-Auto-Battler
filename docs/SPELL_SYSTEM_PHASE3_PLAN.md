@@ -12,6 +12,11 @@
 
 ## 0. Where we are (2026-08-31)
 
+> **Update (2026-09-02):** §5's **foundation + pilot** has landed — spells can now be authored as native
+> block `program`s (validated at load), and Fire Bolt, Fireball, and Vampiric Touch are migrated (VT inlined
+> to one file). See [§5a](#5a-foundation--pilot--done-2026-09-02). Suite **757 green**; `mypy src/` at 41.
+> The adapter/fold/`BUILTIN_EFFECTS` remain load-bearing for the other 20 spells and all `rules/*` content.
+
 **On the block engine (`src/spells/`):** all 23 shipped spells; all seven `rules/global/*` rules (damage
 resistance/immunity/vulnerability, the nat-20/nat-1 crit rules, concentration break, per-turn refill); and
 **weapon attacks** (`AttackResolver` folded — one `[attack_roll, damage…]` path for weapons and spells).
@@ -152,6 +157,48 @@ Author spells and effects as inline `program`s (no `effects`→adapter translati
 `effects → program`, `step → block` (design §4; "spell" stays user-facing). This retires the transitional
 shims for good and is where the schema/linter for the block language (vision §5) is worth building as the
 authoring contract for the future "add a spell" skill.
+
+### 5a. Foundation + pilot — ✅ DONE (2026-09-02)
+
+The native read path, a load-time block validator, and three migrated spells landed as the first slice.
+What shipped:
+
+- **Native read path.** `Action`/`SpellAction` gained a `program` field
+  ([src/models/action.py](../src/models/action.py)). A spell is *native* when `program` is non-empty
+  (parsed by `src.spells.block.parse_program`, run directly), *legacy* when only `pipeline_effects` is
+  (still adapter-translated). The loader reads either
+  ([src/loaders/stat_block_loader.py](../src/loaders/stat_block_loader.py)); `SpellResolver.resolve`
+  branches on `action.program`, and the legacy `can_run_on_blocks` loud-validator now guards **only** the
+  legacy branch ([src/combat/spell_resolver.py](../src/combat/spell_resolver.py)). Fan-out is auto-detected
+  from the program (`evaluator._has_set_consumer`), so native AoE authors an explicit `for_each_target`.
+- **Load-time block validator.** [src/spells/validate.py](../src/spells/validate.py) `validate_program`
+  elevates the runtime arity linter (`lint.py`) to the loader boundary and adds: unknown-block, missing
+  **required arg**, and bad `context.X`-ref checks. `BlockContract` gained a general `required_args`
+  ([src/spells/contract.py](../src/spells/contract.py)), annotated on the core blocks (damage→formula/type,
+  saving_throw→attribute/dc, trigger→event, the state blocks). Registry-driven, no `if/elif` on type.
+- **Three spells migrated (parity-gated).** Fire Bolt (single-target), Fireball (AoE, explicit
+  `for_each_target` + `roll_once`), and **Vampiric Touch inlined into one file** — its granted repeatable
+  action and concentration heal-rider are now a native `lifetime{ grant_action, trigger }`, absorbing and
+  **deleting** `rules/entity_effects/vampiric_touch.json`. Proven native-==-legacy field-for-field under
+  five seeds each by [tests/test_native_program.py](../tests/test_native_program.py); validator unhappy
+  paths by [tests/test_validate_program.py](../tests/test_validate_program.py). Suite **757 green**;
+  `mypy src/` steady at 41.
+
+**Remaining §5 slices (follow-on):**
+
+- **Migrate the other 20 spells** to native `program`, parity-gated per spell (same harness). Absorb and
+  delete the remaining 5 `rules/entity_effects/*` files as their spells go native.
+- **Migrate `rules/global/*` and `rules/entity_effects/*`** off the `action`-verb `Rule` vocabulary onto
+  native trigger-block programs (or give `install_global_rules` a native home) — the precondition for
+  deleting `fold.py`, which still backs conditions, entity effects, and global rules.
+- **Delete the shims** (§4's big removals) once no file uses `effects` and no rule uses `action`-verbs:
+  `adapter.py`, `fold.py`, `BUILTIN_EFFECTS`, the `RuleEngine` entity dispatch, `_tick_durations`. Then
+  rename `Action.pipeline_effects` away.
+- **Fuller block schema + generated `BLOCK_REFERENCE.md`** (vision §5): a per-field required/optional/domain
+  schema for the block vocabulary (the `program` analogue of `STEP_SCHEMAS`), with a drift-tested generated
+  reference. Deferred deliberately from the pilot — the current validator covers registered-type / required-arg
+  / arity / context-ref, the highest-value silent-failure catches; the full field schema is its own slice and
+  the natural home for the deferred **E6** debt (vision §5).
 
 ## 6. Deferred design threads (unblocked once the above lands)
 
