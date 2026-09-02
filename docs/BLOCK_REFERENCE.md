@@ -10,15 +10,26 @@ The authoritative list of block types, generated from the registry the loader va
 
 Block types: [`add_modifier`](#add_modifier), [`add_resource`](#add_resource), [`apply_condition`](#apply_condition), [`attack_roll`](#attack_roll), [`cancel`](#cancel), [`damage`](#damage), [`end_lifetime`](#end_lifetime), [`for_each_target`](#for_each_target), [`force_concentration_check`](#force_concentration_check), [`force_critical`](#force_critical), [`grant_action`](#grant_action), [`grant_advantage`](#grant_advantage), [`grant_disadvantage`](#grant_disadvantage), [`grant_temporary_hp`](#grant_temporary_hp), [`healing`](#healing), [`lifetime`](#lifetime), [`modify_damage`](#modify_damage), [`refill_resources`](#refill_resources), [`saving_throw`](#saving_throw), [`trigger`](#trigger).
 
-**Reading this.** *Required args* are the ones the load-time validator rejects a program for omitting; a block may accept further optional args documented in its notes. *Reads*/*Writes context* are the `context.X` keys a block consumes and produces — a later block may read what an earlier one wrote. *Target* is how the block addresses the current target.
+**Reading this.** Each block lists every arg it accepts — anything else is rejected at load. *Kind* is how the value is validated; *req.* marks the args a block cannot be written without. *Reads*/*Writes context* are the `context.X` keys a block consumes and produces, so a later block may read what an earlier one wrote. *Target* is how the block addresses the current target.
+
+Every block also accepts `condition` — Expression; the block is skipped when it evaluates falsy.
+
+A key beginning with `_` (such as `_note`) is ignored by the engine and may be used for authoring commentary.
 
 ## `add_modifier`
 
 Attach a labeled StatModifier to the target.
 
+| Arg | Req. | Kind | |
+|---|---|---|---|
+| `target` |  | `caster` / `defender` | 'caster' acts on the caster; otherwise the current target. |
+| `stat` | yes | a string | Stat to modify: 'ac', 'spell_save_dc', 'saving_throw.<ability>', 'max_hp', … |
+| `value` | yes | an expression | How much to add (negative to subtract). |
+| `source` |  | a string | Label for what applied this (a spell name). |
+| `effect_name` |  | a string | Effect name, used to remove this by name later. |
+
 | | |
 |---|---|
-| **Required args** | `stat`, `value` |
 | **Reads context** | _(none)_ |
 | **Writes context** | _(none)_ |
 | **Target** | acts on the current target, which must be exactly one entity |
@@ -27,9 +38,14 @@ Attach a labeled StatModifier to the target.
 
 Add to a per-turn resource (movement, actions, …) on the target.
 
+| Arg | Req. | Kind | |
+|---|---|---|---|
+| `target` |  | `caster` / `defender` | 'caster' acts on the caster; otherwise the current target. |
+| `resource` | yes | `actions` / `bonus_actions` / `reactions` / `movement` | Which per-turn resource to top up. |
+| `amount` | yes | an expression | How much to add. |
+
 | | |
 |---|---|
-| **Required args** | `resource`, `amount` |
 | **Reads context** | _(none)_ |
 | **Writes context** | _(none)_ |
 | **Target** | acts on the current target, which must be exactly one entity |
@@ -43,9 +59,18 @@ revoke handle — when the rider's lifetime ends it simply stops being re-added
 
 Add a status condition to the target and install its reactive mechanics.
 
+| Arg | Req. | Kind | |
+|---|---|---|---|
+| `target` |  | `caster` / `defender` | 'caster' acts on the caster; otherwise the current target. |
+| `condition_type` | yes | a `ConditionType` name | Which condition to apply. |
+| `duration` |  | an expression | Rounds the condition lasts; omitted = until dispelled. |
+| `source` |  | a string | Label for what applied this (a spell name). |
+| `effect_name` |  | a string | Effect name, used to remove this by name later. |
+| `bindings` |  | an object of name → expression | Per-application values captured once at install and read later as instance_fields.<name>. |
+| `instance_fields` |  | an object of name → expression | Deprecated spelling of `bindings`; prefer `bindings`. |
+
 | | |
 |---|---|
-| **Required args** | `condition_type` |
 | **Reads context** | _(none)_ |
 | **Writes context** | _(none)_ |
 | **Target** | acts on the current target, which must be exactly one entity |
@@ -61,9 +86,12 @@ Emits CONDITION_ADDED. Degrades to marker-only when no reactive rule is wired.
 
 Emit ATTACK_DECLARED, roll to hit, emit ATTACK_ROLLED/ATTACK_HIT.
 
+| Arg | Req. | Kind | |
+|---|---|---|---|
+| `attack_bonus` |  | an integer (or `use_caster_bonus`) | Flat bonus, or 'use_caster_bonus' for the caster's spell attack bonus. |
+
 | | |
 |---|---|
-| **Required args** | _(none)_ |
 | **Reads context** | _(none)_ |
 | **Writes context** | `hit`, `attack_roll`, `attack_total`, `critical_hit`, `critical_miss` |
 | **Target** | acts on the current target, which must be exactly one entity |
@@ -79,7 +107,6 @@ Cancel the in-flight action by setting ``cancelled`` on the live event.
 
 | | |
 |---|---|
-| **Required args** | _(none)_ |
 | **Reads context** | _(none)_ |
 | **Writes context** | _(none)_ |
 | **Target** | acts on the current target, which must be exactly one entity |
@@ -93,9 +120,17 @@ itself (not its ``data``), which is what the emitter checks after each handler.
 
 Apply typed damage to the current target. Returns the amount dealt.
 
+| Arg | Req. | Kind | |
+|---|---|---|---|
+| `formula` | yes | a dice formula | Dice formula rolled at cast time. |
+| `damage_type` | yes | a `DamageType` name, or an expression yielding one | Damage type name, or an expression yielding one (a rider dealing the weapon's own type). |
+| `requires_hit` |  | `true` / `false` | Skip unless a preceding attack_roll hit. |
+| `roll_once` |  | `true` / `false` | Inside for_each_target, roll once and share the result across every target (read by the iterator). |
+| `save_result` |  | an object: `on_success`* | Modify damage based on a preceding saving_throw. |
+| `scaling` |  | an object: `per_slot_above`*, `add_dice`* | Upcasting: add dice when cast with a higher slot. |
+
 | | |
 |---|---|
-| **Required args** | `formula`, `damage_type` |
 | **Reads context** | `hit`, `save_success`, `save_roll`, `critical_hit`, `slot_level` |
 | **Writes context** | `damage_dealt`, `damage_rolled` |
 | **Target** | acts on the current target, which must be exactly one entity |
@@ -106,7 +141,6 @@ End the effect whose rider is firing — dispose its owning lifetime scope.
 
 | | |
 |---|---|
-| **Required args** | _(none)_ |
 | **Reads context** | _(none)_ |
 | **Writes context** | _(none)_ |
 | **Target** | acts on the current target, which must be exactly one entity |
@@ -121,7 +155,6 @@ Run ``then`` once per target in the set, collecting a result per element.
 
 | | |
 |---|---|
-| **Required args** | _(none)_ |
 | **Reads context** | _(none)_ |
 | **Writes context** | _(none)_ |
 | **Target** | consumes the target set (an iterator, or a genuine aggregate) |
@@ -133,9 +166,13 @@ element's :class:`~src.spells.context.InvocationResult` to ``results``.
 
 Force the target's CON save; on a failure, end its concentration.
 
+| Arg | Req. | Kind | |
+|---|---|---|---|
+| `target` |  | `caster` / `defender` | 'caster' acts on the caster; otherwise the current target. |
+| `dc` | yes | an expression | Expression for the save DC, evaluated at fire time. |
+
 | | |
 |---|---|
-| **Required args** | `dc` |
 | **Reads context** | _(none)_ |
 | **Writes context** | _(none)_ |
 | **Target** | acts on the current target, which must be exactly one entity |
@@ -150,9 +187,12 @@ both, so this drives the whole concentration teardown on the new engine.
 
 Force the in-flight attack to resolve as a critical hit (or miss).
 
+| Arg | Req. | Kind | |
+|---|---|---|---|
+| `outcome` |  | `hit` / `miss` | Force a critical hit or a critical miss. Default 'hit'. |
+
 | | |
 |---|---|
-| **Required args** | _(none)_ |
 | **Reads context** | _(none)_ |
 | **Writes context** | _(none)_ |
 | **Target** | acts on the current target, which must be exactly one entity |
@@ -168,9 +208,17 @@ folded into one: ``outcome: "hit"`` (default) sets ``critical_hit`` on the live
 
 Grant a temporary AttackAction to the target (e.g. a concentration's attack).
 
+| Arg | Req. | Kind | |
+|---|---|---|---|
+| `target` |  | `caster` / `defender` | 'caster' acts on the caster; otherwise the current target. |
+| `name` | yes | a string | Name of the granted action. |
+| `description` |  | a string | Flavour text for the action. |
+| `bonus_to_hit` |  | an expression | Attack bonus for the granted action. |
+| `range_ft` |  | a number | Reach in feet. Default 5. |
+| `damage` |  | a list of objects: `type`, `formula` | Damage entries the granted action deals. |
+
 | | |
 |---|---|
-| **Required args** | `name` |
 | **Reads context** | _(none)_ |
 | **Writes context** | _(none)_ |
 | **Target** | acts on the current target, which must be exactly one entity |
@@ -185,7 +233,6 @@ Flag advantage on the live roll event (``ATTACK_DECLARED`` / ``SAVING_THROW_DECL
 
 | | |
 |---|---|
-| **Required args** | _(none)_ |
 | **Reads context** | _(none)_ |
 | **Writes context** | _(none)_ |
 | **Target** | acts on the current target, which must be exactly one entity |
@@ -197,7 +244,6 @@ Flag disadvantage on the live roll event (the mirror of :func:`grant_advantage`)
 
 | | |
 |---|---|
-| **Required args** | _(none)_ |
 | **Reads context** | _(none)_ |
 | **Writes context** | _(none)_ |
 | **Target** | acts on the current target, which must be exactly one entity |
@@ -207,9 +253,13 @@ Flag disadvantage on the live roll event (the mirror of :func:`grant_advantage`)
 
 Grant temporary hit points to the target (non-stacking, keeps the higher).
 
+| Arg | Req. | Kind | |
+|---|---|---|---|
+| `target` |  | `caster` / `defender` | 'caster' acts on the caster; otherwise the current target. |
+| `amount` | yes | an expression | Temporary hit points to grant (non-stacking). |
+
 | | |
 |---|---|
-| **Required args** | `amount` |
 | **Reads context** | _(none)_ |
 | **Writes context** | `temp_hp_granted` |
 | **Target** | acts on the current target, which must be exactly one entity |
@@ -218,9 +268,15 @@ Grant temporary hit points to the target (non-stacking, keeps the higher).
 
 Heal a target by an ``amount`` expression, or a ``formula`` + ``bonus``.
 
+| Arg | Req. | Kind | |
+|---|---|---|---|
+| `target` |  | `caster` / `defender` | 'caster' heals the caster; otherwise the current target. |
+| `amount` |  | an expression | Expression for a computed amount; takes precedence over formula. |
+| `formula` |  | a dice formula | Dice formula rolled at cast time. |
+| `bonus` |  | an expression | Added to the formula roll (a number or an expression). |
+
 | | |
 |---|---|
-| **Required args** | _(none)_ |
 | **Reads context** | `damage_dealt` |
 | **Writes context** | `healing_amount` |
 | **Target** | acts on the current target, which must be exactly one entity |
@@ -229,9 +285,15 @@ Heal a target by an ``amount`` expression, or a ``formula`` + ``bonus``.
 
 Run ``then`` with a fresh scope open, then bind the scope by its kind.
 
+| Arg | Req. | Kind | |
+|---|---|---|---|
+| `kind` |  | `concentration` / `rounds` / `instant` | What ends this lifetime. Default 'rounds'. |
+| `concentration` |  | `true` / `false` | Sugar for kind='concentration'. |
+| `duration_rounds` |  | an integer | Rounds until it expires; omitted = permanent. |
+| `source` |  | a string | Label for the scope; defaults to the action's name. |
+
 | | |
 |---|---|
-| **Required args** | _(none)_ |
 | **Reads context** | _(none)_ |
 | **Writes context** | _(none)_ |
 | **Target** | acts on the current target, which must be exactly one entity |
@@ -241,9 +303,13 @@ Run ``then`` with a fresh scope open, then bind the scope by its kind.
 
 Scale the amounts on the live ``DAMAGE_INCOMING`` event in place.
 
+| Arg | Req. | Kind | |
+|---|---|---|---|
+| `multiplier` | yes | an expression | Scale matching damage by this (0.5 resist, 0 immune, 2 vulnerable). |
+| `damage_type` |  | a `DamageType` name | Only scale this damage type; omitted scales every entry. |
+
 | | |
 |---|---|
-| **Required args** | `multiplier` |
 | **Reads context** | _(none)_ |
 | **Writes context** | _(none)_ |
 | **Target** | acts on the current target, which must be exactly one entity |
@@ -259,9 +325,12 @@ having already decided the event qualifies).
 
 Reset the target's action resources to its stat-block defaults.
 
+| Arg | Req. | Kind | |
+|---|---|---|---|
+| `target` |  | `caster` / `defender` | 'caster' acts on the caster; otherwise the current target. |
+
 | | |
 |---|---|
-| **Required args** | _(none)_ |
 | **Reads context** | _(none)_ |
 | **Writes context** | _(none)_ |
 | **Target** | acts on the current target, which must be exactly one entity |
@@ -270,9 +339,13 @@ Reset the target's action resources to its stat-block defaults.
 
 Roll the current target's saving throw; write save_roll/save_dc/save_success.
 
+| Arg | Req. | Kind | |
+|---|---|---|---|
+| `attribute` | yes | `strength` / `dexterity` / `constitution` / `intelligence` / `wisdom` / `charisma` | Which ability the save is rolled against. |
+| `dc` | yes | an integer (or `use_caster_dc`) | Flat DC, or 'use_caster_dc' for the caster's spell save DC. |
+
 | | |
 |---|---|
-| **Required args** | `attribute`, `dc` |
 | **Reads context** | _(none)_ |
 | **Writes context** | `save_roll`, `save_dc`, `save_success` |
 | **Target** | acts on the current target, which must be exactly one entity |
@@ -286,9 +359,17 @@ pipeline's saving-throw step.
 
 Subscribe this block's ``then`` to an event; scope it to the open lifetime.
 
+| Arg | Req. | Kind | |
+|---|---|---|---|
+| `event` | yes | a `EventType` name | The combat event this rider fires on. |
+| `when` |  | an expression | Guard evaluated at fire time against the event; the rider is skipped when falsy. |
+| `target` |  | an expression | Expression naming the entity to act on when it fires (e.g. 'event.defender'). |
+| `holder` |  | `caster` / `defender` | Whose rider this is — which entity 'entity' resolves to. |
+| `priority` |  | an integer | Bus subscription priority; lower runs later. |
+| `bindings` |  | an object of name → expression | Values captured once at install, read later as instance_fields.<name>. |
+
 | | |
 |---|---|
-| **Required args** | `event` |
 | **Reads context** | _(none)_ |
 | **Writes context** | _(none)_ |
 | **Target** | acts on the current target, which must be exactly one entity |

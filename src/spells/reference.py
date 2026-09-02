@@ -9,14 +9,11 @@ Regenerate with::
 
     python -m src.spells.reference
 
-What it can and cannot say
---------------------------
-The contract knows a block's *required* args, the context keys it reads and writes,
-its target arity, and its category flags — so those are authoritative here. It does
-**not** yet carry a per-field type/domain/description for optional args; that is the
-fuller per-field block schema (docs/SPELL_SYSTEM_REMAINING.md §4), and when it lands
-this generator grows a field table per block. Until then the handler docstring
-carries that detail in prose.
+Everything here is authoritative: each block's args come from its `Field`
+declarations, which are what the load-time validator checks against and are
+themselves drift-guarded against the handlers' real `block.get` calls
+(``tests/test_block_schema_drift.py``). A block cannot accept an arg this page
+does not list.
 """
 
 from __future__ import annotations
@@ -25,7 +22,7 @@ from pathlib import Path
 from typing import List
 
 from . import blocks as _blocks  # noqa: F401  (registers the block catalogue)
-from .contract import TargetArity
+from .contract import UNIVERSAL_FIELDS, Field, TargetArity
 from .registry import REGISTRY, BlockRegistry
 
 BLOCK_REFERENCE_PATH = "docs/BLOCK_REFERENCE.md"
@@ -42,6 +39,39 @@ _ARITY_BLURB = {
     TargetArity.CASTER: "acts on the caster, whatever the current target is",
     TargetArity.SET: "consumes the target set (an iterator, or a genuine aggregate)",
 }
+
+
+def _kind_blurb(spec: Field) -> str:
+    """Human-readable description of what a field accepts."""
+    if spec.kind == "enum" and spec.enum is not None:
+        base = f"a `{spec.enum.__name__}` name"
+        if spec.allow_expr:
+            base += ", or an expression yielding one"
+    elif spec.kind == "choice":
+        base = " / ".join(f"`{c}`" for c in spec.choices)
+    elif spec.kind in ("object", "list"):
+        inner = ", ".join(
+            f"`{f.name}`" + ("*" if f.required else "") for f in spec.subfields
+        )
+        base = f"{'a list of objects' if spec.kind == 'list' else 'an object'}: {inner}"
+    elif spec.kind == "map_expr":
+        base = "an object of name → expression"
+    elif spec.kind == "formula":
+        base = "a dice formula"
+    elif spec.kind == "expr":
+        base = "an expression"
+    elif spec.kind == "any":
+        base = "any value"
+    else:
+        base = {
+            "str": "a string",
+            "int": "an integer",
+            "number": "a number",
+            "bool": "`true` / `false`",
+        }[spec.kind]
+    if spec.sentinels:
+        base += " (or " + " / ".join(f"`{s}`" for s in spec.sentinels) + ")"
+    return base
 
 
 def _summary(handler) -> str:
@@ -87,11 +117,24 @@ def generate_block_reference(registry: BlockRegistry = REGISTRY) -> str:
     out.append("Block types: " + ", ".join(f"[`{t}`](#{t})" for t in types) + ".")
     out.append("")
     out.append(
-        "**Reading this.** *Required args* are the ones the load-time validator "
-        "rejects a program for omitting; a block may accept further optional args "
-        "documented in its notes. *Reads*/*Writes context* are the `context.X` keys "
-        "a block consumes and produces — a later block may read what an earlier one "
-        "wrote. *Target* is how the block addresses the current target."
+        "**Reading this.** Each block lists every arg it accepts — anything else is "
+        "rejected at load. *Kind* is how the value is validated; *req.* marks the "
+        "args a block cannot be written without. *Reads*/*Writes context* are the "
+        "`context.X` keys a block consumes and produces, so a later block may read "
+        "what an earlier one wrote. *Target* is how the block addresses the current "
+        "target."
+    )
+    out.append("")
+    out.append(
+        "Every block also accepts "
+        + ", ".join(f"`{f.name}`" for f in UNIVERSAL_FIELDS)
+        + " — "
+        + "; ".join(f.description for f in UNIVERSAL_FIELDS)
+    )
+    out.append("")
+    out.append(
+        "A key beginning with `_` (such as `_note`) is ignored by the engine and may "
+        "be used for authoring commentary."
     )
     out.append("")
 
@@ -103,8 +146,17 @@ def generate_block_reference(registry: BlockRegistry = REGISTRY) -> str:
         out.append(_summary(entry.handler))
         out.append("")
 
+        if c.fields:
+            out.append("| Arg | Req. | Kind | |")
+            out.append("|---|---|---|---|")
+            for spec in c.fields:
+                out.append(
+                    f"| `{spec.name}` | {'yes' if spec.required else ''} "
+                    f"| {_kind_blurb(spec)} | {spec.description} |"
+                )
+            out.append("")
+
         rows = [
-            ("Required args", ", ".join(f"`{a}`" for a in c.required_args)),
             ("Reads context", ", ".join(f"`{k}`" for k in c.reads)),
             ("Writes context", ", ".join(f"`{k}`" for k in c.writes)),
             ("Target", _ARITY_BLURB[c.target_arity]),
