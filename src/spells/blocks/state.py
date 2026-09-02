@@ -230,6 +230,10 @@ REGISTRY.register(
                   description="Deprecated spelling of `bindings`; prefer `bindings`."),
         ),
         target_arity=TargetArity.SINGLE,
+        # This block subscribes handlers (the condition's reactive rule), so the
+        # evaluator must flush the cast's pending DAMAGE_DEALT before it — otherwise
+        # a rider that reacts to damage fires on the very damage that applied it.
+        installs_reactions=True,
     ),
 )
 REGISTRY.register(

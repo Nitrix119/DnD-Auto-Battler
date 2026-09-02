@@ -74,6 +74,7 @@ Add a status condition to the target and install its reactive mechanics.
 | **Reads context** | _(none)_ |
 | **Writes context** | _(none)_ |
 | **Target** | acts on the current target, which must be exactly one entity |
+| **Category** | installs reactions (subscribes handlers to future events) |
 
 The condition's marker (``Condition``) is inert on its own; its behaviour lives
 in a reactive rule (``blinded`` → disadvantage, etc.). This block adds the marker
