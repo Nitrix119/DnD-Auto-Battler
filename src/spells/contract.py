@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Type
 
 
 #: The closed set of field kinds. Keep it closed: a kind per block would be a second
@@ -61,7 +61,7 @@ class Field:
     name: str
     kind: str = "any"
     required: bool = False
-    enum: Optional[type] = None
+    enum: Optional[Type[Enum]] = None
     choices: Tuple[str, ...] = ()
     sentinels: Tuple[str, ...] = ()
     subfields: Tuple["Field", ...] = ()

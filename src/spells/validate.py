@@ -296,16 +296,17 @@ def _check_object(value: Any, spec: Field, where: str) -> None:
             f"{where} must be an object with {', '.join(valid)}, got "
             f"{type(value).__name__} ({value!r})."
         )
-    for sub in spec.subfields:
-        if sub.required and sub.name not in value:
+    for required in spec.subfields:
+        if required.required and required.name not in value:
             raise ProgramValidationError(
-                f"{where} is missing required subfield {sub.name!r}; "
+                f"{where} is missing required subfield {required.name!r}; "
                 f"required: {', '.join(f.name for f in spec.subfields if f.required)}."
             )
     for key, sub_value in value.items():
         if key.startswith("_"):
             continue
-        sub = next((f for f in spec.subfields if f.name == key), None)
+        sub: Optional[Field] = next(
+            (f for f in spec.subfields if f.name == key), None)
         if sub is None:
             suggestion = difflib.get_close_matches(key, valid, n=1, cutoff=0.6)
             hint = f" — did you mean {suggestion[0]!r}?" if suggestion else ""
