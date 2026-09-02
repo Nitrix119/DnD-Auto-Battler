@@ -70,6 +70,18 @@ def test_trigger_fires_and_runs_then():
     assert caster.hp == before + 5  # healed event.total // 2
 
 
+def test_healing_is_capped_at_max_hp():
+    """A heal larger than the missing HP tops the target up, never past its maximum."""
+    caster = _caster()
+    _wound(caster, 5)
+    bus = EventBus()
+    _establish(caster, [_HEAL_RIDER], bus)
+
+    bus.emit(EventType.DAMAGE_DEALT, defender=_foe(), source=caster,
+             total=1000, damage_list=[])  # would heal 500
+    assert caster.hp == caster.stat_block.hit_points_max
+
+
 def test_trigger_condition_gates_out_other_sources():
     caster = _caster()
     _wound(caster, 20)

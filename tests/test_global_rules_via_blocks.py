@@ -10,6 +10,7 @@ the legacy engine (exactly what ``web/routers/combat.py`` does).
 import os
 
 from src.models import AbilityScores, StatBlock, Entity, Damage, DamageType, SpellAction
+from src.models.action import AttackAction
 from src.combat.event_bus import EventBus
 from src.combat.event_data import AttackRolledData, TurnEventData
 from src.combat.events import EventType
@@ -28,13 +29,14 @@ CONCENTRATION = os.path.join(_GLOBAL, "concentration.json")
 REFILL = os.path.join(_GLOBAL, "action_economy_refill.json")
 
 
-def _entity(hp=30, resistances=None, immunities=None, vulnerabilities=None):
+def _entity(hp=30, resistances=None, immunities=None, vulnerabilities=None,
+            con=10, ac=10):
     return Entity(
         StatBlock(
             name="Tester",
-            ability_scores=AbilityScores(10, 10, 10, 10, 10, 10),
+            ability_scores=AbilityScores(10, 10, con, 10, 10, 10),
             hit_points_max=hp,
-            armor_class=10,
+            armor_class=ac,
             damage_resistances=resistances or [],
             damage_immunities=immunities or [],
             damage_vulnerabilities=vulnerabilities or [],
@@ -152,12 +154,12 @@ class TestForwardGlobalRules:
                  TurnEventData(entity=entity, round_num=2, turn_num=1))
         assert entity.resources.actions == 1  # refilled to the stat-block default
 
-    def _concentrating_caster(self, bus, dp):
+    def _concentrating_caster(self, bus, dp, con=10, hp=30):
         """A caster holding a real block-engine concentration + a +2 AC buff."""
         from src.spells.evaluator import resolve as resolve_blocks
         from src.spells.block import parse_program
 
-        caster = _entity()
+        caster = _entity(hp=hp, con=con)
         program = parse_program([{
             "block": "lifetime", "kind": "concentration", "source": "Shield of Faith",
             "then": [{"block": "add_modifier", "target": "caster", "stat": "ac",
@@ -198,3 +200,94 @@ class TestForwardGlobalRules:
             dp.apply_damage(caster, [Damage(DamageType.GENERIC, 20)])
         assert caster.has_concentration  # passed CON save
         assert caster.ac == base + 2
+
+    def _damage_a_concentrating_caster(self, roll, con=14, amount=30):
+        """Damage a concentrating caster for *amount* on a fixed d20 *roll*.
+
+        30 damage sets the rule's DC to ``max(10, 30 // 2)`` = 15.
+        """
+        from unittest.mock import patch
+
+        bus = EventBus()
+        dp = DamageProcessor(bus)
+        install_global_rules([RuleLoader.load(CONCENTRATION)],
+                             event_bus=bus, damage_processor=dp)
+        caster = self._concentrating_caster(bus, dp, con=con, hp=100)
+        with patch("src.spells.blocks.global_effects.roll_d20", return_value=roll):
+            dp.apply_damage(caster, [Damage(DamageType.GENERIC, amount)])
+        return caster
+
+    def test_con_modifier_is_applied_to_the_save(self):
+        """The save adds the target's CON modifier: 12 + 2 = 14 misses DC 15."""
+        assert not self._damage_a_concentrating_caster(roll=12).has_concentration
+
+    def test_con_modifier_can_push_the_roll_over_the_dc(self):
+        """Meets-DC-exactly passes: 13 + 2 = 15 against DC 15 holds.
+
+        The same roll without the +2 (CON 10) fails — which is what proves the
+        modifier, not the roll, is doing the work.
+        """
+        assert self._damage_a_concentrating_caster(roll=13).has_concentration
+        assert not self._damage_a_concentrating_caster(roll=13, con=10).has_concentration
+
+
+# ---------------------------------------------------------------------------
+# Cancelling an in-flight action from a global rule
+# ---------------------------------------------------------------------------
+
+class TestCancelViaGlobalRule:
+    """A native global rule can cancel the action that raised the event.
+
+    The `cancel` block sets the flag on the live `CombatEvent`; what makes it
+    meaningful is that the *emitter* honours it, so this is asserted end-to-end
+    through `CombatSystem.resolve_attack` rather than on the event alone.
+    """
+
+    _PACIFISM = {
+        "name": "pacifism",
+        "program": [
+            {
+                "block": "trigger",
+                "event": "ATTACK_DECLARED",
+                "then": [{"block": "cancel"}],
+            },
+        ],
+    }
+
+    def _combat(self):
+        from src.combat import CombatSystem
+
+        combat = CombatSystem()
+        attacker = _entity(hp=30, ac=5)
+        defender = _entity(hp=50, ac=5)
+        combat.add_combatant(attacker)
+        combat.add_combatant(defender)
+        combat.start_combat()
+        for i, entry in enumerate(combat.initiative_tracker.initiative_order):
+            if entry.entity is attacker:
+                combat.initiative_tracker.current_turn_index = i
+                break
+        # bonus_to_hit 99 against AC 5: this attack cannot miss on its own merits,
+        # so a (False, 0) result can only come from the cancellation.
+        attack = AttackAction(
+            name="Sword", description="", bonus_to_hit=99,
+            damage=[Damage(DamageType.SLASHING, 1)],
+        )
+        return combat, attacker, defender, attack
+
+    def test_uncancelled_attack_hits(self):
+        """The control: without the rule the same attack lands and deals damage."""
+        combat, attacker, defender, attack = self._combat()
+        hit, damage, _ = combat.resolve_attack(attacker, defender, attack)
+        assert hit is True and damage > 0
+        assert defender.hp < 50
+
+    def test_cancel_on_attack_declared_stops_the_attack(self):
+        combat, attacker, defender, attack = self._combat()
+        install_global_rules([RuleLoader.from_dict(dict(self._PACIFISM))],
+                             event_bus=combat.event_bus)
+
+        hit, damage, _ = combat.resolve_attack(attacker, defender, attack)
+        assert hit is False
+        assert damage == 0
+        assert defender.hp == 50  # took no damage

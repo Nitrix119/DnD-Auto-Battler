@@ -87,6 +87,19 @@ class TestConditionMechanicsFire:
         _apply_condition(bus, dp, engine, caster=caster, target=blind, ctype="blinded")
         assert [c.condition_type for c in blind.conditions] == [ConditionType.BLINDED]
 
+    def test_emits_condition_added(self):
+        """The block announces the condition on the bus, carrying entity + marker."""
+        caster, target = _ent("Caster"), _ent("Target")
+        bus, dp, engine = _wire(caster, target)
+        received = []
+        bus.subscribe(EventType.CONDITION_ADDED, lambda e: received.append(e))
+
+        _apply_condition(bus, dp, engine, caster=caster, target=target, ctype="poisoned")
+
+        assert len(received) == 1
+        assert received[0].data["entity"] is target
+        assert received[0].data["condition"].condition_type == ConditionType.POISONED
+
     def test_condition_does_not_affect_bystanders(self):
         caster, blind, a, b = _ent("Caster"), _ent("Blind"), _ent("A"), _ent("B")
         bus, dp, engine = _wire(caster, blind, a, b)
