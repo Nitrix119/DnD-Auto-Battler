@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional
 from src.models.entity import Entity
 from src.models.damage import Damage
 from src.models.lifetime import LifetimeScope
-from src.rules.expressions import build_context
+from src.rules.expressions import SAFE_BUILTINS, build_context
 
 if TYPE_CHECKING:
     from src.combat.event_bus import CombatEvent
@@ -269,3 +269,19 @@ def eval_context(inv: "Invocation") -> Dict[str, Any]:
         entity=inv.caster,
         instance_fields=SimpleNamespace(**(inv.instance_fields or {})),
     )
+
+
+# Every top-level name an expression may reference: the sandbox's safe builtins plus
+# the namespace :func:`eval_context` builds. Anything else is a NameError at run time
+# — and inside a trigger guard that is swallowed as "did not fire", so the validator
+# rejects it at load instead. Kept honest by
+# ``tests/test_expression_roots.py::test_declared_roots_match_eval_context``, which
+# checks this against a real invocation rather than trusting the list.
+EXPRESSION_ROOTS = frozenset(SAFE_BUILTINS) | {
+    "event",             # the triggering event's fields (or caster/defender on a cast)
+    "context",           # the per-invocation context (see CONTEXT_KEYS)
+    "entity",            # the invocation's caster — the rider's holder
+    "instance_fields",   # values captured by a trigger's `bindings`
+    "save_success",
+    "save_roll",
+}

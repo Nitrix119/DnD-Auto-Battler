@@ -265,3 +265,87 @@ class TestNestedFieldShapes:
             [{"block": "grant_action", "name": "Bite",
               "damage": [{"type": "PIERCING", "formula": "1d6"}]}],
             spell_name="Fine")
+
+
+# ── Expressions ───────────────────────────────────────────────────────────────
+
+class TestExpressionArgs:
+    """An expression arg is only evaluated at cast (or fire) time, and inside a
+    trigger guard a failure is swallowed as "did not fire" — so a broken one must
+    be caught at load or it is invisible."""
+
+    def test_syntax_error_raises(self):
+        with pytest.raises(ProgramValidationError, match="condition"):
+            validate_program(
+                [{"block": "cancel", "condition": "event.total >"}],
+                spell_name="Bad")
+
+    def test_banned_node_raises(self):
+        """The sandbox forbids lambdas, comprehensions and the like."""
+        with pytest.raises(ProgramValidationError):
+            validate_program(
+                [{"block": "cancel", "condition": "[x for x in (1, 2)]"}],
+                spell_name="Bad")
+
+    def test_disallowed_call_raises(self):
+        with pytest.raises(ProgramValidationError):
+            validate_program(
+                [{"block": "cancel", "condition": "open('/etc/passwd')"}],
+                spell_name="Bad")
+
+    def test_unknown_root_name_raises(self):
+        """`caster` is not in the namespace — `entity` is. A NameError at run time."""
+        with pytest.raises(ProgramValidationError) as exc:
+            validate_program(
+                [{"block": "grant_temporary_hp", "amount": "caster.level * 2"}],
+                spell_name="Bad")
+        assert "caster" in str(exc.value)
+
+    def test_known_roots_pass(self):
+        validate_program(
+            [{"block": "grant_temporary_hp",
+              "amount": "max(1, context.damage_dealt // 2)"}],
+            spell_name="Fine")
+        validate_program(
+            [{"block": "cancel", "condition": "entity.hp > 0"}], spell_name="Fine")
+
+    def test_a_plain_number_is_accepted_for_an_expression_field(self):
+        validate_program(
+            [{"block": "grant_temporary_hp", "amount": 5}], spell_name="Fine")
+
+    def test_binding_values_are_checked_as_expressions(self):
+        with pytest.raises(ProgramValidationError, match="charmerr|caster"):
+            validate_program(
+                [{"block": "trigger", "event": "ATTACK_DECLARED",
+                  "bindings": {"charmer": "caster.self"}, "then": []}],
+                spell_name="Bad")
+
+
+# ── `then` where nothing runs it ──────────────────────────────────────────────
+
+class TestThenPlacement:
+    """Only for_each_target / lifetime / trigger execute a `then`. Anywhere else
+    the sub-program is silently dead."""
+
+    def test_then_on_a_leaf_block_raises(self):
+        with pytest.raises(ProgramValidationError) as exc:
+            validate_program(
+                [{"block": "damage", "damage_type": "FIRE", "formula": "1d6",
+                  "then": [{"block": "cancel"}]}],
+                spell_name="Bad")
+        msg = str(exc.value)
+        assert "then" in msg and "damage" in msg
+
+    def test_then_is_fine_on_the_blocks_that_run_it(self):
+        validate_program(
+            [{"block": "for_each_target", "then": [
+                {"block": "lifetime", "then": [
+                    {"block": "trigger", "event": "TURN_START", "then": [
+                        {"block": "cancel"}]}]}]}],
+            spell_name="Fine")
+
+    def test_an_empty_then_on_a_leaf_block_is_still_rejected(self):
+        """`then: []` is as dead as a populated one, and just as misleading."""
+        with pytest.raises(ProgramValidationError, match="then"):
+            validate_program(
+                [{"block": "cancel", "then": []}], spell_name="Bad")

@@ -194,6 +194,48 @@ def _is_expression(value: Any) -> bool:
     return True
 
 
+def _check_expression(expr: str, where: str) -> None:
+    """Validate one authored expression: it parses, is inside the sandbox, and
+    references only names the runtime namespace actually provides.
+
+    All three failures are invisible at run time: a bad expression raises inside
+    ``triggers._passes``, which catches everything and returns False — so the rider
+    silently "did not fire". They have to be caught here.
+    """
+    from src.rules.expressions import _validate_ast
+    from .context import EXPRESSION_ROOTS
+
+    try:
+        tree = ast.parse(expr, mode="eval")
+    except SyntaxError as exc:
+        raise ProgramValidationError(
+            f"{where} is not a valid expression: {expr!r} ({exc.msg})."
+        ) from None
+
+    # The sandbox's own AST whitelist — reused rather than reimplemented, so the
+    # validator and the evaluator can never disagree about what is allowed.
+    try:
+        _validate_ast(expr)
+    except ValueError as exc:
+        raise ProgramValidationError(f"{where}: {exc}") from None
+
+    roots = {
+        node.id for node in ast.walk(tree)
+        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load)
+    }
+    unknown = sorted(roots - set(EXPRESSION_ROOTS))
+    if unknown:
+        valid = ", ".join(sorted(EXPRESSION_ROOTS))
+        suggestion = difflib.get_close_matches(
+            unknown[0], sorted(EXPRESSION_ROOTS), n=1, cutoff=0.6
+        )
+        hint = f" — did you mean {suggestion[0]!r}?" if suggestion else ""
+        raise ProgramValidationError(
+            f"{where} references unknown name(s) {', '.join(unknown)} in "
+            f"{expr!r}{hint} Available: {valid}."
+        )
+
+
 def _check_value(value: Any, spec: Field, where: str) -> None:
     """Validate one arg value against its declared :class:`Field`.
 
@@ -239,11 +281,14 @@ def _check_value(value: Any, spec: Field, where: str) -> None:
                 f"{where} is not a dice formula ('2d6', '1d8+3', '20'): {value!r}."
             )
     elif kind == "expr":
-        if not _is_expression(value) and not isinstance(value, (int, float, bool)):
+        if isinstance(value, (int, float, bool)):
+            return  # a literal number is a valid "expression"
+        if not isinstance(value, str):
             raise ProgramValidationError(
                 f"{where} must be an expression or a number, got "
                 f"{type(value).__name__} ({value!r})."
             )
+        _check_expression(value, where)
     elif kind == "enum":
         assert spec.enum is not None  # guaranteed by Field.__post_init__
         names = [m.name for m in spec.enum]
@@ -277,6 +322,11 @@ def _check_value(value: Any, spec: Field, where: str) -> None:
                 f"{where} must be an object of name -> expression, got "
                 f"{type(value).__name__}."
             )
+        for name, sub_value in value.items():
+            # Non-string values are already-resolved objects passed in by code
+            # (apply_effect's instance_fields), not authored expressions.
+            if isinstance(sub_value, str):
+                _check_expression(sub_value, f"{where}.{name}")
     elif kind == "object":
         _check_object(value, spec, where)
     elif kind == "list":
@@ -320,7 +370,7 @@ def _check_object(value: Any, spec: Field, where: str) -> None:
 def _check_field_kinds(
     program: Sequence[Block], registry: BlockRegistry, spell_name: str
 ) -> None:
-    """Validate every present arg against its declared field."""
+    """Validate every present arg against its declared field, and `then` placement."""
     for block in program:
         contract = registry.get(block.type).contract
         for spec in _allowed_fields(contract):
@@ -330,6 +380,36 @@ def _check_field_kinds(
                     f"spell {spell_name!r}: block {block.type!r} arg {spec.name!r}",
                 )
         _check_field_kinds(block.then, registry, spell_name)
+
+
+def _check_then_placement(
+    program_dicts: Any, registry: BlockRegistry, spell_name: str
+) -> None:
+    """Reject a ``then`` on a block that never runs one.
+
+    Walks the raw dicts rather than parsed blocks: ``then: []`` parses to an empty
+    tuple, and an empty dead sub-program is exactly as misleading as a populated one.
+    """
+    if not isinstance(program_dicts, list):
+        return
+    runners = sorted(
+        t for t in registry.types() if registry.get(t).contract.consumes_then
+    )
+    for raw in program_dicts:
+        if not isinstance(raw, dict):
+            continue
+        block_type = raw.get("block")
+        if (
+            "then" in raw
+            and isinstance(block_type, str)
+            and registry.is_registered(block_type)
+            and not registry.get(block_type).contract.consumes_then
+        ):
+            raise ProgramValidationError(
+                f"spell {spell_name!r}: block {block_type!r} has a 'then', but only "
+                f"{', '.join(runners)} run one — it would never execute."
+            )
+        _check_then_placement(raw.get("then"), registry, spell_name)
 
 
 def validate_program(
@@ -373,4 +453,5 @@ def validate_program(
     _check_context_refs(program, spell_name)
     _check_event_refs(program, spell_name)
     _check_field_kinds(program, registry, spell_name)
+    _check_then_placement(program_dicts, registry, spell_name)
     return program
