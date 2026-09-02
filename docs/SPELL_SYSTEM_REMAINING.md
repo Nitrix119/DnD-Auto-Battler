@@ -124,11 +124,29 @@ Unblocked once §1 lands; each is its own design.
   pointer-safe initiative, "downed but present", `ENTITY_DIES`/dismissal).
 - **Meta / `cast_spell`** — a block that invokes the resolver on another spell (Wish,
   Contingency) + copy/counter. The "add one block absorbs the exotic tail" proof; built last.
-- **Fuller block schema + generated `BLOCK_REFERENCE.md`** (vision §5) — a per-field
-  required/optional/domain schema for the block vocabulary (the `program` analogue of
-  `STEP_SCHEMAS`), with a drift-tested generated reference. Also the natural home for the
-  deferred **E6** debt (below). The current validator (`src/spells/validate.py`) already
-  covers registered-type / required-arg / arity / context-ref — the highest-value catches.
+- **Rich program linting: a per-field block schema + generated `BLOCK_REFERENCE.md`**
+  (vision §5) — the `program` analogue of `STEP_SCHEMAS`, with a drift-tested generated
+  reference. Raised as a priority after the §1 slice, where two separate silent failures
+  (`petrified`'s dead trigger guard, the marker-only condition clock) were both *shapes the
+  validator could have rejected*. The engine's stance is §2.5 "fail loudly": **an authoring
+  mistake must not be silently ignored** — today an unrecognised field simply does nothing,
+  which is the worst outcome for clarity.
+
+  `src/spells/validate.py` currently covers registered-type / required-arg / arity /
+  `context.X` refs / `event.<field>` refs. The catches wanted on top, roughly in value order:
+
+  | Check | Example it catches |
+  |---|---|
+  | **Unknown/unused field on a block** | `{"block": "damage", "fomula": "1d6"}` — silently deals nothing today |
+  | **Type/domain per field** | `when: 4`, `multiplier: "half"`, `duration_rounds: "2"` |
+  | **Iterator/arity mismatch beyond the current lint** | a set-producing block feeding a block wanting a single target, and the converse |
+  | **Unreachable / dead references** | a `context.X` read before any block writes it; a `then` under a block that never runs one |
+  | **Enum values** | `damage_type: "SLASHNG"`, `event: "ATTACK_HITT"` (the latter now caught) |
+  | **Nested entity attributes** | `event.defender.typo` — the remaining half of E6 (§5) |
+
+  Design note: the required/optional/domain data belongs on `BlockContract` (beside
+  `required_args`) so a block's schema lives with its handler and the generated reference
+  cannot drift from it.
 
 ---
 
