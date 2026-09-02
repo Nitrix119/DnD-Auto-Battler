@@ -5,7 +5,7 @@ refill rule, and expires correctly after its duration. Haste is now authored as 
 native ``program`` (Phase 3 §5) — its rider is installed by **casting the spell**
 (self-cast here), not by applying a standalone entity-effect rule. The block-native
 end-to-end coverage on a targeted ally lives in
-``tests/test_entity_effect_fold.py::TestHasteFold``.
+``tests/test_persistent_spells.py::TestHaste``.
 """
 
 from src.models import AbilityScores, StatBlock, Entity, ACTION_COST

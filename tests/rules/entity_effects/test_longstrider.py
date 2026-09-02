@@ -5,7 +5,7 @@ resource refill rule, only affects the targeted entity, and persists (no duratio
 Longstrider is now authored as a native ``program`` (Phase 3 §5) — its rider is
 installed by **casting the spell** (self-cast here), not by applying a standalone
 entity-effect rule. The refill-ordering end-to-end proof lives in
-``tests/test_entity_effect_fold.py::TestLongstriderFoldEndToEnd``.
+``tests/test_persistent_spells.py::TestLongstriderEndToEnd``.
 """
 
 from src.models import AbilityScores, StatBlock, Entity

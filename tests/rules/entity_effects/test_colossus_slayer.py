@@ -3,7 +3,7 @@
 Colossus Slayer used to be a legacy *pipeline injection* — an ATTACK_HIT handler that
 appended a damage step to the running attack's compiled steps. It is now an
 ordinary ``ATTACK_HIT`` block ``trigger`` installed on the shared event bus by
-``RuleEngine.apply_effect`` (which folds a permanent reactive rider onto the block
+``RuleEngine.apply_effect`` (which installs a permanent reactive rider on the block
 engine). These tests resolve a real weapon attack through ``AttackResolver`` (the
 block path) and assert the *outcome*: the bonus die lands only on a wounded target,
 only for the effect's own attacker, once per attack, and is dealt as a **separate**

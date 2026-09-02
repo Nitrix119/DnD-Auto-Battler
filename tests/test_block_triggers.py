@@ -47,7 +47,7 @@ def _establish(caster, program_dicts, bus):
 
 
 # A Vampiric-Touch-style heal rider: when the caster deals damage, heal the caster
-# for half. Authored as a trigger — the shape §4.3b's fold will produce.
+# for half.
 _HEAL_RIDER = {
     "block": "trigger",
     "event": "DAMAGE_DEALT",

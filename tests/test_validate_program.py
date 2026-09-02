@@ -1,10 +1,11 @@
 """Load-time validation of native block programs (``validate_program``).
 
-The ``program`` counterpart of ``test_step_schema.py`` (which covers the legacy
-``effects`` validator). These pin the unhappy paths a hand- or LLM-authored
-program must fail loudly on at load time rather than silently at cast: an unknown
-block, a missing required arg, a target-arity category error, a malformed block, or
-a ``context.X`` reference to a key nothing writes.
+The single loader-boundary gate: every spell, weapon program and rule passes through
+it. These pin the unhappy paths a hand- or LLM-authored program must fail loudly on at
+load time rather than silently at cast: an unknown block, a missing required arg, a
+target-arity category error, a malformed block, a ``context.X`` reference to a key
+nothing writes, an ``event.<field>`` a trigger cannot carry, or a malformed
+``scaling``.
 """
 
 import pytest

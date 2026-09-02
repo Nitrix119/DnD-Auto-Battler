@@ -55,8 +55,7 @@ def _target(ac=12):
 
 
 # Shield of Faith, expressed natively: a +2 AC modifier owned by a concentration
-# lifetime. (Not yet routed from JSON — the add_entity_effect fold is §4.3 — but
-# this is exactly the program that fold will produce.)
+# lifetime.
 _SHIELD_OF_FAITH = [
     {
         "block": "lifetime",

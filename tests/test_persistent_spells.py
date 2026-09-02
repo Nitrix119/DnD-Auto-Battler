@@ -1,10 +1,12 @@
-"""Folding legacy add_entity_effect into a lifetime block (§4.3b).
+"""Persistent spells end to end: a lifetime scope that outlives the cast.
 
-The adapter now translates a foldable ``add_entity_effect`` step into a
-``lifetime{ … }`` program, so a persistent-effect spell can run on the new engine.
-4.3b folds the **state-only** case (an ``on_apply`` grant + a rule with no reactive
-triggers) — Shield of Faith. Spells whose entity-effect rule declares triggers stay
-on the legacy engine until 4.3b-2 folds the trigger side.
+The spells whose effect does not finish when the cast does — Longstrider (a per-turn
+movement grant), Shield of Faith (a concentration AC buff), Charm Person (a condition
+with a captured charmer), Haste (a duration-bound extra action on an ally). Each is a
+``lifetime`` block owning grants and/or triggers, and what these prove is the whole
+arc: the grant lands, the rider fires on the right turns and for the right entity, and
+everything is torn down together when the scope ends — by expiry, by concentration
+loss, or by dispel.
 """
 
 import os
@@ -23,18 +25,13 @@ def _spell(name):
     return StatBlockLoader.load_spell_from_json(os.path.join(SPELLS_DIR, f"{name}.json"))
 
 
-# NOTE: The former TestFoldRouting / TestFoldShape classes asserted the *shape* the
-# adapter/fold produced from a spell's legacy ``add_entity_effect`` step (Shield of
-# Faith, Haste, Charm Person, Armor of Agathys, Vampiric Touch, Longstrider). All of
-# those spells are now authored as native ``program``s (Phase 3 §5), so they no longer
-# have any ``pipeline_effects`` to fold — the assertions are obsolete and were removed.
-# The behaviour those effects deliver is covered end-to-end against the native path by
-# the classes below and by tests/test_native_corpus_parity.py. (The fold's
-# add_entity_effect path is now spell-userless — a candidate for the §4 removals; it
-# still backs conditions/global rules via rule_to_trigger_blocks.)
+# NOTE: this file once also asserted the *shape* a translator produced from these
+# spells' legacy ``add_entity_effect`` steps. Both the translator and that authoring
+# shape are gone — the spells are block programs — so only the behavioural tests below
+# remain, which is what CLAUDE.md §4 asks for anyway ("test behaviour, not structure").
 
 
-class TestLongstriderFoldEndToEnd:
+class TestLongstriderEndToEnd:
 
     def test_movement_grant_fires_after_the_refill(self):
         """The rider adds +10 movement *after* the per-turn refill resets it.
@@ -67,7 +64,7 @@ class TestLongstriderFoldEndToEnd:
         resolver = SpellResolver(bus, dp, rule_engine=engine)
 
         resolver.resolve(wizard, [goblin], _spell("longstrider"))
-        assert len(goblin.lifetimes) == 1  # ran through the fold, not legacy
+        assert len(goblin.lifetimes) == 1  # the spell's lifetime scope is open
 
         bus.emit(EventType.TURN_START,
                  TurnEventData(entity=goblin, round_num=2, turn_num=1))
@@ -99,7 +96,7 @@ def _resolver(*entities):
     return bus, engine, SpellResolver(bus, dp, rule_engine=engine)
 
 
-class TestFoldEndToEnd:
+class TestShieldOfFaithEndToEnd:
 
     def test_cast_runs_on_the_new_engine_and_grants_ac(self):
         from unittest.mock import patch
@@ -109,7 +106,7 @@ class TestFoldEndToEnd:
         base = cleric.ac
         resolver.resolve(cleric, [cleric], _spell("shield_of_faith"))
 
-        # Went through the fold, not legacy: a real lifetime scope is open.
+        # A real lifetime scope is open on the caster.
         assert cleric.concentration_scope is not None
         assert cleric.has_concentration
         assert cleric.ac == base + 2
@@ -122,7 +119,7 @@ class TestFoldEndToEnd:
         assert cleric.ac == base
 
 
-class TestCharmPersonFold:
+class TestCharmPerson:
     """Charm Person on the new engine — the instance_fields closure (charmer)."""
 
     def _cast(self, resolver, caster, target, *, save_fails):
@@ -144,7 +141,7 @@ class TestCharmPersonFold:
         caster, target = _cleric(), _cleric()
         bus, engine, resolver = _resolver(caster, target)
         self._cast(resolver, caster, target, save_fails=True)
-        assert len(target.lifetimes) == 1  # folded onto the new engine
+        assert len(target.lifetimes) == 1
         assert self._declare(bus, target, caster).cancelled is True
 
     def test_charmed_target_can_attack_others(self):
@@ -174,7 +171,7 @@ class TestCharmPersonFold:
         assert self._declare(bus, victim_b, charmer_a).cancelled is False
 
 
-class TestHasteFold:
+class TestHaste:
     """Haste on the new engine — the VT pattern with the rider on a targeted ally."""
 
     def _setup(self, caster, ally):
@@ -237,7 +234,8 @@ class TestHasteFold:
 
     def test_duration_expires_on_the_casters_turns(self):
         """Accepted deviation: the 10-round clock lives on the caster's concentration
-        scope, so it ticks on the *caster's* turns, not the ally's (see fold.py)."""
+        scope, so it ticks on the *caster's* turns, not the ally's
+        (a carried deviation — see docs/SPELL_SYSTEM_REMAINING.md §2)."""
         caster, ally = _cleric(), _cleric()
         bus, engine, resolver = self._setup(caster, ally)
         resolver.resolve(caster, [ally], _spell("haste"))

@@ -12,8 +12,6 @@ than writing forward state. These tests prove the primitive three ways:
 3. **Fail-safe** — a ``modify_damage`` with no live event (run outside a trigger)
    no-ops instead of crashing.
 
-Plus a fold check: a rule ``ModifyDamage`` effect translates into a ``modify_damage``
-block (the ``_ACTION_TO_BLOCK`` entry that lets resistance-style entity effects fold).
 """
 
 import os
