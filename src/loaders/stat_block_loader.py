@@ -267,11 +267,20 @@ class StatBlockLoader:
             cost_kwargs["cost"] = cost
 
         if action_type == "attack":
+            # A weapon is normally authored in the flat form above; AttackResolver
+            # builds the implied ``[attack_roll, damage…]`` program from it. One that
+            # needs more may author a ``program`` directly, validated here exactly as
+            # a spell's is.
+            weapon_program = action_data.get("program") or []
+            if weapon_program:
+                from src.spells.validate import validate_program
+                validate_program(weapon_program, spell_name=name)
             return AttackAction(
                 name=name,
                 description=description,
                 bonus_to_hit=action_data.get("bonus_to_hit", 0),
                 damage=damage,
+                program=weapon_program,
                 recharge=recharge,
                 range_ft=float(action_data.get("range_ft", 5.0)),
                 legendary_action_cost=legendary_action_cost,
@@ -407,6 +416,8 @@ class StatBlockLoader:
         if isinstance(action, AttackAction):
             base["bonus_to_hit"] = action.bonus_to_hit
             base["range_ft"] = action.range_ft
+            if action.program:
+                base["program"] = action.program
             if action.damage:
                 base["damage"] = [
                     {
