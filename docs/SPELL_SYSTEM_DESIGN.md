@@ -562,11 +562,12 @@ skip. The schema also becomes the generated source for the authoring guide, endi
   formula, and `context.X` references to keys nothing writes. It generates the authoritative
   `STEP_REFERENCE.md` (drift-guarded), and all 22 spells lint clean.
 - **Rule side (the literal E6):** a per-event field schema (`EVENT_DATA_CLASSES` / `event_fields` in
-  `src/combat/event_data.py`) backs `RuleLoader._validate_event_field_refs`, which rejects any
-  `event.<field>` reference no trigger event carries. Typos now fail at load; the runtime
-  `AttributeError` skip is left only for the legitimate multi-trigger case. _Remaining, out of E6's
-  scope: nested entity-attribute typos (`event.defender.typo`) — would need an Entity attribute
-  schema._
+  `src/combat/event_data.py`) backed `RuleLoader._validate_event_field_refs`, which rejected any
+  `event.<field>` reference no trigger event carried. _Superseded 2026-09-03: that check was tied to
+  the legacy `triggers`/`effects` rule shape and went with it. The schema itself is kept as the
+  primitive for the block-level version, which lands with the fuller block schema (§5)._
+  _Remaining, out of E6's scope: nested entity-attribute typos (`event.defender.typo`) — would need
+  an Entity attribute schema._
 
 ### 6.10 Migration & backwards compatibility
 

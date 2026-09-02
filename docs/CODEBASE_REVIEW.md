@@ -53,11 +53,11 @@ via **sandboxed Python expressions** (`src/rules/expressions.py` — AST whiteli
 
 **Rules & effects are data-driven too.** `src/rules/rule_engine.py` `RuleEngine` loads global
 rules (`rules/global/`: crits, concentration, damage modifiers) and named entity effects
-(`rules/entity_effects/`: haste, charmed, 17 conditions, …) as JSON, dispatched through a
-`BUILTIN_EFFECTS` handler registry (`src/rules/effects.py`). Cross-cutting behavior (resistance
-multipliers, concentration saves, crit rules, conditions) subscribes to bus events rather than
-being hardcoded into resolution. Effects support an `"on"` event-type gate and a `"when"`
-expression guard so one rule can serve multiple triggers.
+(`rules/entity_effects/`: colossus slayer, the condition library) as JSON. Each is a block
+`program` of `trigger` blocks that the engine installs on the block engine — it is a loader
+seam, not a dispatcher. Cross-cutting behavior (resistance multipliers, concentration saves,
+crit rules, conditions) subscribes to bus events rather than being hardcoded into resolution.
+A trigger supports a `when` expression guard so one rule can serve multiple events.
 
 **Web layer.** `web/app.py` builds process-global spell/effect registries at startup by scanning
 `examples/spells/` and `rules/entity_effects/`. `web/routers/combat.py` exposes creature/spell
@@ -139,12 +139,15 @@ parallel effect vocabularies bridged by synthetic stub events (`_handle_apply_co
   skipped, so a genuine typo in a rule expression was silently ignored, indistinguishable from a
   field legitimately absent on a wrong event type. **Fixed:** a per-event field schema
   (`EVENT_DATA_CLASSES` / `event_fields` in `src/combat/event_data.py`) now backs a load-time check
-  (`RuleLoader._validate_event_field_refs`) that rejects any `event.<field>` reference no trigger
-  carries — so typos fail loudly at load. The runtime `AttributeError` skip now covers only the
-  legitimate multi-trigger case (a field present on some but not all of a rule's triggers). Covered
-  by `tests/rules/test_rule_event_field_validation.py`. _(Nested entity-attribute typos like
-  `event.defender.typo` are still swallowed at runtime — that needs an Entity attribute schema and
-  is outside E6's scope.)_
+  that rejected any `event.<field>` reference no trigger carried, so typos failed loudly at load.
+  _(Superseded 2026-09-03: that load-time check went with the legacy `triggers`/`effects` rule
+  shape it validated. The `event_fields` schema it was built on is kept in
+  `src/combat/event_data.py` — tested by `tests/rules/test_rule_loading.py` — as the primitive for
+  the block-level replacement, which belongs with the fuller block schema in
+  [SPELL_SYSTEM_REMAINING.md](SPELL_SYSTEM_REMAINING.md) §4. **Until that lands, a typo'd
+  `event.<field>` in a rule's block program is not caught at load.**)_ Nested entity-attribute
+  typos like `event.defender.typo` are still swallowed at runtime — that needs an Entity attribute
+  schema and was always outside E6's scope.
 
 **MEDIUM:**
 - **E7. Return-shape drift vs. docstrings — fixed.** `resolve_attack`/`parse_dice_formula`
