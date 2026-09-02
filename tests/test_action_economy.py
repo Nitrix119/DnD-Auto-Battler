@@ -250,8 +250,8 @@ class TestCombatSystemResourceEnforcement:
             name="Fire Bolt",
             description="Cantrip",
             program=[
-                {"block": "attack_roll", "attack_bonus": "use_caster_bonus", "target": "defender"},
-                {"block": "damage", "target": "defender", "damage_type": "FIRE", "formula": "1d10", "requires_hit": True},
+                {"block": "attack_roll", "attack_bonus": "use_caster_bonus"},
+                {"block": "damage", "damage_type": "FIRE", "formula": "1d10", "requires_hit": True},
             ],
         )
         combat.resolve_spell(fighter, [goblin], spell)
@@ -263,7 +263,7 @@ class TestCombatSystemResourceEnforcement:
             name="Fire Bolt",
             description="Cantrip",
             program=[
-                {"block": "attack_roll", "attack_bonus": "use_caster_bonus", "target": "defender"},
+                {"block": "attack_roll", "attack_bonus": "use_caster_bonus"},
             ],
         )
         fighter.spend_resources(ACTION_COST)

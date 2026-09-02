@@ -41,7 +41,6 @@
           "then": [
             {
               "block": "damage",
-              "target": "defender",
               "damage_type": "COLD",
               "formula": "5",
               "condition": "entity.temporary_hp > 0"

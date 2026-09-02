@@ -119,7 +119,7 @@ def _make_save_spell(
     """
     damage_step = {
         "block": "damage",
-        "target": "defender",
+        
         "damage_type": "FIRE",
         "formula": str(damage_amount),
     }
@@ -135,7 +135,7 @@ def _make_save_spell(
         duration=Duration(DurationUnit.INSTANTANEOUS),
         components=SpellComponents(verbal=True, somatic=False),
         program=[
-            {"block": "saving_throw", "attribute": save_ability, "dc": "use_caster_dc", "target": "defender"},
+            {"block": "saving_throw", "attribute": save_ability, "dc": "use_caster_dc"},
             damage_step,
         ],
     )

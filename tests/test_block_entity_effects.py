@@ -24,11 +24,12 @@ _NATIVE_POISON = {
     "duration_rounds": 3,
     "program": [
         {
+            # `damage` has no target selector — the enclosing trigger decides who is
+            # targeted (here the holder, via `target: "event.entity"`).
             "block": "trigger", "event": "TURN_START", "holder": "caster",
-            "when": "event.entity == entity",
+            "when": "event.entity == entity", "target": "event.entity",
             "then": [
-                {"block": "damage", "target": "caster",
-                 "formula": "1d6", "damage_type": "POISON"},
+                {"block": "damage", "formula": "1d6", "damage_type": "POISON"},
             ],
         },
     ],

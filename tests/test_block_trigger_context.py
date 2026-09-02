@@ -44,7 +44,7 @@ def _install(bus, dp, holder, program):
 _ONHIT_DAMAGE = [{
     "block": "trigger", "event": "ATTACK_HIT", "holder": "caster",
     "target": "event.defender",
-    "then": [{"block": "damage", "target": "defender",
+    "then": [{"block": "damage", 
               "damage_type": "FIRE", "formula": "2d1"}],
 }]
 
@@ -94,7 +94,7 @@ class TestDynamicDamageType:
         rider = [{
             "block": "trigger", "event": "ATTACK_HIT", "holder": "caster",
             "target": "event.defender",
-            "then": [{"block": "damage", "target": "defender",
+            "then": [{"block": "damage", 
                       "damage_type": "event.action.primary_damage_type",
                       "formula": "1d1"}],
         }]

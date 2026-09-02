@@ -106,7 +106,7 @@ class TestTriggerEventFieldValidation:
     def test_typo_in_a_nested_block_arg_raises(self):
         with pytest.raises(ValueError) as exc:
             RuleLoader.from_dict(self._rule(then=[
-                {"block": "damage", "target": "event.attackerr",
+                {"block": "damage", "condition": "event.attackerr == entity",
                  "formula": "1d6", "damage_type": "COLD"},
             ]))
         assert "attackerr" in str(exc.value)

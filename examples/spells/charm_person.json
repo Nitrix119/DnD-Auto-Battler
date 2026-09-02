@@ -26,8 +26,7 @@
     {
       "block": "saving_throw",
       "attribute": "wisdom",
-      "dc": "use_caster_dc",
-      "target": "defender"
+      "dc": "use_caster_dc"
     },
     {
       "block": "apply_condition",

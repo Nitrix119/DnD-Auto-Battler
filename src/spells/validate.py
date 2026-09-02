@@ -19,12 +19,13 @@ weapon program and rule passes through it.
 from __future__ import annotations
 
 import ast
+import difflib
 import re
-from typing import Any, Iterator, List, Optional, Sequence
+from typing import Any, Iterator, List, Optional, Sequence, Tuple
 
 from . import blocks as _blocks  # noqa: F401  (registers the block catalogue)
 from .block import Block, parse_program
-from .contract import TargetArity
+from .contract import UNIVERSAL_FIELDS, Field, TargetArity
 from .lint import lint_program
 from .registry import REGISTRY, BlockRegistry
 
@@ -47,6 +48,11 @@ class ProgramValidationError(ValueError):
     """A native ``program`` is malformed (unknown block, bad context ref, …)."""
 
 
+def _allowed_fields(contract) -> Tuple[Field, ...]:
+    """Every field a block accepts: its own, plus the ones every block takes."""
+    return tuple(contract.fields) + UNIVERSAL_FIELDS
+
+
 def _check_registered(
     program: Sequence[Block], registry: BlockRegistry, spell_name: str
 ) -> None:
@@ -56,16 +62,37 @@ def _check_registered(
                 f"spell {spell_name!r}: unknown block type {block.type!r}; "
                 f"registered: {', '.join(sorted(registry.types())) or '(none)'}"
             )
-        missing = [
-            arg for arg in registry.get(block.type).contract.required_args
-            if arg not in block.args
-        ]
+        contract = registry.get(block.type).contract
+        # Unknown args first: a misspelled *required* arg is both "unknown" and
+        # "missing", and "unknown arg 'fomula' — did you mean 'formula'?" is the far
+        # more useful of the two messages.
+        _check_unknown_args(block, contract, spell_name)
+        missing = [a for a in contract.required_args if a not in block.args]
         if missing:
             raise ProgramValidationError(
                 f"spell {spell_name!r}: block {block.type!r} is missing required "
                 f"arg(s): {', '.join(missing)}."
             )
         _check_registered(block.then, registry, spell_name)
+
+
+def _check_unknown_args(block: Block, contract, spell_name: str) -> None:
+    """Reject any arg the block does not declare.
+
+    An undeclared arg is silently ignored at run time — a typo'd ``fomula`` simply
+    deals no damage — so it has to fail here. Keys starting with ``_`` are authoring
+    commentary (``_note``) and are ignored by both the engine and this check.
+    """
+    valid = sorted(f.name for f in _allowed_fields(contract))
+    for key in block.args:
+        if key.startswith("_") or key in valid:
+            continue
+        suggestion = difflib.get_close_matches(key, valid, n=1, cutoff=0.6)
+        hint = f" — did you mean {suggestion[0]!r}?" if suggestion else ""
+        raise ProgramValidationError(
+            f"spell {spell_name!r}: block {block.type!r} has unknown arg "
+            f"{key!r}{hint} Valid args: {', '.join(valid)}."
+        )
 
 
 def _iter_context_refs(value: Any) -> Iterator[str]:

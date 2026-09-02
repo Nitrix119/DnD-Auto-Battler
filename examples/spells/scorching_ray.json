@@ -27,12 +27,10 @@
       "then": [
         {
           "block": "attack_roll",
-          "attack_bonus": "use_caster_bonus",
-          "target": "defender"
+          "attack_bonus": "use_caster_bonus"
         },
         {
           "block": "damage",
-          "target": "defender",
           "damage_type": "FIRE",
           "formula": "2d6",
           "requires_hit": true

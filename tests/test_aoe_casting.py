@@ -119,8 +119,8 @@ def _touch_spell() -> SpellAction:
         duration=Duration(DurationUnit.INSTANTANEOUS),
         components=SpellComponents(verbal=True, somatic=True),
         program=[
-            {"block": "attack_roll", "attack_bonus": "use_caster_bonus", "target": "defender"},
-            {"block": "damage", "target": "defender", "damage_type": "NECROTIC", "formula": "3d10",
+            {"block": "attack_roll", "attack_bonus": "use_caster_bonus"},
+            {"block": "damage", "damage_type": "NECROTIC", "formula": "3d10",
              "requires_hit": True},
         ],
     )
@@ -137,8 +137,8 @@ def _ranged_spell(range_ft: int = 120) -> SpellAction:
         duration=Duration(DurationUnit.INSTANTANEOUS),
         components=SpellComponents(verbal=True, somatic=True),
         program=[
-            {"block": "attack_roll", "attack_bonus": "use_caster_bonus", "target": "defender"},
-            {"block": "damage", "target": "defender", "damage_type": "FIRE", "formula": "1d10",
+            {"block": "attack_roll", "attack_bonus": "use_caster_bonus"},
+            {"block": "damage", "damage_type": "FIRE", "formula": "1d10",
              "requires_hit": True},
         ],
     )
@@ -155,7 +155,7 @@ def _sight_spell() -> SpellAction:
         duration=Duration(DurationUnit.INSTANTANEOUS),
         components=SpellComponents(verbal=True, somatic=True),
         program=[
-            {"block": "saving_throw", "attribute": "wisdom", "dc": 15, "target": "defender"},
+            {"block": "saving_throw", "attribute": "wisdom", "dc": 15},
         ],
     )
 

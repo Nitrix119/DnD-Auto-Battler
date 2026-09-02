@@ -11,7 +11,6 @@
       "then": [
         {
           "block": "damage",
-          "target": "defender",
           "damage_type": "event.action.primary_damage_type",
           "formula": "1d8"
         }

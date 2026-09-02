@@ -27,7 +27,6 @@
       "then": [
         {
           "block": "damage",
-          "target": "defender",
           "damage_type": "FORCE",
           "formula": "1d4+1"
         }

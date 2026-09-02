@@ -23,12 +23,10 @@
   "program": [
     {
       "block": "attack_roll",
-      "attack_bonus": "use_caster_bonus",
-      "target": "defender"
+      "attack_bonus": "use_caster_bonus"
     },
     {
       "block": "damage",
-      "target": "defender",
       "damage_type": "COLD",
       "formula": "1d8",
       "requires_hit": true
