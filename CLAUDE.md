@@ -7,7 +7,10 @@ the code is the source of truth for **what** currently exists.
 For the deeper design intent behind the spell/combat engine, read
 [docs/SPELL_SYSTEM_VISION.md](docs/SPELL_SYSTEM_VISION.md). For the current health
 of the codebase and the open repair roadmap, read
-[docs/CODEBASE_REVIEW.md](docs/CODEBASE_REVIEW.md).
+[docs/CODEBASE_REVIEW.md](docs/CODEBASE_REVIEW.md). For **what's genuinely left in the
+spell/combat rework** — remaining deletions, carried deviations to not lose, and known
+awkwardness worth refining — read
+[docs/SPELL_SYSTEM_REMAINING.md](docs/SPELL_SYSTEM_REMAINING.md).
 
 ---
 

@@ -7,6 +7,10 @@
 > [SPELL_SYSTEM_PHASE2_PLAN.md](SPELL_SYSTEM_PHASE2_PLAN.md), which is now a completed historical record
 > (read it for how the block engine, the fold, and the global-rule install were built). Deeper intent lives
 > in [SPELL_SYSTEM_VISION.md](SPELL_SYSTEM_VISION.md) and [SPELL_SYSTEM_DESIGN.md](SPELL_SYSTEM_DESIGN.md).
+>
+> **This document is now mostly a phase *record*.** For the concise, current view of what remains — the last
+> deletions, carried deviations to not lose, and known awkwardness worth refining — start with
+> [SPELL_SYSTEM_REMAINING.md](SPELL_SYSTEM_REMAINING.md).
 
 ---
 
