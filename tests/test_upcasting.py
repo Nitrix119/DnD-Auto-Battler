@@ -17,7 +17,8 @@ from src.combat.damage_processor import DamageProcessor
 from src.combat.spell_resolver import SpellResolver
 from src.spells.scaling import effective_damage_formula
 from src.combat import CombatSystem
-from src.rules.step_schema import CONTEXT_KEYS, lint_effects
+from src.spells.context import CONTEXT_KEYS
+from src.spells.validate import validate_program
 
 
 # ── The pure formula helper ─────────────────────────────────────────────────────
@@ -52,11 +53,11 @@ class TestEffectiveDamageFormula:
 
 def test_slot_level_is_a_valid_context_key():
     assert "slot_level" in CONTEXT_KEYS
-    # An expression referencing it must lint clean.
-    assert lint_effects([
-        {"type": "damage", "damage_type": "FIRE", "formula": "1d6",
+    # An expression referencing it must validate clean.
+    validate_program([
+        {"block": "damage", "damage_type": "FIRE", "formula": "1d6",
          "condition": "context.slot_level >= 5"}
-    ]) == []
+    ], spell_name="Scaler")
 
 
 # ── Integration: a spell cast at a higher slot deals more damage ────────────────
@@ -66,8 +67,8 @@ def _damage_spell() -> SpellAction:
         name="Test Blast",
         description="",
         spell_level=3,
-        pipeline_effects=[
-            {"type": "damage", "damage_type": "FIRE", "formula": "8d6",
+        program=[
+            {"block": "damage", "damage_type": "FIRE", "formula": "8d6",
              "scaling": {"per_slot_above": 3, "add_dice": "1d6"}},
         ],
     )
@@ -111,8 +112,8 @@ class TestScalingInResolution:
         resolver = SpellResolver(bus, DamageProcessor(bus))
         spell = SpellAction(
             name="Test Nova", description="", spell_level=3,
-            pipeline_effects=[
-                {"type": "damage", "damage_type": "FIRE", "formula": "8d6",
+            program=[
+                {"block": "damage", "damage_type": "FIRE", "formula": "8d6",
                  "roll_once": True,
                  "scaling": {"per_slot_above": 3, "add_dice": "1d6"}},
             ],
@@ -177,30 +178,43 @@ class TestUpcastSlotAccounting:
 # ── Schema: the scaling field is validated ──────────────────────────────────────
 
 class TestScalingSchema:
+    """`scaling` is validated at load: it is the one block arg with an internal
+    shape, and a malformed one silently scales nothing at cast time."""
 
-    def test_valid_scaling_lints_clean(self):
-        assert lint_effects([
-            {"type": "damage", "damage_type": "FIRE", "formula": "8d6",
-             "scaling": {"per_slot_above": 3, "add_dice": "1d6"}},
-        ]) == []
+    def _damage(self, scaling):
+        return [{"block": "damage", "damage_type": "FIRE", "formula": "8d6",
+                 "scaling": scaling}]
+
+    def test_valid_scaling_validates_clean(self):
+        validate_program(self._damage({"per_slot_above": 3, "add_dice": "1d6"}),
+                         spell_name="Upcaster")
 
     def test_missing_add_dice_is_reported(self):
-        errors = lint_effects([
-            {"type": "damage", "damage_type": "FIRE", "formula": "8d6",
-             "scaling": {"per_slot_above": 3}},
-        ])
-        assert any("add_dice" in e for e in errors)
+        with pytest.raises(ValueError, match="add_dice"):
+            validate_program(self._damage({"per_slot_above": 3}),
+                             spell_name="Upcaster")
+
+    def test_missing_per_slot_above_is_reported(self):
+        with pytest.raises(ValueError, match="per_slot_above"):
+            validate_program(self._damage({"add_dice": "1d6"}),
+                             spell_name="Upcaster")
 
     def test_bad_add_dice_formula_is_reported(self):
-        errors = lint_effects([
-            {"type": "damage", "damage_type": "FIRE", "formula": "8d6",
-             "scaling": {"per_slot_above": 3, "add_dice": "1d"}},
-        ])
-        assert any("add_dice" in e for e in errors)
+        with pytest.raises(ValueError, match="add_dice"):
+            validate_program(self._damage({"per_slot_above": 3, "add_dice": "1d"}),
+                             spell_name="Upcaster")
+
+    def test_non_int_per_slot_above_is_reported(self):
+        with pytest.raises(ValueError, match="per_slot_above"):
+            validate_program(self._damage({"per_slot_above": "3", "add_dice": "1d6"}),
+                             spell_name="Upcaster")
 
     def test_unknown_scaling_subfield_is_reported(self):
-        errors = lint_effects([
-            {"type": "damage", "damage_type": "FIRE", "formula": "8d6",
-             "scaling": {"per_slot_above": 3, "add_dice": "1d6", "per_levl": 1}},
-        ])
-        assert any("per_levl" in e for e in errors)
+        with pytest.raises(ValueError, match="per_levl"):
+            validate_program(
+                self._damage({"per_slot_above": 3, "add_dice": "1d6", "per_levl": 1}),
+                spell_name="Upcaster")
+
+    def test_scaling_must_be_an_object(self):
+        with pytest.raises(ValueError, match="scaling"):
+            validate_program(self._damage("1d6"), spell_name="Upcaster")

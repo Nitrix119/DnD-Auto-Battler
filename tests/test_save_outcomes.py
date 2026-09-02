@@ -47,9 +47,7 @@ _DC = 15  # wizard's spell_save_dc
 
 
 def _damage_entries(spell):
-    """Damage steps of a spell, whether authored natively (``program``, keyed by
-    ``block``, possibly nested under ``then``) or legacily (``pipeline_effects``,
-    keyed by ``type``). The ``save_result`` field is the same under both."""
+    """Damage blocks of a spell, including those nested under a ``then``."""
     def walk(blocks, key):
         out = []
         for b in blocks:
@@ -58,13 +56,11 @@ def _damage_entries(spell):
             out.extend(walk(b.get("then", []), key))
         return out
 
-    if spell.program:
-        return walk(spell.program, "block")
-    return walk(spell.pipeline_effects, "type")
+    return walk(spell.program, "block")
 
 
 def _save_entries(spell):
-    """saving_throw steps of a spell, native (`program`) or legacy (`pipeline_effects`)."""
+    """saving_throw blocks of a spell, including those nested under a ``then``."""
     def walk(blocks, key):
         out = []
         for b in blocks:
@@ -73,9 +69,7 @@ def _save_entries(spell):
             out.extend(walk(b.get("then", []), key))
         return out
 
-    if spell.program:
-        return walk(spell.program, "block")
-    return walk(spell.pipeline_effects, "type")
+    return walk(spell.program, "block")
 
 
 # ---------------------------------------------------------------------------
@@ -124,7 +118,7 @@ def _make_save_spell(
     deterministic (roll_formula("20") == 20).
     """
     damage_step = {
-        "type": "damage",
+        "block": "damage",
         "target": "defender",
         "damage_type": "FIRE",
         "formula": str(damage_amount),
@@ -140,8 +134,8 @@ def _make_save_spell(
         casting_time=CastingTime(CastingTimeType.ACTION),
         duration=Duration(DurationUnit.INSTANTANEOUS),
         components=SpellComponents(verbal=True, somatic=False),
-        pipeline_effects=[
-            {"type": "saving_throw", "attribute": save_ability, "dc": "use_caster_dc", "target": "defender"},
+        program=[
+            {"block": "saving_throw", "attribute": save_ability, "dc": "use_caster_dc", "target": "defender"},
             damage_step,
         ],
     )

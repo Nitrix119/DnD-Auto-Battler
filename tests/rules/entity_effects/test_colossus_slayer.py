@@ -1,7 +1,7 @@
 """Colossus Slayer as a native block-engine ATTACK_HIT trigger (Phase 3 §2).
 
 Colossus Slayer used to be a legacy *pipeline injection* — an ATTACK_HIT handler that
-appended a damage step to the running attack's ``pipeline_effects``. It is now an
+appended a damage step to the running attack's compiled steps. It is now an
 ordinary ``ATTACK_HIT`` block ``trigger`` installed on the shared event bus by
 ``RuleEngine.apply_effect`` (which folds a permanent reactive rider onto the block
 engine). These tests resolve a real weapon attack through ``AttackResolver`` (the

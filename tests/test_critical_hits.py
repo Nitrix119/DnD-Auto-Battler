@@ -47,13 +47,13 @@ def _make_resolver():
 def _resolve_spell(caster, defender, spell):
     """Resolve a spell attack on the block engine, with the crit rules on the bus."""
     from src.spells.evaluator import resolve as resolve_blocks
-    from src.spells.adapter import to_program
+    from src.spells.block import parse_program
 
     bus = EventBus()
     dp = DamageProcessor(bus)
     engine = RuleEngine(bus)
     engine.load_from_directory(GLOBAL_RULES_DIR)  # subscribes nat-20/nat-1 on the bus
-    program = to_program(spell.pipeline_effects, TargetingType.SINGLE_TARGET)
+    program = parse_program(spell.program)
     return resolve_blocks(caster, defender, spell, program,
                           event_bus=bus, damage_processor=dp)
 
@@ -73,13 +73,13 @@ def _attack_spell(die_sides: int = 8) -> SpellAction:
     return SpellAction(
         name="Force Bolt",
         description="A test spell attack",
-        pipeline_effects=[
+        program=[
             {
-                "type": "attack_roll",
+                "block": "attack_roll",
                 "attack_bonus": 0,
             },
             {
-                "type": "damage",
+                "block": "damage",
                 "formula": f"1d{die_sides}",
                 "damage_type": "FORCE",
                 "requires_hit": True,
@@ -183,7 +183,7 @@ class TestNatural1SpellAttack:
         caster = _make_entity("Caster")
         defender = _make_entity("Defender", ac=5)
         spell = _attack_spell()
-        spell.pipeline_effects[0]["attack_bonus"] = 20
+        spell.program[0]["attack_bonus"] = 20
 
         with patch("src.spells.blocks.rolls.roll_d20", return_value=1):
             result = _resolve_spell(caster, defender, spell)
@@ -194,7 +194,7 @@ class TestNatural1SpellAttack:
         caster = _make_entity("Caster")
         defender = _make_entity("Defender", ac=5)
         spell = _attack_spell()
-        spell.pipeline_effects[0]["attack_bonus"] = 20
+        spell.program[0]["attack_bonus"] = 20
 
         with patch("src.spells.blocks.rolls.roll_d20", return_value=1):
             result = _resolve_spell(caster, defender, spell)

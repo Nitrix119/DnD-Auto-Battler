@@ -22,12 +22,7 @@ CHARACTERS_DIR = EXAMPLES_DIR / "creatures/characters"
 
 
 def _damage_entries(spell):
-    """Damage steps of a spell, whether authored natively or legacily.
-
-    A native spell keys blocks by ``block`` (in ``program``, possibly nested under
-    ``then``); a legacy spell keys steps by ``type`` (flat in ``pipeline_effects``).
-    Both spell ``damage_type``/``formula`` fields under the same names.
-    """
+    """Damage blocks of a spell, including those nested under a ``then``."""
     def walk(blocks, key):
         out = []
         for b in blocks:
@@ -36,13 +31,11 @@ def _damage_entries(spell):
             out.extend(walk(b.get("then", []), key))
         return out
 
-    if spell.program:
-        return walk(spell.program, "block")
-    return walk(spell.pipeline_effects, "type")
+    return walk(spell.program, "block")
 
 
 def _save_entries(spell):
-    """saving_throw steps of a spell, native (`program`) or legacy (`pipeline_effects`)."""
+    """saving_throw blocks of a spell, including those nested under a ``then``."""
     def walk(blocks, key):
         out = []
         for b in blocks:
@@ -51,9 +44,7 @@ def _save_entries(spell):
             out.extend(walk(b.get("then", []), key))
         return out
 
-    if spell.program:
-        return walk(spell.program, "block")
-    return walk(spell.pipeline_effects, "type")
+    return walk(spell.program, "block")
 
 
 class TestSpellLoading:

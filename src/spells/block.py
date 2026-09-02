@@ -11,7 +11,7 @@ The program shape uses ``"block"`` as the type key::
     { "block": "for_each_target", "then": [ { "block": "damage", ... } ] }
 
 Legacy ``effects`` step-dicts (which use ``"type"``) are converted to blocks by
-the transitional adapter, not by this type.
+the loader boundary, not by this type.
 """
 
 from __future__ import annotations

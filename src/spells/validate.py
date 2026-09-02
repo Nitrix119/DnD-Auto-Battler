@@ -12,10 +12,8 @@ event's declared fields. At fire time a missing attribute is swallowed
 (``triggers._passes`` returns False), which makes a typo indistinguishable from a
 legitimately-absent field — so it must be caught here.
 
-This is the ``program`` counterpart of
-:func:`src.rules.step_schema.validate_effects`, which validates the legacy
-``effects`` shape. Both are called at the ``StatBlockLoader`` boundary as spells
-migrate; the legacy validator stays until the last spell is native (Phase 3 §5).
+It is called at the ``StatBlockLoader`` and ``RuleLoader`` boundaries — every spell,
+weapon program and rule passes through it.
 """
 
 from __future__ import annotations
@@ -31,10 +29,18 @@ from .lint import lint_program
 from .registry import REGISTRY, BlockRegistry
 
 # ``context.<name>`` references inside any expression string must name a key the
-# engine seeds. The canonical set lives in ``src.rules.step_schema.CONTEXT_KEYS``
-# (kept in sync with ``src.spells.context.seed_context``); imported lazily in the
-# check below to avoid the loader import cycle the legacy validator also dodges.
+# engine seeds. The canonical set is ``src.spells.context.CONTEXT_KEYS``, derived
+# from ``seed_context`` itself so the two cannot drift.
 _CONTEXT_REF_RE = re.compile(r"\bcontext\.([A-Za-z_][A-Za-z0-9_]*)")
+
+# A dice formula: one or more terms (NdM or a flat integer) joined by + / -.
+# Mirrors ``src.loaders.stat_block_loader._FORMULA_RE`` — kept in sync deliberately.
+_FORMULA_RE = re.compile(r"^[+-]?\d+(?:d\d+)?(?:[+-]\d+(?:d\d+)?)*$")
+
+# ``scaling`` is the one block arg with an internal shape, so it carries a schema of
+# its own until the fuller per-field block schema lands (REMAINING §4). A malformed
+# one silently scales nothing at cast time, so it must fail at load.
+_SCALING_FIELDS = {"per_slot_above": int, "add_dice": str}
 
 
 class ProgramValidationError(ValueError):
@@ -137,7 +143,7 @@ def _check_event_refs(
 
 
 def _check_context_refs(program: Sequence[Block], spell_name: str) -> None:
-    from src.rules.step_schema import CONTEXT_KEYS
+    from .context import CONTEXT_KEYS
 
     for block in program:
         for value in block.args.values():
@@ -149,6 +155,48 @@ def _check_context_refs(program: Sequence[Block], spell_name: str) -> None:
                         f"{', '.join(sorted(CONTEXT_KEYS))}."
                     )
         _check_context_refs(block.then, spell_name)
+
+
+def _check_scaling(program: Sequence[Block], spell_name: str) -> None:
+    """Validate a block's ``scaling`` object: required subfields, types, formula."""
+    for block in program:
+        scaling = block.args.get("scaling")
+        if scaling is not None:
+            _check_one_scaling(scaling, block.type, spell_name)
+        _check_scaling(block.then, spell_name)
+
+
+def _check_one_scaling(scaling: Any, block_type: str, spell_name: str) -> None:
+    where = f"spell {spell_name!r}: block {block_type!r}"
+    valid = ", ".join(sorted(_SCALING_FIELDS))
+    if not isinstance(scaling, dict):
+        raise ProgramValidationError(
+            f"{where} has a 'scaling' that is not an object; expected "
+            f"an object with {valid}."
+        )
+    for name, expected in _SCALING_FIELDS.items():
+        if name not in scaling:
+            raise ProgramValidationError(
+                f"{where} 'scaling' is missing required subfield {name!r}; "
+                f"required: {valid}."
+            )
+        value = scaling[name]
+        if isinstance(value, bool) or not isinstance(value, expected):
+            raise ProgramValidationError(
+                f"{where} 'scaling.{name}' must be {expected.__name__}, got "
+                f"{type(value).__name__} ({value!r})."
+            )
+    unknown = sorted(set(scaling) - set(_SCALING_FIELDS))
+    if unknown:
+        raise ProgramValidationError(
+            f"{where} 'scaling' has unknown subfield(s) {', '.join(unknown)}; "
+            f"valid: {valid}."
+        )
+    if not _FORMULA_RE.match(scaling["add_dice"]):
+        raise ProgramValidationError(
+            f"{where} 'scaling.add_dice' is not a dice formula: "
+            f"{scaling['add_dice']!r}."
+        )
 
 
 def validate_program(
@@ -163,8 +211,9 @@ def validate_program(
     string ``block`` key and list ``then``); every block type is registered; the
     target-arity rule holds (the same :func:`.lint_program` the evaluator asserts at
     run time, seeded from whether the top level consumes a target set); no expression
-    references a ``context.X`` key nothing writes; and no expression under a
-    ``trigger`` references an ``event.<field>`` that trigger's event does not carry.
+    references a ``context.X`` key nothing writes; no expression under a ``trigger``
+    references an ``event.<field>`` that trigger's event does not carry; and any
+    ``scaling`` object is well formed.
 
     Returns the parsed program on success.
 
@@ -190,4 +239,5 @@ def validate_program(
 
     _check_context_refs(program, spell_name)
     _check_event_refs(program, spell_name)
+    _check_scaling(program, spell_name)
     return program

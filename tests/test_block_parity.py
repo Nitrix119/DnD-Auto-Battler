@@ -23,7 +23,6 @@ from src.loaders import StatBlockLoader
 from src.spells.block import parse_program
 from src.spells.evaluator import resolve as resolve_blocks
 from src.spells.evaluator import resolve_program
-from src.spells.adapter import to_program, can_run_on_blocks
 from src.utils import dice
 
 SPELLS_DIR = os.path.join(os.path.dirname(__file__), "..", "examples", "spells")
@@ -136,17 +135,13 @@ def test_resolve_program_rejects_single_block_beside_iterator():
 # ── Corpus smoke: every expressible shipped spell resolves on the block engine ──
 
 def _corpus_program(spell):
-    """The block program for a shipped spell, native or legacy.
+    """The block program for a shipped spell.
 
-    A native spell (``spell.program`` set) is parsed directly; a legacy spell is
-    adapter-translated. Returns None when the legacy engine can't express it (kept
-    off the smoke set, as before). Keeps full-corpus coverage as spells migrate.
+    Every spell carries one (the loader rejects a spell without), so this is just
+    ``parse_program`` — kept as a named helper so the two corpus smoke tests read
+    the same way.
     """
-    if spell.program:
-        return parse_program(spell.program)
-    if can_run_on_blocks(spell):
-        return to_program(spell.pipeline_effects, spell.targeting_type)
-    return None
+    return parse_program(spell.program)
 
 
 def test_single_target_corpus_resolves_on_blocks():

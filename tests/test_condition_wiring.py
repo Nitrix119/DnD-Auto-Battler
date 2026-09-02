@@ -226,7 +226,7 @@ class TestWiringSeams:
         resolver = SpellResolver(bus, dp, rule_engine=engine)
         spell = SpellAction(
             name="Blind", description="", spell_level=2,
-            pipeline_effects=[{"type": "apply_condition", "condition_type": "blinded"}],
+            program=[{"block": "apply_condition", "condition_type": "blinded"}],
         )
         resolver.resolve(caster, [target], spell)
 

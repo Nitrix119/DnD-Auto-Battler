@@ -145,19 +145,19 @@ class TestBlockSaveRollMode:
             casting_time=CastingTime(CastingTimeType.ACTION),
             duration=Duration(DurationUnit.INSTANTANEOUS),
             components=SpellComponents(verbal=True, somatic=False),
-            pipeline_effects=[
-                {"type": "saving_throw", "attribute": "dexterity", "dc": "use_caster_dc"},
-                {"type": "damage", "damage_type": "FIRE", "formula": "10",
+            program=[
+                {"block": "saving_throw", "attribute": "dexterity", "dc": "use_caster_dc"},
+                {"block": "damage", "damage_type": "FIRE", "formula": "10",
                  "save_result": {"on_success": "half_damage"}},
             ],
         )
 
     def _resolve(self, caster, target, bus):
         from src.spells.evaluator import resolve as resolve_blocks
-        from src.spells.adapter import to_program
+        from src.spells.block import parse_program
 
         spell = self._dex_save_spell()
-        program = to_program(spell.pipeline_effects, TargetingType.SINGLE_TARGET)
+        program = parse_program(spell.program)
         return resolve_blocks(
             caster, target, spell, program,
             event_bus=bus, damage_processor=DamageProcessor(bus),

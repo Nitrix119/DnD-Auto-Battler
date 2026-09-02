@@ -69,7 +69,7 @@ class TestSpellEffectLoading:
         """charm_person.json parses into a native program: a save then an
         apply_condition for ``charmed``, gated on a failed save, binding the charmer."""
         spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "charm_person.json"))
-        assert spell.program and not spell.pipeline_effects
+        assert spell.program
         cond = [b for b in spell.program if b.get("block") == "apply_condition"]
         assert len(cond) == 1
         block = cond[0]
@@ -86,13 +86,13 @@ class TestSpellEffectLoading:
     def test_spell_without_effects_has_no_entity_effect_steps(self):
         """Firebolt has no add_entity_effect steps in the pipeline."""
         spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "firebolt.json"))
-        effect_steps = [s for s in spell.pipeline_effects if s.get("type") == "add_entity_effect"]
+        effect_steps = [b for b in spell.program if b.get("block") == "add_entity_effect"]
         assert effect_steps == []
 
     def test_spell_without_save_has_no_saving_throw_step(self):
         """Firebolt has no saving_throw step in the pipeline."""
         spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "firebolt.json"))
-        save_steps = [s for s in spell.pipeline_effects if s.get("type") == "saving_throw"]
+        save_steps = [b for b in spell.program if b.get("block") == "saving_throw"]
         assert save_steps == []
 
 
@@ -456,7 +456,7 @@ class TestLongstriderSpellEffects:
         """longstrider.json parses into a native program: a rounds lifetime whose
         TURN_START rider grants movement (its effect is inline, not a second file)."""
         spell = longstrider_spell()
-        assert spell.program and not spell.pipeline_effects
+        assert spell.program
         life = spell.program[0]
         assert life["block"] == "lifetime" and life.get("kind") == "rounds"
         assert life["then"][0]["block"] == "trigger"

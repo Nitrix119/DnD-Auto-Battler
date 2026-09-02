@@ -249,9 +249,9 @@ class TestCombatSystemResourceEnforcement:
         spell = SpellAction(
             name="Fire Bolt",
             description="Cantrip",
-            pipeline_effects=[
-                {"type": "attack_roll", "attack_bonus": "use_caster_bonus", "target": "defender"},
-                {"type": "damage", "target": "defender", "damage_type": "FIRE", "formula": "1d10", "requires_hit": True},
+            program=[
+                {"block": "attack_roll", "attack_bonus": "use_caster_bonus", "target": "defender"},
+                {"block": "damage", "target": "defender", "damage_type": "FIRE", "formula": "1d10", "requires_hit": True},
             ],
         )
         combat.resolve_spell(fighter, [goblin], spell)
@@ -262,8 +262,8 @@ class TestCombatSystemResourceEnforcement:
         spell = SpellAction(
             name="Fire Bolt",
             description="Cantrip",
-            pipeline_effects=[
-                {"type": "attack_roll", "attack_bonus": "use_caster_bonus", "target": "defender"},
+            program=[
+                {"block": "attack_roll", "attack_bonus": "use_caster_bonus", "target": "defender"},
             ],
         )
         fighter.spend_resources(ACTION_COST)

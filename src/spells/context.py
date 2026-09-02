@@ -49,6 +49,12 @@ def seed_context(slot_level: int) -> Dict[str, Any]:
     }
 
 
+# Every key a ``context.X`` expression may name, derived from the seeder itself so
+# the validator and the runtime cannot drift apart. ``src.spells.validate`` rejects
+# any other reference as a typo.
+CONTEXT_KEYS = frozenset(seed_context(0))
+
+
 @dataclass(frozen=True)
 class CastEnv:
     """The constant cast environment — the collaborators for one whole cast.

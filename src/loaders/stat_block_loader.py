@@ -327,29 +327,26 @@ class StatBlockLoader:
                 else SpellComponents(verbal=True, somatic=True)
             )
 
-            # A spell is authored either natively (``program``, keyed by ``block``)
-            # or legacily (``effects``, keyed by ``type``). Validate whichever is
-            # present at the loader boundary so an unknown block/step, a typo'd
-            # field, a bad enum, an arity error, or a context.X reference to a key
-            # nothing writes becomes a named error here instead of a silent run-time
-            # no-op. Imported lazily to avoid a module-load import cycle
+            # A spell is a block ``program`` (keyed by ``block``), validated at this
+            # boundary so an unknown block, a missing required arg, an arity error, a
+            # context.X reference to a key nothing writes, or an event.<field> a
+            # trigger cannot carry becomes a named error here instead of a silent
+            # run-time no-op. Imported lazily to avoid a module-load import cycle
             # (loaders -> rules -> combat -> spell_registry -> loaders).
             program = action_data.get("program")
-            if program is not None:
-                from src.spells.validate import validate_program
-                validate_program(program, spell_name=name)
-                effects: List[Dict[str, Any]] = []
-            else:
-                program = []
-                effects = action_data.get("effects", [])
-                from src.rules.step_schema import validate_effects
-                validate_effects(effects, spell_name=name)
+            if program is None:
+                legacy = " It uses the retired 'effects' form." if "effects" in action_data else ""
+                raise ValueError(
+                    f"Spell {name!r} has no 'program'. A spell must be authored as a "
+                    f"block program (a list of blocks keyed by 'block').{legacy}"
+                )
+            from src.spells.validate import validate_program
+            validate_program(program, spell_name=name)
 
             return SpellAction(
                 name=name,
                 description=description,
                 spell_level=action_data.get("spell_level", 0),
-                pipeline_effects=effects,
                 program=program,
                 recharge=recharge,
                 spell_range=spell_range,
@@ -434,8 +431,6 @@ class StatBlockLoader:
             base["spell_level"] = action.spell_level
             if action.program:
                 base["program"] = action.program
-            elif action.pipeline_effects:
-                base["effects"] = action.pipeline_effects
 
             # spell_range
             sr = action.spell_range

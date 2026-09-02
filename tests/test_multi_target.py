@@ -32,11 +32,11 @@ def _block_types(spell):
         if len(blocks) == 1 and blocks[0].get("block") == "for_each_target":
             blocks = blocks[0].get("then", [])
         return [b.get("block") for b in blocks]
-    return [s.get("type") for s in spell.pipeline_effects]
+    return [b.get("block") for b in spell.program]
 
 
 def _damage_entries(spell):
-    """damage steps of a spell, native (`program`) or legacy (`pipeline_effects`)."""
+    """damage blocks of a spell, including those nested under a ``then``."""
     def walk(blocks, key):
         out = []
         for b in blocks:
@@ -45,9 +45,7 @@ def _damage_entries(spell):
             out.extend(walk(b.get("then", []), key))
         return out
 
-    if spell.program:
-        return walk(spell.program, "block")
-    return walk(spell.pipeline_effects, "type")
+    return walk(spell.program, "block")
 
 
 def _entity(name="E", hp=100, ac=10):
@@ -90,7 +88,7 @@ def _magic_missile():
     return SpellAction(
         name="Magic Missile", description="", spell_level=1,
         targeting_type=TargetingType.MULTI_TARGET,
-        pipeline_effects=[{"type": "damage", "damage_type": "FORCE", "formula": "1d4+1"}],
+        program=[{"block": "damage", "damage_type": "FORCE", "formula": "1d4+1"}],
     )
 
 
@@ -98,9 +96,9 @@ def _scorching_ray():
     return SpellAction(
         name="Scorching Ray", description="", spell_level=2,
         targeting_type=TargetingType.MULTI_TARGET,
-        pipeline_effects=[
-            {"type": "attack_roll", "attack_bonus": 10},
-            {"type": "damage", "damage_type": "FIRE", "formula": "2d6", "requires_hit": True},
+        program=[
+            {"block": "attack_roll", "attack_bonus": 10},
+            {"block": "damage", "damage_type": "FIRE", "formula": "2d6", "requires_hit": True},
         ],
     )
 

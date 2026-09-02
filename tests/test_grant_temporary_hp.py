@@ -40,18 +40,18 @@ def _temp_hp_spell(amount, target="caster") -> SpellAction:
         casting_time=CastingTime(CastingTimeType.ACTION),
         duration=Duration(DurationUnit.INSTANTANEOUS),
         components=SpellComponents(verbal=True, somatic=False),
-        pipeline_effects=[
-            {"type": "grant_temporary_hp", "target": target, "amount": amount},
+        program=[
+            {"block": "grant_temporary_hp", "target": target, "amount": amount},
         ],
     )
 
 
 def _run(action, caster, defender):
     from src.spells.evaluator import resolve as resolve_blocks
-    from src.spells.adapter import to_program
+    from src.spells.block import parse_program
 
     bus = EventBus()
-    program = to_program(action.pipeline_effects, TargetingType.SINGLE_TARGET)
+    program = parse_program(action.program)
     return resolve_blocks(
         caster, defender, action, program,
         event_bus=bus, damage_processor=DamageProcessor(bus),

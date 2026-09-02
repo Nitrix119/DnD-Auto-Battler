@@ -85,7 +85,7 @@ class TestArmorOfAgathysLoading:
         """Armor of Agathys is a native program: a lifetime granting temp HP with a
         retaliation trigger (its effect is inline, not a separate entity-effect file)."""
         spell = _load_spell()
-        assert spell.program and not spell.pipeline_effects
+        assert spell.program
         life = spell.program[0]
         assert life["block"] == "lifetime"
         inner = [b["block"] for b in life["then"]]
@@ -100,7 +100,7 @@ class TestArmorOfAgathysLoading:
                 yield b.get("block", b.get("type"))
                 yield from walk(b.get("then", []))
 
-        types = set(walk(spell.program or spell.pipeline_effects))
+        types = set(walk(spell.program))
         assert "saving_throw" not in types
         assert "attack_roll" not in types
 
