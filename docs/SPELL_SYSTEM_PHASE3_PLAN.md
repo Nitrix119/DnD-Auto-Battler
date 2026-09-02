@@ -213,11 +213,38 @@ The remaining **20 spells** are now native `program`s — the whole shipped corp
   `adapter.to_program` stays for weapon attacks; `fold.rule_to_trigger_blocks` stays for conditions/globals.
   Suite **831 green**; `mypy src/` steady at 41.
 
+### 5d. Native **rules** — foundation + pilot — ✅ DONE (2026-09-03)
+
+The rule content — `rules/global/*`, `rules/entity_effects/conditions/*`, and `colossus_slayer.json` — was
+the last live consumer of `fold.rule_to_trigger_blocks` (the `action`-verb `Rule` shape, folded to trigger
+blocks at install time). This slice builds the native read path and migrates a pilot, mirroring §5a:
+
+- **Native read path.** `Rule` gained a `program` field ([src/rules/rule.py](../src/rules/rule.py)); a rule
+  is *native* when it carries a block `program` and then leaves `triggers`/`effects` empty (so it is never on
+  the legacy dispatch). `RuleLoader.from_dict` reads either shape and validates a native program via
+  `spells.validate.validate_program` at the loader boundary (the `program` analogue of the legacy E6 field
+  check). The three install seams branch native-or-fold: `install_global_rules`
+  ([global_rules.py](../src/spells/global_rules.py), `block_eligible` now also passes any native rule),
+  `install_entity_effect` ([entity_effects.py](../src/spells/entity_effects.py)), and the condition rider
+  install ([blocks/state.py](../src/spells/blocks/state.py)).
+- **Parity guardrail.** [tests/test_native_rules_parity.py](../tests/test_native_rules_parity.py) freezes each
+  migrated rule's pre-migration legacy shape under `tests/legacy_snapshots_rules/` and asserts the live native
+  `program` parses to exactly the fold's output (with the args each seam passes), plus a sentinel that fails
+  until every pilot rule is native.
+- **Pilot migrated (parity-gated):** the 3 damage-modifier globals (resistance/immunity/vulnerability),
+  `colossus_slayer`, and the `restrained` condition — authored to mirror the fold output exactly (holder baked
+  for the condition, `priority: 0` for globals), so behaviour is identical. Legacy-dispatch-only tests for
+  these rules were repointed to the block-engine/native path or to an inline legacy rule where they document
+  the still-real disable discipline; the superseded legacy-path Colossus tests were retired (behaviour is
+  covered natively by `test_colossus_slayer.py`). Suite **834 green**; `mypy src/` steady at 41.
+
 **Remaining §5 slices (follow-on):**
 
-- **Migrate `rules/global/*` and `rules/entity_effects/conditions/*`** off the `action`-verb `Rule` vocabulary onto
-  native trigger-block programs (or give `install_global_rules` a native home) — the precondition for
-  deleting `fold.py`, which still backs conditions, entity effects, and global rules.
+- **Migrate the rest of `rules/global/*` and `rules/entity_effects/conditions/*`** off the `action`-verb `Rule`
+  vocabulary onto native trigger-block programs (§5d did resistance/immunity/vulnerability + colossus +
+  restrained; the remaining 4 globals — crit/crit-miss/concentration/refill — and the other 15 conditions
+  remain). Extend `PILOT` in `test_native_rules_parity.py` and flip the sentinel. This is the precondition for
+  deleting `fold.py`, which still backs the un-migrated conditions and globals.
 - **Delete the shims** (§4's big removals) once no file uses `effects` and no rule uses `action`-verbs:
   `adapter.py`, `fold.py`, `BUILTIN_EFFECTS`, the `RuleEngine` entity dispatch, `_tick_durations`. Then
   rename `Action.pipeline_effects` away.

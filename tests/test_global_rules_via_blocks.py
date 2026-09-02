@@ -119,14 +119,33 @@ class TestGlobalRulesEndToEnd:
 # ---------------------------------------------------------------------------
 
 class TestNoDoubleApplication:
+    # A *legacy*-shaped resistance rule (``triggers``/``effects``, not a native block
+    # ``program``). The disable discipline this class documents only bites for a rule
+    # that is BOTH block-installed and on the legacy dispatch — i.e. an un-migrated rule.
+    # The shipped resistance rule migrated to native in §5d (empty triggers → never on
+    # legacy dispatch → structurally cannot double-apply), so this uses an inline legacy
+    # rule to keep exercising the coexistence discipline that still applies to the
+    # remaining legacy globals (crit/concentration/refill).
+    _LEGACY_RESISTANCE = {
+        "name": "damage_resistance_rule",
+        "triggers": ["DAMAGE_INCOMING"],
+        "condition": (
+            "event.damage_list[0].damage_type in "
+            "event.defender.stat_block.damage_resistances"
+        ),
+        "effects": [{"action": "ModifyDamage", "multiplier": 0.5}],
+    }
+
     def _production_flow(self, *, disable_handled):
-        """Mirror web/routers/combat.py: load global rules into a RuleEngine,
-        install the eligible ones on the block engine, optionally disable them on
-        the rule engine. Returns (bus, processor)."""
+        """Mirror web/routers/combat.py: load a legacy global rule into a RuleEngine,
+        install it on the block engine, optionally disable it on the rule engine.
+        Returns (bus, processor)."""
         bus = EventBus()
         processor = DamageProcessor(bus)
         engine = RuleEngine(bus, damage_processor=processor)
-        rules = [engine.load_from_file(RESISTANCE)]
+        rule = RuleLoader.from_dict(dict(self._LEGACY_RESISTANCE))
+        engine.load_rule(rule)
+        rules = [rule]
         handled = install_global_rules(
             rules, event_bus=bus, damage_processor=processor
         )

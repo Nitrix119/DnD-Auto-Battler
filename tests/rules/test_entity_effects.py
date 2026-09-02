@@ -144,61 +144,13 @@ class TestEntityEffectDispatch:
         assert victim.hp == 30
         assert bystander.hp == 30
 
-    def test_colossus_slayer_fires_on_attack_hit(self):
-        ranger = make_entity("Ranger", hp=40)
-        target = make_entity("Goblin", hp=20)
-        target.take_damage(Damage(DamageType.SLASHING, 5))
-        assert target.hp == 15
-
-        entities = [ranger, target]
-        bus = EventBus()
-        engine = RuleEngine(bus, entities_getter=lambda: entities)
-
-        rule = load_colossus_slayer_rule()
-        engine.apply_effect(ranger, rule)
-
-        action = make_attack_action()
-        hp_before = target.hp
-        with patch("src.rules.effects.roll_formula", return_value=4):
-            bus.emit(EventType.ATTACK_HIT, attacker=ranger, defender=target, action=action)
-        assert hp_before - target.hp == 4  # Colossus 1d8 bonus damage dealt
-
-    def test_colossus_slayer_does_not_fire_at_full_hp(self):
-        ranger = make_entity("Ranger", hp=40)
-        target = make_entity("Goblin", hp=20)
-
-        entities = [ranger, target]
-        bus = EventBus()
-        engine = RuleEngine(bus, entities_getter=lambda: entities)
-
-        rule = load_colossus_slayer_rule()
-        engine.apply_effect(ranger, rule)
-
-        action = make_attack_action()
-        hp_before = target.hp
-        with patch("src.rules.effects.roll_formula", return_value=4):
-            bus.emit(EventType.ATTACK_HIT, attacker=ranger, defender=target, action=action)
-        assert target.hp == hp_before  # full HP → condition not met, no bonus damage
-
-    def test_colossus_slayer_does_not_fire_for_wrong_attacker(self):
-        ranger = make_entity("Ranger", hp=40)
-        other = make_entity("Fighter", hp=40)
-        target = make_entity("Goblin", hp=20)
-        target.take_damage(Damage(DamageType.SLASHING, 5))
-
-        entities = [ranger, other, target]
-        bus = EventBus()
-        engine = RuleEngine(bus, entities_getter=lambda: entities)
-
-        rule = load_colossus_slayer_rule()
-        engine.apply_effect(ranger, rule)
-
-        # The Fighter attacks — ranger's colossus slayer should NOT fire
-        action = make_attack_action()
-        hp_before = target.hp
-        with patch("src.rules.effects.roll_formula", return_value=4):
-            bus.emit(EventType.ATTACK_HIT, attacker=other, defender=target, action=action)
-        assert target.hp == hp_before  # wrong attacker → no bonus damage
+    # Colossus Slayer's on-hit behaviour (fires only on a wounded target, only for its
+    # own attacker, once per attack, no cross-target leak) is now a native block trigger
+    # and is proven end-to-end through a real AttackResolver in
+    # tests/rules/entity_effects/test_colossus_slayer.py. The former legacy-dispatch tests
+    # here were retired with the §5d migration: a native rule has empty ``triggers`` and
+    # installs on the block engine, so ``apply_effect`` files no legacy EffectInstance and
+    # the old ``bus.emit(ATTACK_HIT, …)`` path exercised nothing.
 
 
 # ── Duration ticking ─────────────────────────────────────────────────────────
@@ -231,22 +183,28 @@ class TestDurationTicking:
         assert victim.hp == 44  # unchanged
 
     def test_permanent_effect_never_expires(self):
-        """An effect with duration_rounds=None should persist indefinitely."""
-        ranger = make_entity("Ranger", hp=40)
-        entities = [ranger]
+        """A legacy effect with duration_rounds=None should persist indefinitely.
+
+        Uses a permanent poison (a still-legacy ``action``-verb rule) rather than
+        Colossus Slayer, which migrated to a native block trigger in §5d and so no longer
+        files a legacy EffectInstance to tick — its permanence lives in a LifetimeScope.
+        """
+        victim = make_entity(hp=40)
+        entities = [victim]
         bus = EventBus()
         engine = RuleEngine(bus, entities_getter=lambda: entities)
 
-        rule = load_colossus_slayer_rule()
+        rule = load_poison_rule()
+        rule.duration_rounds = None  # make it permanent
         assert rule.duration_rounds is None
-        engine.apply_effect(ranger, rule)
+        engine.apply_effect(victim, rule)
 
         # Tick several TURN_ENDs — effect should remain
         for i in range(5):
-            bus.emit(EventType.TURN_END, entity=ranger, round_num=i)
+            bus.emit(EventType.TURN_END, entity=victim, round_num=i)
 
-        assert len(ranger.get_effects_for_trigger("attack_hit")) == 1
-        assert ranger.get_effects_for_trigger("attack_hit")[0].rule == rule
+        assert len(victim.get_effects_for_trigger("turn_start")) == 1
+        assert victim.get_effects_for_trigger("turn_start")[0].rule == rule
 
 
 # ── DealDamage effect handler ────────────────────────────────────────────────
@@ -334,10 +292,15 @@ class TestEntityEffectJSONLoading:
         assert rule.source == "Spider Bite"
 
     def test_load_colossus_slayer_json(self):
+        # Colossus Slayer is a *native* rule now (Phase 3 §5d): its reactive rider is
+        # authored as a block ``program``, so it carries no legacy ``triggers``/``effects``
+        # and is installed on the block engine (never the legacy dispatch). Its behaviour
+        # is covered end-to-end by tests/rules/entity_effects/test_colossus_slayer.py.
         path = os.path.join(ENTITY_EFFECTS_DIR, "colossus_slayer.json")
         rule = RuleLoader.load(path)
         assert rule.name == "colossus_slayer"
-        assert rule.triggers == [EventType.ATTACK_HIT]
+        assert rule.triggers == []  # native: events live inside the program's trigger blocks
+        assert rule.program and rule.program[0]["event"] == "ATTACK_HIT"
         assert rule.duration_rounds is None
         assert rule.source == "Colossus Slayer"
 

@@ -69,8 +69,16 @@ def _install_condition_rider(inv, rule, holder, bindings, scope) -> None:
     dispel) then tears the mechanics down with the condition. The child keeps this
     cast's caster/target, so ``holder`` resolves to the conditioned entity and any
     ``bindings`` (e.g. Charmed's ``charmer``) evaluate against the caster's context.
+
+    A **native** condition rule authors its trigger blocks directly (with ``holder``
+    baked in); a legacy one is folded from its ``triggers``/``effects`` with *holder*
+    supplied here. Both run identically on the child — the fold is retired once every
+    condition is native (Phase 3 §5).
     """
-    blocks = rule_to_trigger_blocks(rule, holder=holder)
+    if getattr(rule, "program", None):
+        blocks = [dict(b) for b in rule.program]
+    else:
+        blocks = rule_to_trigger_blocks(rule, holder=holder)
     if bindings:
         for tb in blocks:
             tb["bindings"] = bindings

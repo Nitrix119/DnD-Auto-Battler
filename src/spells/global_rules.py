@@ -53,12 +53,16 @@ _GLOBAL_INSTALLABLE_ACTIONS = frozenset(
 
 
 def block_eligible(rule: Any) -> bool:
-    """True if every one of *rule*'s effects has a block a global trigger can run.
+    """True if *rule* can run as a global trigger on the block engine.
 
-    Conservative by construction: a rule with any effect we have no
-    globally-installable block for (an action outside
-    :data:`_GLOBAL_INSTALLABLE_ACTIONS`) stays on the legacy engine.
+    A **native** rule (one that carries a block ``program``) is eligible by
+    construction — its behaviour is already authored as blocks. A **legacy** rule
+    is eligible only when every one of its effects has a globally-installable block
+    (an action in :data:`_GLOBAL_INSTALLABLE_ACTIONS`); anything else stays on the
+    legacy engine. Conservative either way.
     """
+    if getattr(rule, "program", None):
+        return True
     effects = getattr(rule, "effects", None) or []
     return bool(effects) and all(
         e.get("action") in _GLOBAL_INSTALLABLE_ACTIONS for e in effects
@@ -83,7 +87,12 @@ def install_global_rules(
     for rule in rules:
         if not block_eligible(rule):
             continue
-        program = parse_program(rule_to_trigger_blocks(rule, priority=0))
+        # Native rule: run its authored program directly. Legacy rule: fold its
+        # ``triggers``/``effects`` into trigger blocks at ``priority=0`` (matching the
+        # legacy dispatch priority) — the transitional shim, retired once every global
+        # rule is native (Phase 3 §5).
+        blocks = rule.program if rule.program else rule_to_trigger_blocks(rule, priority=0)
+        program = parse_program(blocks)
         # A global rule has no caster/target — its event-modifier effects reach the
         # live event, not an entity — so pass None; the trigger never reads them.
         inv = Invocation(

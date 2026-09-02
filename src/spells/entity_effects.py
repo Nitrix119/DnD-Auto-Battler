@@ -50,11 +50,16 @@ def install_entity_effect(
     ``duration_rounds`` rule expires on the holder's turn and ``remove_effect`` can
     dispose it by name.
     """
-    try:
-        blocks = rule_to_trigger_blocks(rule, holder="caster")
-    except KeyError:
-        # An effect action with no block translator — not foldable; stay on legacy.
-        return False
+    if rule.program:
+        # Native rule: its trigger blocks are authored directly (holder defaults to
+        # ``caster`` = this entity, since the install runs on caster == entity below).
+        blocks = [dict(b) for b in rule.program]
+    else:
+        try:
+            blocks = rule_to_trigger_blocks(rule, holder="caster")
+        except KeyError:
+            # An effect action with no block translator — not foldable; stay on legacy.
+            return False
     if not blocks:
         return False
     if instance_fields:

@@ -8,7 +8,7 @@ from src.combat.event_bus import EventBus, CombatEvent
 from src.combat.event_data import DamageIncomingData
 from src.combat.events import EventType
 from src.combat.damage_processor import DamageProcessor
-from src.rules import RuleEngine, RuleLoader
+from src.rules import RuleLoader
 
 GLOBAL_RULES_DIR = os.path.join(os.path.dirname(__file__), "..", "rules", "global")
 VULNERABILITY_JSON = os.path.join(GLOBAL_RULES_DIR, "damage_vulnerability_rule.json")
@@ -200,28 +200,34 @@ class TestModifyDamageEffect:
 # ---------------------------------------------------------------------------
 
 class TestDamageModifierRuleLoading:
+    """The damage-modifier globals are native block rules now (§5d): a single
+    DAMAGE_INCOMING ``trigger`` running a ``modify_damage`` block. Their structural
+    parity with the frozen legacy shape is pinned in ``test_native_rules_parity``."""
+
+    def _trigger(self, rule):
+        assert rule.triggers == []  # native: events live in the program's blocks
+        assert rule.program and len(rule.program) == 1
+        tb = rule.program[0]
+        assert tb["block"] == "trigger" and tb["event"] == "DAMAGE_INCOMING"
+        assert tb["when"]
+        (effect,) = tb["then"]
+        assert effect["block"] == "modify_damage"
+        return effect
+
     def test_vulnerability_rule_loads(self):
         rule = RuleLoader.load(VULNERABILITY_JSON)
         assert rule.name == "damage_vulnerability_rule"
-        assert EventType.DAMAGE_INCOMING in rule.triggers
-        assert rule.condition is not None
-        assert len(rule.effects) == 1
-        assert rule.effects[0]["action"] == "ModifyDamage"
-        assert rule.effects[0]["multiplier"] == 2
+        assert self._trigger(rule)["multiplier"] == 2
 
     def test_resistance_rule_loads(self):
         rule = RuleLoader.load(RESISTANCE_JSON)
         assert rule.name == "damage_resistance_rule"
-        assert EventType.DAMAGE_INCOMING in rule.triggers
-        assert rule.effects[0]["action"] == "ModifyDamage"
-        assert rule.effects[0]["multiplier"] == 0.5
+        assert self._trigger(rule)["multiplier"] == 0.5
 
     def test_immunity_rule_loads(self):
         rule = RuleLoader.load(IMMUNITY_JSON)
         assert rule.name == "damage_immunity_rule"
-        assert EventType.DAMAGE_INCOMING in rule.triggers
-        assert rule.effects[0]["action"] == "ModifyDamage"
-        assert rule.effects[0]["multiplier"] == 0
+        assert self._trigger(rule)["multiplier"] == 0
 
 
 # ---------------------------------------------------------------------------
@@ -235,16 +241,16 @@ class TestDamageModifierEndToEnd:
     """
 
     def _setup(self, vulnerability_json=None, resistance_json=None, immunity_json=None):
+        # The damage-modifier globals are native block rules (§5d) — install them on
+        # the block engine, the production resolution path (web/routers/combat.py).
+        from src.spells.global_rules import install_global_rules
+
         bus = EventBus()
         processor = DamageProcessor(bus)
-        engine = RuleEngine(bus, damage_processor=processor)
-        if vulnerability_json:
-            engine.load_from_file(vulnerability_json)
-        if resistance_json:
-            engine.load_from_file(resistance_json)
-        if immunity_json:
-            engine.load_from_file(immunity_json)
-        return bus, processor, engine
+        paths = [p for p in (vulnerability_json, resistance_json, immunity_json) if p]
+        rules = [RuleLoader.load(p) for p in paths]
+        install_global_rules(rules, event_bus=bus, damage_processor=processor)
+        return bus, processor, None
 
     def test_fire_vulnerable_entity_takes_doubled_damage(self):
         bus, processor, engine = self._setup(vulnerability_json=VULNERABILITY_JSON)

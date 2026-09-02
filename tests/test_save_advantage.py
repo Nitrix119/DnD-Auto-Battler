@@ -86,8 +86,13 @@ class TestRollSavingThrowRollMode:
 
 class TestRestrainedSaveWiring:
     def _setup(self, target):
+        # Restrained is a native block rule now (§5d): apply_effect installs it on the
+        # block engine, which needs a damage_processor present (the no-dp legacy path
+        # cannot run a native rule — it has no legacy triggers to dispatch on).
         bus = EventBus()
-        engine = RuleEngine(bus, entities_getter=lambda: [target])
+        engine = RuleEngine(
+            bus, entities_getter=lambda: [target], damage_processor=DamageProcessor(bus)
+        )
         rule = RuleLoader.load(RESTRAINED_JSON)
         engine.apply_effect(target, rule)
         return bus
@@ -114,7 +119,10 @@ class TestRestrainedSaveWiring:
         target = _plain_entity("Restrained")
         other = _plain_entity("Free")
         bus = EventBus()
-        engine = RuleEngine(bus, entities_getter=lambda: [target, other])
+        engine = RuleEngine(
+            bus, entities_getter=lambda: [target, other],
+            damage_processor=DamageProcessor(bus),
+        )
         engine.apply_effect(target, RuleLoader.load(RESTRAINED_JSON))
         event = bus.emit(
             EventType.SAVING_THROW_DECLARED,

@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 from src.combat.events import EventType
@@ -29,6 +29,14 @@ class Rule:
     enabled: bool = True
     duration_rounds: Optional[int] = None  # None = permanent; set for entity effects that expire
     source: str = ""                       # what applied this effect (spell name, item, etc.)
+    # Native block program (authored as ``program`` in JSON, keyed by ``block``).
+    # When non-empty the rule is *native*: its reactive behaviour is authored directly
+    # as ``trigger`` blocks and the install seams run it via ``parse_program`` with no
+    # ``fold`` translation of the legacy ``triggers``/``effects`` shape (Phase 3 §5). A
+    # native rule leaves ``triggers``/``effects`` empty — its events live in its blocks —
+    # so it is never subscribed to the legacy dispatch. The two shapes coexist per file
+    # while the rule corpus migrates.
+    program: Optional[List[Dict[str, Any]]] = None
 
     def __post_init__(self):
         # Validate the condition string against the AST whitelist at load time.

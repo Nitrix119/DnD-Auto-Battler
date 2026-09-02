@@ -155,10 +155,26 @@ class TestModifyDamageHandle:
 # ---------------------------------------------------------------------------
 
 class TestResistanceParity:
+    # The shipped resistance rule is native now (§5d), so it no longer runs on the
+    # legacy dispatch — this parity oracle uses an inline *legacy*-shaped rule (the
+    # frozen pre-migration form) so the block trigger is still checked against the
+    # legacy handler's numbers. Native-vs-legacy parity for the shipped file itself is
+    # pinned in test_native_rules_parity.
+    _LEGACY_RESISTANCE = {
+        "name": "damage_resistance_rule",
+        "triggers": ["DAMAGE_INCOMING"],
+        "condition": (
+            "event.damage_list[0].damage_type in "
+            "event.defender.stat_block.damage_resistances"
+        ),
+        "effects": [{"action": "ModifyDamage", "multiplier": 0.5}],
+    }
+
     def _legacy_hp(self, resistances, dmg):
         bus = EventBus()
         processor = DamageProcessor(bus)
-        RuleEngine(bus, damage_processor=processor).load_from_file(RESISTANCE_JSON)
+        engine = RuleEngine(bus, damage_processor=processor)
+        engine.load_rule(RuleLoader.from_dict(dict(self._LEGACY_RESISTANCE)))
         entity = _entity(resistances=resistances)
         processor.apply_damage(entity, [dmg])
         return entity.hp

@@ -114,6 +114,31 @@ class RuleLoader:
         Returns:
             A Rule instance.
         """
+        # A *native* rule authors its reactive behaviour directly as a block
+        # ``program`` (keyed by ``block``); its events live inside its trigger
+        # blocks, so it carries no top-level ``triggers``/``effects`` and is never
+        # subscribed to the legacy dispatch (Phase 3 §5). Validate the program at the
+        # loader boundary — the ``program`` analogue of the legacy E6 field check —
+        # so a malformed native rule fails loudly here, not silently at install.
+        if "program" in data:
+            rule = Rule(
+                name=data["name"],
+                triggers=[],
+                effects=[],
+                condition=data.get("condition"),
+                enabled=data.get("enabled", True),
+                duration_rounds=data.get("duration_rounds"),
+                source=data.get("source", ""),
+                program=data["program"],
+            )
+            # Lazy import: the block validator pulls in the block catalogue (which
+            # reaches into src.combat), so import at call time to dodge a load-time
+            # rules -> spells -> combat cycle — the same dodge validate.py uses.
+            from src.spells.validate import validate_program
+
+            validate_program(data["program"], spell_name=data["name"])
+            return rule
+
         triggers: List[EventType]
         if "triggers" in data:
             triggers = [RuleLoader._parse_trigger(t) for t in data["triggers"]]

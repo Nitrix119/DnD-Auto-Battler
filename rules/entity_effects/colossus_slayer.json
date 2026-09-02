@@ -1,14 +1,21 @@
 {
   "name": "colossus_slayer",
-  "triggers": ["ATTACK_HIT"],
-  "condition": "event.attacker == entity and event.defender.hp < event.defender.max_hp",
-  "effects": [
+  "source": "Colossus Slayer",
+  "program": [
     {
-      "action": "DealDamage",
+      "block": "trigger",
+      "event": "ATTACK_HIT",
+      "holder": "caster",
       "target": "event.defender",
-      "formula": "1d8",
-      "damage_type": "event.action.primary_damage_type"
+      "when": "event.attacker == entity and event.defender.hp < event.defender.max_hp",
+      "then": [
+        {
+          "block": "damage",
+          "target": "defender",
+          "damage_type": "event.action.primary_damage_type",
+          "formula": "1d8"
+        }
+      ]
     }
-  ],
-  "source": "Colossus Slayer"
+  ]
 }

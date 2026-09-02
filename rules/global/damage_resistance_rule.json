@@ -1,11 +1,14 @@
 {
   "name": "damage_resistance_rule",
-  "triggers": ["DAMAGE_INCOMING"],
-  "condition": "event.damage_list[0].damage_type in event.defender.stat_block.damage_resistances",
-  "effects": [
+  "program": [
     {
-      "action": "ModifyDamage",
-      "multiplier": 0.5
+      "block": "trigger",
+      "event": "DAMAGE_INCOMING",
+      "priority": 0,
+      "when": "event.damage_list[0].damage_type in event.defender.stat_block.damage_resistances",
+      "then": [
+        { "block": "modify_damage", "multiplier": 0.5 }
+      ]
     }
   ]
 }

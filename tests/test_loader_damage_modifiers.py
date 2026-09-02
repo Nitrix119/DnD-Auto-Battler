@@ -83,10 +83,19 @@ class TestLoaderParsesDamageModifiers:
 
 class TestJsonCreatureDamageModifierEndToEnd:
     def _setup(self):
+        # Mirror web/routers/combat.py: the damage-modifier globals are native block
+        # rules (§5d), so they resolve on the block engine — install them there and
+        # disable the handled ones on the legacy engine (no double application).
+        from src.spells.global_rules import install_global_rules
+
         bus = EventBus()
         processor = DamageProcessor(bus)
         engine = RuleEngine(bus, damage_processor=processor)
-        engine.load_from_directory(GLOBAL_RULES_DIR)
+        rules = engine.load_from_directory(GLOBAL_RULES_DIR)
+        handled = install_global_rules(rules, event_bus=bus, damage_processor=processor)
+        for r in rules:
+            if r.name in handled:
+                r.enabled = False
         return processor
 
     def test_stone_golem_is_immune_to_poison_from_json(self):
