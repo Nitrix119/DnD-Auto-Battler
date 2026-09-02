@@ -7,15 +7,27 @@ hand-built scopes: the whole path from block → grant handle → caster scope �
 DAMAGE_DEALT → failed CON save → dispose.
 """
 
+import os
 from unittest.mock import patch
 
 from src.models import AbilityScores, StatBlock, Entity, SpellAction
 from src.combat.event_bus import EventBus
 from src.combat.damage_processor import DamageProcessor
 from src.combat.events import EventType
-from src.rules import RuleEngine, RuleLoader
+from src.rules import RuleEngine
 from src.spells.block import parse_program
 from src.spells.evaluator import resolve as resolve_blocks
+
+CONCENTRATION_JSON = os.path.join(
+    os.path.dirname(__file__), "..", "rules", "global", "concentration.json"
+)
+
+
+def _bus_with_concentration_rule():
+    """A bus carrying the real shipped concentration-break rule."""
+    bus = EventBus()
+    RuleEngine(bus).load_from_file(CONCENTRATION_JSON)
+    return bus
 
 
 def _caster():
@@ -129,27 +141,10 @@ def test_concentration_break_on_damage_revokes_the_buff_end_to_end():
     assert target.ac == 14 and caster.has_concentration
 
     # The real global concentration rule on a shared bus/engine.
-    bus = EventBus()
-    engine = RuleEngine(bus, entities_getter=lambda: [caster, target])
-    engine.load_rule(
-        RuleLoader.from_dict(
-            {
-                "name": "concentration_damage_check",
-                "triggers": ["DAMAGE_DEALT"],
-                "condition": "event.defender.has_concentration and event.total > 0",
-                "effects": [
-                    {
-                        "action": "ForceConcentrationCheck",
-                        "target": "event.defender",
-                        "dc": "max(10, event.total // 2)",
-                    }
-                ],
-            }
-        )
-    )
+    bus = _bus_with_concentration_rule()
 
     # Caster takes damage and fails the CON save (rolls a 1).
-    with patch("src.rules.effects.roll_d20", return_value=1):
+    with patch("src.spells.blocks.global_effects.roll_d20", return_value=1):
         bus.emit(EventType.DAMAGE_DEALT, defender=caster, damage_list=[], total=20)
 
     assert not caster.has_concentration  # concentration lost
@@ -192,26 +187,9 @@ def test_concentration_held_on_a_successful_save():
     caster, target = _caster(), _target(ac=12)
     _run(caster, target, _SHIELD_OF_FAITH)
 
-    bus = EventBus()
-    engine = RuleEngine(bus, entities_getter=lambda: [caster, target])
-    engine.load_rule(
-        RuleLoader.from_dict(
-            {
-                "name": "concentration_damage_check",
-                "triggers": ["DAMAGE_DEALT"],
-                "condition": "event.defender.has_concentration and event.total > 0",
-                "effects": [
-                    {
-                        "action": "ForceConcentrationCheck",
-                        "target": "event.defender",
-                        "dc": "max(10, event.total // 2)",
-                    }
-                ],
-            }
-        )
-    )
+    bus = _bus_with_concentration_rule()
 
-    with patch("src.rules.effects.roll_d20", return_value=20):  # passes the save
+    with patch("src.spells.blocks.global_effects.roll_d20", return_value=20):  # passes
         bus.emit(EventType.DAMAGE_DEALT, defender=caster, damage_list=[], total=20)
 
     assert caster.has_concentration  # kept

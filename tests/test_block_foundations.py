@@ -1,7 +1,7 @@
 """Foundations of the block-based spell system (Phase 1, slice 1).
 
 The Block value type, the BlockContract (reads/writes/target arity), and the
-BlockRegistry that replaces the old if/elif dispatch + BUILTIN_EFFECTS with one
+BlockRegistry that replaces the old if/elif dispatch + rule action-verbs with one
 catalogue. Pure scaffolding — no evaluator, no behaviour change yet.
 """
 

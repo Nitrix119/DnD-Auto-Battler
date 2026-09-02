@@ -1,12 +1,10 @@
 """The lifetime clock — tick an entity's duration/concentration scopes on TURN_END.
 
-A block-engine lifetime scope (a rounds duration, a concentration) counts down on
-the holder's turn via :meth:`Entity.tick_lifetimes`. That tick used to be driven from
-inside ``RuleEngine._tick_durations`` — so the *new* engine's durations only expired
-because the *legacy* rule engine happened to be instantiated and subscribed. This is
-its own driver: a single ``TURN_END`` subscriber, independent of the rule engine, so
-the block engine's clock stands on its own and the legacy dispatch can be retired
-without it (Phase 3 §4).
+A lifetime scope (a rounds duration, a concentration) counts down on the holder's turn
+via :meth:`Entity.tick_lifetimes`. This module is that clock's only driver: a single
+``TURN_END`` subscriber, independent of the rule engine. It is the sole duration
+mechanism in the engine — spell durations, entity-effect riders and condition markers
+all expire through it.
 
 Installed once per battle by :meth:`CombatSystem.start_combat`. Subscribed at a low
 priority so scopes expire *after* any ``TURN_END`` riders have reacted to the turn

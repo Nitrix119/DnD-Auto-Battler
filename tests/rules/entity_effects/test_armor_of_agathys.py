@@ -59,14 +59,12 @@ def _make_attacker(name="Goblin"):
 
 def _setup(*entities):
     """Wire up EventBus, RuleEngine, DamageProcessor, and resolvers."""
-    entity_list = list(entities)
     bus = EventBus()
     damage_proc = DamageProcessor(bus)
     registry = EffectRegistry()
     registry.scan_directory("rules/entity_effects")
     engine = RuleEngine(
         bus,
-        entities_getter=lambda: entity_list,
         damage_processor=damage_proc,
         effect_registry=registry,
     )
@@ -236,8 +234,7 @@ class TestArmorOfAgathysSelfTermination:
 
         spell_res.resolve(caster, [caster], _load_spell())
 
-        # Verify effect is present (folded onto the new engine: a lifetime scope
-        # on the warded entity, not a legacy active_effects instance).
+        # Verify the effect is present: a lifetime scope on the warded entity.
         assert len(caster.lifetimes) == 1 and not caster.lifetimes[0].disposed
 
         # Attack with enough damage to deplete temp HP.
@@ -303,9 +300,8 @@ class TestArmorOfAgathysSelfTermination:
         assert caster.temporary_hp == 0
         assert caster.hp == 50 - 3
 
-        # Effect auto-removed
-        for bucket in caster.active_effects.values():
-            assert not any(inst.name == "armor_of_agathys" for inst in bucket)
+        # Effect auto-removed: its lifetime scope has been disposed.
+        assert all(s.disposed for s in caster.lifetimes)
 
         # Second attack: no retaliation since effect is gone
         attacker_hp_now = attacker.hp

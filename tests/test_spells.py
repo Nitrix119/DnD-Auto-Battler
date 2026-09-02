@@ -506,7 +506,7 @@ class TestNewSpellsCombat:
         effect_registry.scan_directory("rules/entity_effects")
         cs.rule_engine = RuleEngine(
             cs.event_bus,
-            entities_getter=lambda: cs.combatants,
+
             damage_processor=cs._damage_processor,
             effect_registry=effect_registry,
         )
@@ -707,7 +707,7 @@ class TestVampiricTouch:
         effect_registry.scan_directory("rules/entity_effects")
         cs.rule_engine = RuleEngine(
             cs.event_bus,
-            entities_getter=lambda: cs.combatants,
+
             damage_processor=cs._damage_processor,
             effect_registry=effect_registry,
         )
@@ -748,7 +748,7 @@ class TestVampiricTouch:
     def test_vampiric_touch_heals_on_hit(self, wizard, goblin, combat):
         """Caster heals for half the necrotic damage dealt when Vampiric Touch hits."""
         from unittest.mock import patch
-        
+
         spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "vampiric_touch.json"))
         goblin.current_hp = 200  # Ensure goblin survives
 

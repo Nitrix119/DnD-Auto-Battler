@@ -61,7 +61,7 @@ class TestLongstriderFoldEndToEnd:
         dp = DamageProcessor(bus)
         reg = EffectRegistry()
         reg.scan_directory("rules/entity_effects")
-        engine = RuleEngine(bus, entities_getter=lambda: [wizard, goblin],
+        engine = RuleEngine(bus,
                             damage_processor=dp, effect_registry=reg)
         engine.load_from_file("rules/global/action_economy_refill.json")
         resolver = SpellResolver(bus, dp, rule_engine=engine)
@@ -93,7 +93,7 @@ def _resolver(*entities):
     dp = DamageProcessor(bus)
     reg = EffectRegistry()
     reg.scan_directory("rules/entity_effects")
-    engine = RuleEngine(bus, entities_getter=lambda: list(entities),
+    engine = RuleEngine(bus,
                         damage_processor=dp, effect_registry=reg)
     engine.load_from_file("rules/global/concentration.json")
     return bus, engine, SpellResolver(bus, dp, rule_engine=engine)
@@ -186,7 +186,7 @@ class TestHasteFold:
         dp = DamageProcessor(bus)
         reg = EffectRegistry()
         reg.scan_directory("rules/entity_effects")
-        engine = RuleEngine(bus, entities_getter=lambda: [caster, ally],
+        engine = RuleEngine(bus,
                             damage_processor=dp, effect_registry=reg)
         engine.load_from_file("rules/global/action_economy_refill.json")
         engine.load_from_file("rules/global/concentration.json")

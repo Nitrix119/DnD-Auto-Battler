@@ -42,7 +42,6 @@ class Entity:
     # Non-concentration lifetime scopes held by this entity (durations). No clock
     # ticks them down yet; they carry their revoke handles for future teardown.
     lifetimes: List[LifetimeScope] = field(default_factory=list)
-    active_effects: dict = field(default_factory=dict)  # {trigger_str: [Rule, ...]}
     stat_modifiers: List[StatModifier] = field(default_factory=list)
     granted_actions: List[Action] = field(default_factory=list)  # Temporary actions from effects
     resources: Optional[ActionResources] = None
@@ -184,17 +183,12 @@ class Entity:
     # Effect management (for rule engine)
     # ------------------------------------------------------------------
 
-    def add_effect(self, trigger: str, effect) -> None:
-        """Add an effect to the trigger bucket."""
-        self.active_effects.setdefault(trigger, []).append(effect)
-
     def remove_effect(self, name: str) -> None:
         """Remove all effects matching this name.
 
-        Handles both engines: a block-installed rider is owned by a
-        :class:`LifetimeScope` on ``lifetimes`` keyed to the effect name — disposing
-        it unsubscribes the rider and revokes its grants by identity. A legacy effect
-        is a string-tagged entry, so any :class:`StatModifier`, granted action, and
+        A block-installed rider is owned by a :class:`LifetimeScope` on ``lifetimes``
+        keyed to the effect name — disposing it unsubscribes the rider and revokes its
+        grants by identity. Any :class:`StatModifier`, granted action, and
         :class:`Condition` carrying this name is stripped too.
         """
         scopes = [s for s in self.lifetimes if s.source == name]
@@ -202,8 +196,6 @@ class Entity:
             for scope in scopes:
                 scope.dispose()
             self.lifetimes = [s for s in self.lifetimes if s.source != name]
-        for bucket in self.active_effects.values():
-            bucket[:] = [e for e in bucket if e.name != name]
         self.stat_modifiers = [m for m in self.stat_modifiers if m.effect_name != name]
         self.granted_actions = [a for a in self.granted_actions if a.source_effect != name]
         self.conditions = [c for c in self.conditions if c.effect_name != name]
@@ -220,10 +212,6 @@ class Entity:
             self.granted_actions = [a for a in self.granted_actions if a is not action]
 
         return RevokeHandle(_revoke, label="granted_action")
-
-    def get_effects_for_trigger(self, trigger: str) -> list:
-        """Get all effects for a given trigger string."""
-        return self.active_effects.get(trigger, [])
 
     def add_stat_modifier(self, mod: StatModifier) -> RevokeHandle:
         """Attach a stat modifier; return a handle that removes *this* modifier.

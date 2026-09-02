@@ -1,14 +1,9 @@
-"""Native-rule invariant (Phase 3 §5 — the rule corpus is fully native).
+"""Native-rule invariant — the rule corpus is fully native, with no exceptions.
 
 Every shipped ``rules/global/*`` and ``rules/entity_effects/**`` rule is authored as a
-native block ``program`` (no legacy ``triggers``/``effects``), the last consumer of the
-now-deleted ``fold`` shim having been retired. This guards that invariant: each rule file
-is native and its program passes the load-time block validator — so a regression that
-re-introduces a legacy-shaped rule (or a malformed program) fails here.
-
-The one deliberate exception is ``spider_bite_poison`` — a test-only DoT fixture with no
-production caller that stays on the legacy ``action``-verb shape to exercise the legacy
-``RuleEngine`` dispatch (retired in a later slice with ``BUILTIN_EFFECTS``).
+block ``program``. This guards that invariant: each rule file is native and its program
+passes the load-time block validator, so a regression that re-introduces a legacy-shaped
+rule (or a malformed program) fails here.
 """
 
 import json
@@ -22,9 +17,6 @@ from src.spells.validate import validate_program
 _HERE = os.path.dirname(__file__)
 _GLOBAL = os.path.join(_HERE, "..", "rules", "global")
 _ENTITY = os.path.join(_HERE, "..", "rules", "entity_effects")
-
-# Rules kept on the legacy shape on purpose (test-only, no production caller).
-_LEGACY_EXCEPTIONS = {"spider_bite_poison"}
 
 
 def _rule_files():
@@ -44,8 +36,6 @@ def test_rule_is_native_and_valid(path):
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
     name = data.get("name", "")
-    if name in _LEGACY_EXCEPTIONS:
-        pytest.skip(f"{name} intentionally stays legacy (test-only fixture)")
     # Native shape: a block ``program``, and none of the legacy ``triggers``/``effects``.
     assert "program" in data, f"{path} is not native (no program)"
     assert "effects" not in data and "triggers" not in data, f"{path} has legacy keys"

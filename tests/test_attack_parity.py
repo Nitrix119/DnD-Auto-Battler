@@ -74,11 +74,11 @@ class TestAttackRouting:
         reg.scan_directory("rules/entity_effects")
         ranger = _entity("Ranger", hp=40)
         target = _entity("Target", hp=40)
-        engine = RuleEngine(bus, entities_getter=lambda: [ranger, target],
+        engine = RuleEngine(bus,
                             damage_processor=dp, effect_registry=reg)
         engine.apply_effect(ranger, RuleLoader.load("rules/entity_effects/colossus_slayer.json"))
-        # Installed on the block engine — not filed as a legacy entity effect.
-        assert ranger.get_effects_for_trigger("attack_hit") == []
+        # Installed on the block engine, owned by a scope keyed to the rule name.
+        assert [s.source for s in ranger.lifetimes] == ["colossus_slayer"]
 
         target.take_damage(Damage(DamageType.SLASHING, 5))  # wound so Colossus fires
         hp_before = target.hp

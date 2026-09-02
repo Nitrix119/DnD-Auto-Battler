@@ -3,27 +3,25 @@
 Every block built before this one is a *forward* effect: it writes state (damage,
 healing, a condition, a grant) or subscribes a rider. Event-modifier blocks are the
 one category that changes a **live** event the resolver is mid-way through emitting
-— the block equivalent of the rule engine's ``ModifyDamage`` / ``GrantAdvantage`` /
-``ForceCriticalHit`` / ``Cancel`` effects (``src/rules/effects.py``). They are the
-last vocabulary the block catalogue lacked, and the primitive that lets the global
-combat rules (``rules/global/*`` — resistance, crit, concentration) migrate off
-``BUILTIN_EFFECTS`` (plan §4.7).
+— ``modify_damage`` / ``grant_advantage`` / ``force_critical`` / ``cancel``. They are
+the primitive the global combat rules (``rules/global/*`` — resistance, crit,
+concentration) are built on.
 
 The contract (settled — see the plan §5, "live-event mutation contract"): an
 event-modifier block fires inside a ``trigger`` block, which supplies the live
 event on ``Invocation.live_event``; the block writes directly onto
-``live_event.data`` (or ``live_event.cancelled``) — exactly what the legacy handler
-does, so parity is line-for-line. Run outside a trigger there is no live event to
-touch, so the block no-ops (a fail-safe, matching the engine's skip-don't-crash
-stance). Contract flag ``mutates_event=True`` marks the category.
+``live_event.data`` (or ``live_event.cancelled``) — which is what the emitter checks
+after each handler. Run outside a trigger there is no live event to touch, so the
+block no-ops (a fail-safe, matching the engine's skip-don't-crash stance). Contract
+flag ``mutates_event=True`` marks the category.
 
 This module ships the pure event-flag modifiers — ``modify_damage`` (damage
 resistance/immunity/vulnerability rules), ``force_critical`` (nat-20/nat-1 crit
 rules), and ``grant_advantage`` / ``grant_disadvantage`` / ``cancel`` (the entire
 condition library: blinded, frightened, invisible, paralysed, restrained, stunned,
-…). The remaining side-effecting members (``force_concentration_check``,
-``refill_resources``) are forward effects that fire *on* an event rather than
-mutating it, and land with their global rules' migration.
+…). The side-effecting members (``force_concentration_check``, ``refill_resources``)
+are forward effects that fire *on* an event rather than mutating it, and live in
+``global_effects.py``.
 """
 
 from __future__ import annotations

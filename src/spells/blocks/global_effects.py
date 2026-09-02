@@ -1,9 +1,7 @@
-"""Forward blocks the global combat rules fire (§4.7 step 2).
+"""Forward blocks the global combat rules fire.
 
 The event-modifier blocks (``modify_damage`` / ``force_critical`` / …) *mutate* the
-in-flight event; these two instead fire **on** an event and mutate an entity — the
-block equivalents of the last two `rules/global/*` effects that were still on the
-legacy ``BUILTIN_EFFECTS`` dispatch:
+in-flight event; these two instead fire **on** an event and mutate an entity:
 
 - ``force_concentration_check`` — the concentration-break rule (on ``DAMAGE_DEALT``):
   roll a CON save against a ``dc`` expression and, on a failure, end the target's
@@ -12,8 +10,8 @@ legacy ``BUILTIN_EFFECTS`` dispatch:
   the target's resources to its stat-block defaults.
 
 They are ordinary forward blocks acting on the current target; a global rule's
-trigger rebinds that target to the event entity (``event.defender`` / ``event.entity``
-— see ``fold._EVENT_REBIND``). Nothing about them is intrinsically "global"; they
+trigger rebinds that target to the event entity (``target: "event.defender"`` /
+``"event.entity"``). Nothing about them is intrinsically "global"; they
 live together here because the two global rules are their only callers today, and can
 move into ``state.py`` if a spell ever reuses them.
 """

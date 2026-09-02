@@ -27,7 +27,7 @@ from src.combat.event_data import (
 )
 from src.combat.events import EventType
 from src.combat.damage_processor import DamageProcessor
-from src.rules import RuleEngine, RuleLoader
+from src.rules import RuleEngine
 
 import src.spells.blocks  # noqa: F401  (registers the block catalogue)
 from src.spells.block import Block
@@ -138,6 +138,12 @@ class TestModifyDamageHandle:
         assert fire.amount == 20
         assert cold.amount == 10  # untouched
 
+    def test_type_filter_skips_non_matching(self):
+        """An immunity-shaped filter (x0) leaves an unmatched type alone."""
+        dmg = Damage(DamageType.LIGHTNING, 8)
+        self._run(0, [dmg], damage_type=DamageType.POISON)
+        assert dmg.amount == 8
+
     def test_no_live_event_is_a_safe_noop(self):
         """Run outside a trigger: no live event to touch, so it must not raise."""
         bus = EventBus()
@@ -147,33 +153,12 @@ class TestModifyDamageHandle:
 
 
 # ---------------------------------------------------------------------------
-# 2. Parity: native block trigger vs the legacy resistance rule
+# 2. The resistance trigger's numbers
 # ---------------------------------------------------------------------------
 
-class TestResistanceParity:
-    # The shipped resistance rule is native now (§5d), so it no longer runs on the
-    # legacy dispatch — this parity oracle uses an inline *legacy*-shaped rule (the
-    # frozen pre-migration form) so the block trigger is still checked against the
-    # legacy handler's numbers. Native-vs-legacy parity for the shipped file itself is
-    # pinned in test_native_rules_parity.
-    _LEGACY_RESISTANCE = {
-        "name": "damage_resistance_rule",
-        "triggers": ["DAMAGE_INCOMING"],
-        "condition": (
-            "event.damage_list[0].damage_type in "
-            "event.defender.stat_block.damage_resistances"
-        ),
-        "effects": [{"action": "ModifyDamage", "multiplier": 0.5}],
-    }
-
-    def _legacy_hp(self, resistances, dmg):
-        bus = EventBus()
-        processor = DamageProcessor(bus)
-        engine = RuleEngine(bus, damage_processor=processor)
-        engine.load_rule(RuleLoader.from_dict(dict(self._LEGACY_RESISTANCE)))
-        entity = _entity(resistances=resistances)
-        processor.apply_damage(entity, [dmg])
-        return entity.hp
+class TestResistanceOutcome:
+    # These figures are the ones the pre-block resistance rule produced; they are
+    # asserted directly now that it is the only implementation.
 
     def _block_hp(self, resistances, dmg):
         bus = EventBus()
@@ -183,15 +168,12 @@ class TestResistanceParity:
         processor.apply_damage(entity, [dmg])
         return entity.hp
 
-    def test_resisted_damage_matches_legacy(self):
-        legacy = self._legacy_hp([DamageType.COLD], Damage(DamageType.COLD, 10))
-        block = self._block_hp([DamageType.COLD], Damage(DamageType.COLD, 10))
-        assert block == legacy == 25  # 30 - (10 * 0.5)
+    def test_resisted_damage_is_halved(self):
+        assert self._block_hp([DamageType.COLD], Damage(DamageType.COLD, 10)) == 25
 
-    def test_unresisted_damage_matches_legacy(self):
-        legacy = self._legacy_hp([DamageType.COLD], Damage(DamageType.FIRE, 10))
-        block = self._block_hp([DamageType.COLD], Damage(DamageType.FIRE, 10))
-        assert block == legacy == 20  # full 10 damage, condition did not fire
+    def test_unresisted_damage_is_untouched(self):
+        # Full 10 damage: the trigger's condition did not fire.
+        assert self._block_hp([DamageType.COLD], Damage(DamageType.FIRE, 10)) == 20
 
 
 # ---------------------------------------------------------------------------
@@ -240,7 +222,8 @@ class TestForceCriticalHandle:
 
 
 class TestForceCriticalParity:
-    """A native crit trigger sets the same flag the legacy crit rule does."""
+    """The crit rule produces the same flags whether it is loaded from its shipped
+    JSON through RuleEngine or installed directly as a block trigger."""
 
     def _emit(self, roll, *, legacy_json=None, trigger=None):
         bus = EventBus()
@@ -299,34 +282,6 @@ class TestConditionEventModifiers:
 
     def test_cancel_sets_event_cancelled(self):
         assert self._run("cancel").cancelled is True
-
-    def test_grant_advantage_matches_legacy_handler(self):
-        from src.rules.effects import grant_advantage as legacy
-
-        block_event = self._run("grant_advantage")
-        legacy_event = self._event()
-        legacy({}, {}, legacy_event, EventBus())
-        assert block_event.data["advantage"] == legacy_event.data["advantage"] is True
-
-    def test_grant_disadvantage_matches_legacy_handler(self):
-        from src.rules.effects import grant_disadvantage as legacy
-
-        block_event = self._run("grant_disadvantage")
-        legacy_event = self._event()
-        legacy({}, {}, legacy_event, EventBus())
-        assert (
-            block_event.data["disadvantage"]
-            == legacy_event.data["disadvantage"]
-            is True
-        )
-
-    def test_cancel_matches_legacy_handler(self):
-        from src.rules.effects import cancel_event as legacy
-
-        block_event = self._run("cancel")
-        legacy_event = self._event()
-        legacy({}, {}, legacy_event, EventBus())
-        assert block_event.cancelled == legacy_event.cancelled is True
 
     def test_no_live_event_is_a_safe_noop(self):
         bus = EventBus()

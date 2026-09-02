@@ -53,16 +53,15 @@ def _weapon(bonus=20, dtype=DamageType.SLASHING, formula="1d8"):
 def _setup(*entities, colossus_on=None):
     """Wire an EventBus + DamageProcessor + RuleEngine + AttackResolver.
 
-    ``colossus_on`` gets Colossus Slayer applied; because the engine has a
-    damage_processor, ``apply_effect`` installs it as a block trigger on the shared
-    bus (not an ``active_effects`` entry) — the Phase 3 §3 install path.
+    ``colossus_on`` gets Colossus Slayer applied; ``apply_effect`` installs it as a
+    block trigger on the shared bus, owned by a lifetime scope on the holder.
     """
     bus = EventBus()
     dp = DamageProcessor(bus)
     reg = EffectRegistry()
     reg.scan_directory("rules/entity_effects")
     engine = RuleEngine(
-        bus, entities_getter=lambda: list(entities),
+        bus,
         damage_processor=dp, effect_registry=reg,
     )
     if colossus_on is not None:
@@ -81,6 +80,14 @@ def _hit(ar, attacker, defender, weapon=None):
 # ── Fixture loading (unchanged general creature-loading coverage) ─────────────
 
 class TestFixtureLoading:
+
+    def test_rule_json_is_a_native_program(self):
+        """The rider's events live inside its program's trigger blocks."""
+        rule = RuleLoader.load(COLOSSUS_JSON)
+        assert rule.name == "colossus_slayer"
+        assert rule.program and rule.program[0]["event"] == "ATTACK_HIT"
+        assert rule.duration_rounds is None
+        assert rule.source == "Colossus Slayer"
 
     def test_ranger_loads_with_three_weapons(self):
         sb = StatBlockLoader.load_from_json(
@@ -173,9 +180,9 @@ class TestColossusSlayerBonusDie:
         assert b1 - t1.hp == 6
         assert b2 - t2.hp == 6
 
-    def test_installed_on_blocks_not_in_active_effects(self):
-        """With a damage_processor present, apply_effect installs on the block
-        engine — the rider is a bus subscription, not an ``active_effects`` entry."""
+    def test_installed_as_a_scope_owned_bus_subscription(self):
+        """apply_effect installs the rider on the block engine, owned by a lifetime
+        scope on the holder keyed to the rule name — so removal can dispose it."""
         ranger = _entity("Ranger")
         _bus, _dp, _engine, _ar = _setup(ranger, colossus_on=ranger)
-        assert ranger.get_effects_for_trigger("attack_hit") == []
+        assert [s.source for s in ranger.lifetimes] == ["colossus_slayer"]

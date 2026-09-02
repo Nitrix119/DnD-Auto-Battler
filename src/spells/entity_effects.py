@@ -1,16 +1,12 @@
 """Install a per-entity reactive rule (a creature feature) as block triggers.
 
 The entity-effect sibling of :func:`src.spells.global_rules.install_global_rules`.
-``RuleEngine.apply_effect`` routes a **native** reactive rule (one carrying a block
-``program``) here instead of filing an ``EffectInstance`` in ``entity.active_effects``
-for legacy dispatch: the rule's ``program`` trigger blocks are subscribed on the shared
-event bus, with the holder bound to the entity the effect is applied to. Colossus Slayer
-— a permanent ``ATTACK_HIT`` bonus-damage rider — is the canonical user (Phase 3 §2).
+``RuleEngine.apply_effect`` routes a reactive rule here: the rule's ``program``
+trigger blocks are subscribed on the shared event bus, with the holder bound to the
+entity the effect is applied to. Colossus Slayer — a permanent ``ATTACK_HIT``
+bonus-damage rider — is the canonical user.
 
-Only native rules install here; a legacy rule (no ``program``) returns ``False`` and
-the caller keeps it on the legacy dispatch.
-
-The installed triggers are owned by a :class:`LifetimeScope` on the entity (§3): a
+The installed triggers are owned by a :class:`LifetimeScope` on the entity: a
 ``duration_rounds`` rule expires through ``Entity.tick_lifetimes`` on the holder's
 turn, and ``RuleEngine.remove_effect`` / ``Entity.remove_effect`` disposes the scope
 by name to tear the rider down. A rider with no duration is a permanent scope (never
@@ -39,21 +35,16 @@ def install_entity_effect(
 ) -> bool:
     """Install *rule* as holder-scoped block triggers on *entity*, owned by a scope.
 
-    Returns ``True`` when the rule was installed on the block engine, ``False`` when
-    it has an effect with no block translator (the caller then keeps it on the legacy
-    path). The rider's holder is *entity*, so its ``entity``/``event.caster`` resolves
+    Returns ``True`` when the rule was installed, ``False`` when it carries no blocks
+    to install. The rider's holder is *entity*, so its ``entity``/``event.caster`` resolves
     to it; ``instance_fields`` ride each trigger as captured ``bindings``. The triggers
     are owned by a lifetime scope on ``entity.lifetimes`` keyed to ``rule.name``, so a
     ``duration_rounds`` rule expires on the holder's turn and ``remove_effect`` can
     dispose it by name.
     """
-    if rule.program is None:
-        # A legacy rule (no native block program) is not installed on the block engine;
-        # the caller keeps it on the legacy dispatch (e.g. spider_bite_poison in tests).
-        return False
-    # Native rule: its trigger blocks are authored directly (holder defaults to
-    # ``caster`` = this entity, since the install runs on caster == entity below).
-    blocks = [dict(b) for b in rule.program]
+    # The rule's trigger blocks are authored directly (holder defaults to ``caster``
+    # = this entity, since the install runs on caster == entity below).
+    blocks = [dict(b) for b in (rule.program or [])]
     if not blocks:
         return False
     if instance_fields:

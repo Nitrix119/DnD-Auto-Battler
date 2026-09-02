@@ -251,14 +251,12 @@ async def handle_start_combat(
     effect_registry = ws.app.state.effect_registry
     rule_engine = RuleEngine(
         combat.event_bus,
-        entities_getter=lambda: combat.combatants,
         damage_processor=combat._damage_processor,
         effect_registry=effect_registry,
     )
-    # All global rules are native block programs now (Phase 3 §5), so loading them
-    # installs them on the block engine (their single resolution path) directly —
-    # RuleEngine.load_rule routes a native rule there, not to the legacy dispatch. No
-    # separate install/disable step is needed (that was the transitional §4.7 repoint).
+    # Every rule is a native block program, so loading installs it on the block engine
+    # — the single resolution path. No separate install/disable step is needed (that
+    # was the transitional §4.7 repoint).
     rule_engine.load_from_directory(_GLOBAL_RULES_DIR)
     combat.rule_engine = rule_engine
 

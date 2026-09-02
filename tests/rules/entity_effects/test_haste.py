@@ -48,7 +48,7 @@ def _emit_turn_end(bus, entity, round_num=1, turn_num=1):
 def _engine(bus, entities):
     reg = EffectRegistry()
     reg.scan_directory("rules/entity_effects")
-    engine = RuleEngine(bus, entities_getter=lambda: list(entities),
+    engine = RuleEngine(bus,
                         damage_processor=DamageProcessor(bus), effect_registry=reg)
     engine.load_from_file(REFILL_RULE_PATH)
     return engine

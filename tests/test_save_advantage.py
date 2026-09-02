@@ -91,7 +91,7 @@ class TestRestrainedSaveWiring:
         # cannot run a native rule — it has no legacy triggers to dispatch on).
         bus = EventBus()
         engine = RuleEngine(
-            bus, entities_getter=lambda: [target], damage_processor=DamageProcessor(bus)
+            bus, damage_processor=DamageProcessor(bus)
         )
         rule = RuleLoader.load(RESTRAINED_JSON)
         engine.apply_effect(target, rule)
@@ -120,7 +120,7 @@ class TestRestrainedSaveWiring:
         other = _plain_entity("Free")
         bus = EventBus()
         engine = RuleEngine(
-            bus, entities_getter=lambda: [target, other],
+            bus,
             damage_processor=DamageProcessor(bus),
         )
         engine.apply_effect(target, RuleLoader.load(RESTRAINED_JSON))

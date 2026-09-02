@@ -147,52 +147,8 @@ class TestStatBlockDamageModifierMembership:
         assert DamageType.FIRE not in sb.damage_immunities
 
 
-# ---------------------------------------------------------------------------
-# ModifyDamage effect handler — unit tests (no rule engine required)
-# ---------------------------------------------------------------------------
-
-class TestModifyDamageEffect:
-    """ModifyDamage is already implemented; these verify it works in isolation."""
-
-    def _apply(self, multiplier, damage_list, damage_type=None):
-        from src.rules.effects import modify_damage
-        bus = EventBus()
-        event = CombatEvent(
-            event_type=EventType.DAMAGE_INCOMING,
-            data=DamageIncomingData(defender=make_entity(), damage_list=damage_list),
-        )
-        ctx = {"_event": event, "damage_list": damage_list}
-        effect = {"multiplier": multiplier}
-        if damage_type is not None:
-            effect["damage_type"] = damage_type.name
-        modify_damage(effect, ctx, event, bus)
-
-    def test_multiplier_two_doubles_amount(self):
-        dmg = Damage(DamageType.FIRE, 10)
-        self._apply(2, [dmg])
-        assert dmg.amount == 20
-
-    def test_multiplier_half_halves_amount(self):
-        dmg = Damage(DamageType.COLD, 10)
-        self._apply(0.5, [dmg])
-        assert dmg.amount == 5
-
-    def test_multiplier_zero_zeroes_amount(self):
-        dmg = Damage(DamageType.POISON, 10)
-        self._apply(0, [dmg])
-        assert dmg.amount == 0
-
-    def test_type_filter_only_affects_matching(self):
-        fire_dmg = Damage(DamageType.FIRE, 10)
-        cold_dmg = Damage(DamageType.COLD, 10)
-        self._apply(2, [fire_dmg, cold_dmg], damage_type=DamageType.FIRE)
-        assert fire_dmg.amount == 20
-        assert cold_dmg.amount == 10  # untouched
-
-    def test_type_filter_skips_non_matching(self):
-        dmg = Damage(DamageType.LIGHTNING, 8)
-        self._apply(0, [dmg], damage_type=DamageType.POISON)
-        assert dmg.amount == 8  # immunity filter didn't apply
+# The `modify_damage` block itself (multipliers, the damage-type filter) is unit
+# tested in tests/test_block_event_mod.py::TestModifyDamageHandle.
 
 
 # ---------------------------------------------------------------------------

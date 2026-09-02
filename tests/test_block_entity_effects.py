@@ -1,12 +1,10 @@
-"""Duration-bound / removable entity effects install on the block engine (§3).
+"""Duration-bound / removable entity effects install on the block engine.
 
-`RuleEngine.apply_effect` routes a cleanly-foldable reactive rule onto the block
-engine (`install_entity_effect`) when a damage_processor is wired. Beyond the
-permanent Colossus rider, this now covers **duration-bound** effects: the rule's
-triggers are owned by a `LifetimeScope` on the entity, so a `duration_rounds` rule
-expires on the holder's turn (via `tick_lifetimes`) and `remove_effect` disposes it
-by name. Proven here with the spider-bite poison DoT (TURN_START → 1d6, 3 rounds).
-Without a damage_processor the effect still falls back to the legacy dispatch.
+`RuleEngine.apply_effect` installs a reactive rule's trigger blocks on the shared bus
+(`install_entity_effect`), owned by a `LifetimeScope` on the entity — so a
+`duration_rounds` rule expires on the holder's turn (via `tick_lifetimes`) and
+`remove_effect` disposes it by name. Proven here with a poison DoT
+(TURN_START → 1d6, 3 rounds).
 """
 
 from unittest.mock import patch
@@ -19,10 +17,8 @@ from src.combat.lifetime_clock import install_lifetime_clock
 from src.rules import RuleEngine, RuleLoader
 from src.rules.effect_registry import EffectRegistry
 
-# A native, duration-bound entity-effect DoT (the §3 block-install path): on the
-# holder's TURN_START, 1d6 poison for 3 rounds. Built inline so the block-install tests
-# do not depend on a shipped legacy rule (all shipped content is native). The one
-# intentionally-legacy fixture, spider_bite_poison, backs only the legacy-fallback test.
+# A duration-bound entity-effect DoT: on the holder's TURN_START, 1d6 poison for
+# 3 rounds. Built inline rather than depending on a shipped rule.
 _NATIVE_POISON = {
     "name": "poison_dot",
     "duration_rounds": 3,
@@ -37,7 +33,6 @@ _NATIVE_POISON = {
         },
     ],
 }
-LEGACY_POISON = "rules/entity_effects/conditions/spider_bite_poison.json"
 
 
 def _ent(name="E", hp=40):
@@ -48,16 +43,13 @@ def _ent(name="E", hp=40):
     return Entity(sb)
 
 
-def _wire(*entities, with_dp=True):
+def _wire(*entities):
     bus = EventBus()
     install_lifetime_clock(bus)  # drives duration expiry on TURN_END
-    dp = DamageProcessor(bus) if with_dp else None
+    dp = DamageProcessor(bus)
     reg = EffectRegistry()
     reg.scan_directory("rules/entity_effects")
-    engine = RuleEngine(
-        bus, entities_getter=lambda: list(entities),
-        damage_processor=dp, effect_registry=reg,
-    )
+    engine = RuleEngine(bus, damage_processor=dp, effect_registry=reg)
     return bus, engine
 
 
@@ -67,12 +59,11 @@ def _poison(engine, entity):
 
 class TestBlockInstall:
 
-    def test_installed_on_blocks_not_active_effects(self):
+    def test_installed_as_a_scope_owned_rider(self):
         victim = _ent("Victim")
         _bus, engine = _wire(victim)
         _poison(engine, victim)
-        assert victim.get_effects_for_trigger("turn_start") == []   # not legacy-filed
-        assert len(victim.lifetimes) == 1                            # owned by a scope
+        assert [s.source for s in victim.lifetimes] == ["poison_dot"]
 
     def test_fires_on_turn_start(self):
         victim, other = _ent("Victim"), _ent("Other")
@@ -111,12 +102,3 @@ class TestBlockInstall:
             hp0 = victim.hp
             bus.emit(EventType.TURN_START, entity=victim, round_num=1)
             assert victim.hp == hp0                   # rider gone → no damage
-
-    def test_without_damage_processor_falls_back_to_legacy(self):
-        # A *legacy* rule (spider_bite_poison) with no damage_processor stays on the
-        # legacy dispatch — the block engine is only reached with a damage_processor.
-        victim = _ent("Victim")
-        _bus, engine = _wire(victim, with_dp=False)
-        engine.apply_effect(victim, RuleLoader.load(LEGACY_POISON))
-        assert victim.get_effects_for_trigger("turn_start") != []
-        assert victim.lifetimes == []

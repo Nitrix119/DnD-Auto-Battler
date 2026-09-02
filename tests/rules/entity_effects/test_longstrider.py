@@ -54,7 +54,7 @@ def _cast_longstrider_on(entity, *others):
     install_lifetime_clock(bus)
     reg = EffectRegistry()
     reg.scan_directory("rules/entity_effects")
-    engine = RuleEngine(bus, entities_getter=lambda: [entity, *others],
+    engine = RuleEngine(bus,
                         damage_processor=DamageProcessor(bus), effect_registry=reg)
     engine.load_from_file(REFILL_RULE_PATH)
     resolver = SpellResolver(bus, engine._damage_processor, rule_engine=engine)

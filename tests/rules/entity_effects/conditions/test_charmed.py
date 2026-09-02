@@ -33,13 +33,9 @@ def load_goblin() -> Entity:
 def setup_engine(*entities):
     """Create a RuleEngine with entity effect support.
 
-    A damage_processor is required so apply_effect installs a *native* rule (charmed is
-    a native block rule now, Phase 3 §5) on the block engine — the instance_fields
-    (charmer) ride the installed triggers as captured bindings."""
-    entity_list = list(entities)
+    The instance_fields (charmer) ride the installed triggers as captured bindings."""
     bus = EventBus()
-    engine = RuleEngine(bus, entities_getter=lambda: entity_list,
-                        damage_processor=DamageProcessor(bus))
+    engine = RuleEngine(bus, damage_processor=DamageProcessor(bus))
     return bus, engine
 
 
@@ -143,9 +139,8 @@ class TestCharmedInstanceIndependence:
         """Two applications of the charmed rule to different entities have independent
         duration counters — ticking one does not affect the other.
 
-        Charmed is a native block rule now (Phase 3 §5): each application owns its own
-        ``LifetimeScope`` on the entity (not a legacy ``active_effects`` EffectInstance),
-        ticked by the per-turn lifetime clock on that entity's TURN_END."""
+        Each application owns its own ``LifetimeScope`` on the entity, ticked by the
+        per-turn lifetime clock on that entity's TURN_END."""
         from src.combat.lifetime_clock import install_lifetime_clock
 
         fighter = load_fighter()

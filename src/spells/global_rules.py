@@ -1,24 +1,18 @@
-"""Install core *global* rules as block-engine triggers (Phase 2.9, §4.7 step 3).
+"""Install *global* rules as block-engine triggers.
 
 The global combat rules (``rules/global/*`` — damage resistance/immunity/
-vulnerability, the nat-20/nat-1 crit rules) are event-modifier logic: they react to
-an event and reach back onto it. Now that the event-modifier block family exists,
-those rules can run on the **block engine** instead of the legacy rule engine's
-``BUILTIN_EFFECTS`` dispatch — a permanent (lifetime-less) ``trigger`` per rule,
-subscribed at combat start, whose ``then`` mutates the live event.
+vulnerability, the nat-20/nat-1 crit rules, the concentration check, the per-turn
+resource refill) have no holder: they apply to the whole combat. Each installs as a
+permanent (lifetime-less) ``trigger`` per rule, subscribed at combat start, whose
+``then`` either mutates the live event (the event-modifier family) or fires *on* it
+to act on an entity (``force_concentration_check``, ``refill_resources``).
 
-This is the first production repoint of §4.7 and deliberately the *small* one: it
-touches only the **global** rules whose every effect is a pure event-modifier we
-have a block for (``block_eligible``). Everything else — the entity-effect rules
-reached via ``RuleEngine.apply_effect``, and the side-effecting globals
-(``ForceConcentrationCheck``, ``RefillResources``) that fire *on* an event rather
-than mutating it — stays on the legacy engine for now. The two paths are kept
-separate: the caller installs the eligible rules here and disables exactly those on
-the rule engine (``rule.enabled = False``), so nothing is applied twice.
+The entity-scoped sibling — a rule held by one creature — is
+:func:`src.spells.entity_effects.install_entity_effect`.
 
-Priority: global-rule triggers install at **priority 0** (matching the legacy rule
-dispatch), relying on subscription order for the rest — none of these rules needs a
-specific order relative to the others.
+Priority: global-rule triggers install at **priority 0**, relying on subscription
+order for the rest — none of these rules needs a specific order relative to the
+others.
 """
 
 from __future__ import annotations

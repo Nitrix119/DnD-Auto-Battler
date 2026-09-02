@@ -1,11 +1,10 @@
 """State blocks: apply_condition, add_modifier, grant_temporary_hp, add_resource,
 grant_action.
 
-These fold three legacy twins into one catalogue and, crucially, do the work
-**directly** instead of the old pipeline's route (build a synthetic ``on_apply``
-dict + a stub SPELL_HIT event, then call the rule engine's ``BUILTIN_EFFECTS``
-handler). That bridge — the clearest symptom of the two-vocabulary seam — is gone
-here: a state block just mutates the target and emits the same event.
+Each does its work **directly** — mutating the target and emitting the corresponding
+event — rather than by the old pipeline's route of building a synthetic ``on_apply``
+dict plus a stub SPELL_HIT event and handing it to a separate effect vocabulary. That
+bridge, the clearest symptom of the two-vocabulary seam, is gone.
 """
 
 from __future__ import annotations
@@ -116,7 +115,6 @@ def apply_condition(block: Block, inv: Invocation) -> None:
         target.lifetimes.append(scope)
     scope.add(handle)
     condition.owning_scope = scope
-    condition.rounds_remaining = None  # the scope is the sole duration clock
 
     rule = _condition_rule(inv, ctype)
     if rule is not None:

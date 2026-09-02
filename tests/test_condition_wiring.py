@@ -40,7 +40,7 @@ def _wire(*entities, with_registry=True):
     if reg is not None:
         reg.scan_directory("rules/entity_effects")
     engine = RuleEngine(
-        bus, entities_getter=lambda: list(entities),
+        bus,
         damage_processor=dp, effect_registry=reg,
     )
     return bus, dp, engine
@@ -182,8 +182,8 @@ class TestWiringSeams:
     def test_marker_only_condition_still_expires(self):
         """A lifetime scope is the clock even with no reactive rule to install.
 
-        Otherwise a marker-only condition's duration would have no clock at all
-        once the legacy `RuleEngine._tick_durations` is gone.
+        Otherwise a marker-only condition's duration would have no clock at all —
+        the lifetime clock is the only duration mechanism.
         """
         caster, blind = _ent("Caster"), _ent("Blind")
         bus, dp, engine = _wire(caster, blind, with_registry=False)

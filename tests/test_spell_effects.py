@@ -38,13 +38,12 @@ def load_goblin() -> Entity:
 
 def setup_engine_and_resolver(*entities):
     """Return (bus, rule_engine, spell_resolver) wired together."""
-    entity_list = list(entities)
     bus = EventBus()
     damage_proc = DamageProcessor(bus)
     registry = EffectRegistry()
     registry.scan_directory("rules/entity_effects")
-    engine = RuleEngine(bus, entities_getter=lambda: entity_list,
-                        damage_processor=damage_proc, effect_registry=registry)
+    engine = RuleEngine(bus, damage_processor=damage_proc,
+                        effect_registry=registry)
     resolver = SpellResolver(bus, damage_proc, rule_engine=engine)
     return bus, engine, resolver
 
@@ -190,7 +189,7 @@ class TestSpellEffectApplicationOnFailedSave:
         with patch("src.utils.saving_throw.roll_d20", return_value=20):
             resolver.resolve(wizard, [goblin], spell)
 
-        assert goblin.active_effects.get("attack_declared", []) == []
+        assert goblin.lifetimes == []  # no charmed rider installed
 
     def test_charmed_attack_is_blocked_after_spell(self):
         """After a successful Charm Person cast, the charmed goblin cannot attack the wizard."""
@@ -290,11 +289,8 @@ class TestCombatSystemIntegration:
         """Setting combat.rule_engine should wire the rule_engine to SpellResolver."""
         from src.combat import CombatSystem
 
-        wizard = load_wizard()
-        goblin = load_goblin()
-
         bus = EventBus()
-        engine = RuleEngine(bus, entities_getter=lambda: [wizard, goblin])
+        engine = RuleEngine(bus)
 
         cs = CombatSystem()
         cs.event_bus = bus
@@ -312,7 +308,7 @@ class TestCombatSystemIntegration:
         bus = EventBus()
         registry = EffectRegistry()
         registry.scan_directory("rules/entity_effects")
-        engine = RuleEngine(bus, entities_getter=lambda: [wizard, goblin],
+        engine = RuleEngine(bus,
                             effect_registry=registry)
 
         cs = CombatSystem()
@@ -479,10 +475,8 @@ class TestLongstriderSpellEffects:
     def test_longstrider_applies_effect_on_cast(self):
         """Casting Longstrider installs the movement effect on the target.
 
-        Longstrider is folded onto the new block engine (§4.3b-2), so the effect is
-        a lifetime + TURN_START rider on the target rather than a legacy
-        ``active_effects`` instance. Assert the observable install: a duration
-        lifetime now sits on the goblin.
+        The effect is a lifetime + TURN_START rider on the target. Assert the
+        observable install: a duration lifetime now sits on the goblin.
         """
         wizard = load_wizard()
         goblin = load_goblin()
