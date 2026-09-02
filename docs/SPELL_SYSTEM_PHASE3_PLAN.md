@@ -31,8 +31,9 @@ at a steady 44 pre-existing errors; Black pinned `==23.12.1` (do **not** run a n
 | Legacy piece | Still load-bearing for | Retired by (below) |
 |---|---|---|
 | ~~`EffectPipeline`~~ | **deleted (2026-08-31)** — one resolution path now; `can_run_on_blocks` is a loud validator | ✅ §4 |
-| `BUILTIN_EFFECTS` + `RuleEngine` entity dispatch | only `apply_effect` effects that can't fold (untranslatable action) or are applied without a damage_processor; the `_tick_durations` TURN_END clock **driver** | §4 |
-| `adapter.py` + `fold.py` (transitional shims) | translating legacy step/rule shapes into block programs | §4, after §5 |
+| ~~`fold.py`~~ | **deleted (2026-09-03, §5f)** — every spell/rule is native, so nothing translates legacy shapes any more | ✅ §5f |
+| `BUILTIN_EFFECTS` + `RuleEngine` legacy dispatch + `_tick_durations` | only `spider_bite_poison` (a test-only legacy fixture) and the legacy-handler unit tests; **no production caller** | next slice |
+| `adapter.py` | still compiles **weapon attacks** into `[attack_roll, damage]` blocks (no longer fold-dependent) | after weapons author natively |
 
 **The single knot — untied (2026-08-31).** Colossus Slayer's `InjectPipelineDamageStep` was the last thing
 that needed the legacy pipeline's drain loop. It is now a native `ATTACK_HIT` block trigger (§2 below), the
@@ -245,9 +246,36 @@ on the block engine in **library/`CombatSystem`** usage, not only under the web 
   snapshot. Suite **852 green**; `mypy src/` steady at 41.
 
 - **`fold.py` is now production-unused.** Every shipped spell and rule is native; `fold.rule_to_trigger_blocks`
-  is reached only by the transitional **tests** (the parity oracle + the fold unit tests). Its deletion (with
-  the parity harness, `BUILTIN_EFFECTS`, the `RuleEngine` legacy dispatch, and `_tick_durations`) is the next
-  slice — see "Remaining §5 slices".
+  is reached only by the transitional **tests** (the parity oracle + the fold unit tests). Its deletion is
+  §5f below.
+
+### 5f. Delete `fold.py` + the transitional shims it fed — ✅ DONE (2026-09-03)
+
+`fold.py` (the last `action`-verb→block translator) is **deleted**. With it went its dead consumers:
+
+- **Install seams simplified to native-only.** `install_global_rules` / `install_entity_effect` /
+  `apply_condition`'s rider install no longer branch on a fold fallback — a rule without a `program` is simply
+  not installed on the block engine (`install_entity_effect` returns `False` → the caller keeps a legacy rule
+  on the legacy dispatch). `block_eligible` collapses to "is native"; the condition rider dropped its now-unused
+  `holder` plumbing (holder is baked into the native trigger blocks).
+- **`adapter.py` stays** (it still compiles weapon attacks' `[attack_roll, damage]` steps), with its dead
+  `add_entity_effect`→`lifetime` fold branch removed; `rule_lookup` is now vestigial (kept only for caller
+  signatures).
+- **Transitional parity harnesses retired.** `test_native_corpus_parity`, `test_native_program`, and the fold
+  unit tests in `test_block_event_mod` proved *native == old-legacy* during the migration — with legacy gone
+  there is nothing to compare against, so they're deleted (behaviour stays covered by the per-spell/per-rule
+  behavioural suites). `test_native_rules_parity` became a **native-invariant** test (every rule file is native
+  + valid, `spider_bite_poison` the one documented legacy exception). `test_block_entity_effects` now exercises
+  the §3 duration-bound block install with an inline **native** DoT rule (the legacy-fallback case still uses
+  `spider_bite_poison`). `TestNoDoubleApplication` was dropped — native globals can't double-apply.
+- **Still standing (the next removal):** `BUILTIN_EFFECTS` (`src/rules/effects.py`), the `RuleEngine` legacy
+  entity/global dispatch (`_dispatch`, `_handle_entity_effects`, `apply_effect`'s `EffectInstance` fallback),
+  and `_tick_durations` — still reached by `spider_bite_poison` and the legacy-handler unit tests, so their
+  removal is a distinct slice (retire/re-home those tests, then delete). Then rename `Action.pipeline_effects`
+  away once weapons author natively and `adapter.py` can go.
+
+Suite **749 green**, 1 skipped (the `spider_bite_poison` invariant exception); the drop from 852 is the ~100
+retired transitional parity cases. `mypy src/` steady at 41.
 
 ### 5d. Native **rules** — foundation + pilot — ✅ DONE (2026-09-03)
 
@@ -278,12 +306,13 @@ blocks at install time). This slice builds the native read path and migrates a p
 
 - **~~Migrate the rest of the rule corpus~~ — ✅ DONE (§5e).** All globals and conditions are native;
   `spider_bite_poison` stays legacy by design (test-only, no production caller).
-- **Delete the shims** (§4's big removals). `fold.py` is now **production-unused** (only the transitional tests
-  reach it). Delete `fold.py` together with the `test_native_rules_parity` parity oracle + the `fold` unit
-  tests; then `BUILTIN_EFFECTS`, the `RuleEngine` legacy entity dispatch, and `_tick_durations` — once the
-  `apply_effect` legacy fallback and the `spider_bite_poison` legacy-dispatch tests are re-homed or retired.
-  `adapter.py` stays (weapon attacks) until weapons are authored natively; strip its dead `add_entity_effect`
-  fold branch. Then rename `Action.pipeline_effects` away.
+- **~~Delete `fold.py`~~ — ✅ DONE (§5f).** The translator and its dead consumers/transitional harnesses are
+  gone; `adapter.py`'s fold branch stripped (it stays for weapon attacks).
+- **Delete the legacy `RuleEngine` machinery** (the remaining §4 big removal): `BUILTIN_EFFECTS`
+  (`src/rules/effects.py`), the legacy `_dispatch`/`_handle_entity_effects`/`apply_effect` `EffectInstance`
+  fallback, and `_tick_durations`. Reached now only by `spider_bite_poison` and the legacy-handler unit tests —
+  re-home or retire those, then delete. Afterwards, author weapons natively so `adapter.py` can go and
+  `Action.pipeline_effects` can be renamed away.
 - **Fuller block schema + generated `BLOCK_REFERENCE.md`** (vision §5): a per-field required/optional/domain
   schema for the block vocabulary (the `program` analogue of `STEP_SCHEMAS`), with a drift-tested generated
   reference. Deferred deliberately from the pilot — the current validator covers registered-type / required-arg

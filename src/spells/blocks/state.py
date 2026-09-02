@@ -23,7 +23,6 @@ from src.rules.expressions import resolve
 from ..contract import BlockContract, TargetArity
 from ..context import Invocation, eval_context
 from ..block import Block, parse_program
-from ..fold import rule_to_trigger_blocks
 from ..registry import REGISTRY
 from ..runner import run_program
 
@@ -60,25 +59,18 @@ def _condition_rule(inv: Invocation, ctype: ConditionType):
         return None
 
 
-def _install_condition_rider(inv, rule, holder, bindings, scope) -> None:
+def _install_condition_rider(inv, rule, bindings, scope) -> None:
     """Subscribe a condition's reactive rule as holder-scoped triggers into *scope*.
 
-    Folds the rule to ``trigger`` blocks and runs them on a child invocation whose
-    ``active_scope`` is *scope*, so each trigger registers its own unsubscribe as a
-    handle the scope owns — disposing the scope (on expiry, concentration loss, or
-    dispel) then tears the mechanics down with the condition. The child keeps this
-    cast's caster/target, so ``holder`` resolves to the conditioned entity and any
-    ``bindings`` (e.g. Charmed's ``charmer``) evaluate against the caster's context.
-
-    A **native** condition rule authors its trigger blocks directly (with ``holder``
-    baked in); a legacy one is folded from its ``triggers``/``effects`` with *holder*
-    supplied here. Both run identically on the child — the fold is retired once every
-    condition is native (Phase 3 §5).
+    Runs the rule's native ``program`` (its trigger blocks, with ``holder`` baked in)
+    on a child invocation whose ``active_scope`` is *scope*, so each trigger registers
+    its own unsubscribe as a handle the scope owns — disposing the scope (on expiry,
+    concentration loss, or dispel) then tears the mechanics down with the condition.
+    The child keeps this cast's caster/target, so the rider's ``entity``/``caster``
+    resolves to the conditioned entity and any ``bindings`` (e.g. Charmed's ``charmer``)
+    evaluate against the caster's context.
     """
-    if getattr(rule, "program", None) is not None:
-        blocks = [dict(b) for b in rule.program]
-    else:
-        blocks = rule_to_trigger_blocks(rule, holder=holder)
+    blocks = [dict(b) for b in (rule.program or [])]
     if bindings:
         for tb in blocks:
             tb["bindings"] = bindings
@@ -115,7 +107,6 @@ def apply_condition(block: Block, inv: Invocation) -> None:
         # enclosing lifetime (else instantaneous/permanent).
         _own(inv, handle)
     else:
-        holder = "caster" if block.get("target") == "caster" else "defender"
         if inv.active_scope is not None:
             scope = inv.active_scope  # e.g. a concentration spell (Hold Person)
         else:
@@ -132,7 +123,7 @@ def apply_condition(block: Block, inv: Invocation) -> None:
         # `bindings` is the native block spelling. Accept either — the rider captures
         # them as closure values (Charmed's `charmer`).
         bindings = block.get("bindings") or block.get("instance_fields")
-        _install_condition_rider(inv, rule, holder, bindings, scope)
+        _install_condition_rider(inv, rule, bindings, scope)
 
     inv.event_bus.emit(
         EventType.CONDITION_ADDED,

@@ -1,7 +1,0 @@
-{
-  "name": "deafened",
-  "triggers": ["TURN_START"],
-  "condition": "event.entity == entity",
-  "effects": [],
-  "_note": "TODO: No implementable combat effects in the current system. Auto-fail on ability checks that require hearing (pending ability check system)."
-}

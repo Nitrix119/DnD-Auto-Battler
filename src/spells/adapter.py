@@ -20,7 +20,6 @@ from typing import Any, Callable, List, Optional
 from src.models.spell_properties import TargetingType
 
 from . import blocks as _blocks  # noqa: F401  (registers the block catalogue)
-from . import fold
 from .block import Block
 from .registry import REGISTRY
 
@@ -31,10 +30,7 @@ RuleLookup = Optional[Callable[[str], Any]]
 _SET_TARGETING = (TargetingType.AOE, TargetingType.MULTI_TARGET)
 
 
-def _step_to_block(step: dict, rule_lookup: RuleLookup) -> Block:
-    if fold.is_add_entity_effect(step):
-        rule = rule_lookup(step.get("entity_effect_name", "")) if rule_lookup else None
-        return Block.from_dict(fold.to_lifetime_block(step, rule))
+def _step_to_block(step: dict) -> Block:
     return Block(type=step["type"], args={k: v for k, v in step.items() if k != "type"})
 
 
@@ -48,10 +44,11 @@ def to_program(
     Single-target spells become a flat per-target program. Set-targeted spells
     (AoE, multi-target) are wrapped in an implicit ``for_each_target`` iterator so
     fan-out lives in the program and the target-arity rule holds uniformly — the
-    iterator owns the shared ``roll_once`` roll. ``add_entity_effect`` steps fold
-    into a ``lifetime`` block (see :mod:`.fold`).
+    iterator owns the shared ``roll_once`` roll. ``rule_lookup`` is vestigial (it
+    resolved the entity-effect rule for the removed ``add_entity_effect`` fold) and is
+    accepted only for caller compatibility while the adapter still backs weapon attacks.
     """
-    blocks = [_step_to_block(s, rule_lookup) for s in (effects or [])]
+    blocks = [_step_to_block(s) for s in (effects or [])]
     if targeting_type in _SET_TARGETING:
         return [Block(type="for_each_target", args={}, then=tuple(blocks))]
     return blocks
@@ -60,11 +57,9 @@ def to_program(
 def can_run_on_blocks(action: Any, rule_lookup: RuleLookup = None) -> bool:
     """True if the new engine can resolve *action* identically to the legacy one.
 
-    Scope: single-target, AoE, and multi-target spells whose every step is either
-    a ported block or a **foldable** ``add_entity_effect`` (§4.3b — its ``on_apply``
-    grants map to state blocks and its referenced rule declares no reactive
-    triggers yet). Anything else — an unported step, an un-foldable persistent
-    effect, an unsupported targeting type — stays on the legacy engine.
+    Scope: single-target, AoE, and multi-target spells whose every step is a ported
+    block. Anything else — an unported step, an unsupported targeting type — stays on
+    the legacy engine. ``rule_lookup`` is vestigial (see :func:`to_program`).
     """
     steps = getattr(action, "pipeline_effects", None) or []
     if not steps:
@@ -74,11 +69,6 @@ def can_run_on_blocks(action: Any, rule_lookup: RuleLookup = None) -> bool:
         return False
     ported = REGISTRY.types()
     for step in steps:
-        if fold.is_add_entity_effect(step):
-            name = step.get("entity_effect_name", "")
-            rule = rule_lookup(name) if rule_lookup else None
-            if not fold.foldable(step, rule):
-                return False
-        elif step.get("type") not in ported:
+        if step.get("type") not in ported:
             return False
     return True

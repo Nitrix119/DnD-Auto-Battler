@@ -1,16 +1,14 @@
 """Install a per-entity reactive rule (a creature feature) as block triggers.
 
 The entity-effect sibling of :func:`src.spells.global_rules.install_global_rules`.
-``RuleEngine.apply_effect`` routes a cleanly-foldable reactive rule here instead of
-filing an ``EffectInstance`` in ``entity.active_effects`` for legacy dispatch: the
-rule's ``triggers``/``effects`` fold to holder-scoped ``trigger`` blocks
-(:func:`fold.rule_to_trigger_blocks`) subscribed on the shared event bus, with the
-holder bound to the entity the effect is applied to. Colossus Slayer — a permanent
-``ATTACK_HIT`` bonus-damage rider — is the first user (Phase 3 §2).
+``RuleEngine.apply_effect`` routes a **native** reactive rule (one carrying a block
+``program``) here instead of filing an ``EffectInstance`` in ``entity.active_effects``
+for legacy dispatch: the rule's ``program`` trigger blocks are subscribed on the shared
+event bus, with the holder bound to the entity the effect is applied to. Colossus Slayer
+— a permanent ``ATTACK_HIT`` bonus-damage rider — is the canonical user (Phase 3 §2).
 
-Eligibility is conservative, mirroring the global-rules install: every effect must
-have a block translator. Anything with an untranslatable effect stays on the legacy
-engine.
+Only native rules install here; a legacy rule (no ``program``) returns ``False`` and
+the caller keeps it on the legacy dispatch.
 
 The installed triggers are owned by a :class:`LifetimeScope` on the entity (§3): a
 ``duration_rounds`` rule expires through ``Entity.tick_lifetimes`` on the holder's
@@ -28,7 +26,6 @@ from src.models.lifetime import LifetimeScope, LifetimeKind
 from . import blocks as _blocks  # noqa: F401  (registers the block catalogue)
 from .block import parse_program
 from .context import CastEnv, Invocation, seed_context
-from .fold import rule_to_trigger_blocks
 from .runner import run_program
 
 
@@ -50,16 +47,13 @@ def install_entity_effect(
     ``duration_rounds`` rule expires on the holder's turn and ``remove_effect`` can
     dispose it by name.
     """
-    if rule.program is not None:
-        # Native rule: its trigger blocks are authored directly (holder defaults to
-        # ``caster`` = this entity, since the install runs on caster == entity below).
-        blocks = [dict(b) for b in rule.program]
-    else:
-        try:
-            blocks = rule_to_trigger_blocks(rule, holder="caster")
-        except KeyError:
-            # An effect action with no block translator — not foldable; stay on legacy.
-            return False
+    if rule.program is None:
+        # A legacy rule (no native block program) is not installed on the block engine;
+        # the caller keeps it on the legacy dispatch (e.g. spider_bite_poison in tests).
+        return False
+    # Native rule: its trigger blocks are authored directly (holder defaults to
+    # ``caster`` = this entity, since the install runs on caster == entity below).
+    blocks = [dict(b) for b in rule.program]
     if not blocks:
         return False
     if instance_fields:

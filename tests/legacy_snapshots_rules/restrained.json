@@ -1,9 +1,0 @@
-{
-  "name": "restrained",
-  "triggers": ["ATTACK_DECLARED", "SAVING_THROW_DECLARED"],
-  "effects": [
-    { "action": "GrantDisadvantage", "on": "ATTACK_DECLARED", "when": "event.attacker == entity" },
-    { "action": "GrantAdvantage", "on": "ATTACK_DECLARED", "when": "event.defender == entity" },
-    { "action": "GrantDisadvantage", "on": "SAVING_THROW_DECLARED", "when": "event.defender == entity and event.ability == 'dexterity'" }
-  ]
-}

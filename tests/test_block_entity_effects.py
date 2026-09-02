@@ -19,7 +19,25 @@ from src.combat.lifetime_clock import install_lifetime_clock
 from src.rules import RuleEngine, RuleLoader
 from src.rules.effect_registry import EffectRegistry
 
-POISON = "rules/entity_effects/conditions/spider_bite_poison.json"
+# A native, duration-bound entity-effect DoT (the §3 block-install path): on the
+# holder's TURN_START, 1d6 poison for 3 rounds. Built inline so the block-install tests
+# do not depend on a shipped legacy rule (all shipped content is native). The one
+# intentionally-legacy fixture, spider_bite_poison, backs only the legacy-fallback test.
+_NATIVE_POISON = {
+    "name": "poison_dot",
+    "duration_rounds": 3,
+    "program": [
+        {
+            "block": "trigger", "event": "TURN_START", "holder": "caster",
+            "when": "event.entity == entity",
+            "then": [
+                {"block": "damage", "target": "caster",
+                 "formula": "1d6", "damage_type": "POISON"},
+            ],
+        },
+    ],
+}
+LEGACY_POISON = "rules/entity_effects/conditions/spider_bite_poison.json"
 
 
 def _ent(name="E", hp=40):
@@ -44,7 +62,7 @@ def _wire(*entities, with_dp=True):
 
 
 def _poison(engine, entity):
-    engine.apply_effect(entity, RuleLoader.load(POISON))
+    engine.apply_effect(entity, RuleLoader.from_dict(dict(_NATIVE_POISON)))
 
 
 class TestBlockInstall:
@@ -87,7 +105,7 @@ class TestBlockInstall:
         victim = _ent("Victim")
         bus, engine = _wire(victim)
         _poison(engine, victim)
-        engine.remove_effect(victim, "spider_bite_poison")
+        engine.remove_effect(victim, "poison_dot")
         assert victim.lifetimes == []
         with patch("src.spells.blocks.damage.roll_formula", return_value=4):
             hp0 = victim.hp
@@ -95,9 +113,10 @@ class TestBlockInstall:
             assert victim.hp == hp0                   # rider gone → no damage
 
     def test_without_damage_processor_falls_back_to_legacy(self):
+        # A *legacy* rule (spider_bite_poison) with no damage_processor stays on the
+        # legacy dispatch — the block engine is only reached with a damage_processor.
         victim = _ent("Victim")
         _bus, engine = _wire(victim, with_dp=False)
-        _poison(engine, victim)
-        # No block install without a damage_processor → filed for legacy dispatch.
+        engine.apply_effect(victim, RuleLoader.load(LEGACY_POISON))
         assert victim.get_effects_for_trigger("turn_start") != []
         assert victim.lifetimes == []

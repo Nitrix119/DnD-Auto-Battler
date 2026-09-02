@@ -28,45 +28,17 @@ from typing import Any, Iterable, Optional, Set
 from . import blocks as _blocks  # noqa: F401  (registers the block catalogue)
 from .block import parse_program
 from .context import CastEnv, Invocation, seed_context
-from .fold import rule_to_trigger_blocks
 from .runner import run_program
-
-# Actions a permanent global-rule trigger can run on the block engine: the pure
-# event-modifiers (mutate the live event) plus the two forward side-effects the
-# concentration-break and per-turn refill rules fire (act on the event entity via
-# the trigger's target rebind). A global rule is block-eligible iff every one of its
-# effects is one of these — so we can prove nothing unhandled is dropped.
-_GLOBAL_INSTALLABLE_ACTIONS = frozenset(
-    {
-        # event-modifiers
-        "ModifyDamage",
-        "ForceCriticalHit",
-        "ForceCriticalMiss",
-        "GrantAdvantage",
-        "GrantDisadvantage",
-        "Cancel",
-        # forward side-effects
-        "ForceConcentrationCheck",
-        "RefillResources",
-    }
-)
 
 
 def block_eligible(rule: Any) -> bool:
     """True if *rule* can run as a global trigger on the block engine.
 
-    A **native** rule (one that carries a block ``program``) is eligible by
-    construction — its behaviour is already authored as blocks. A **legacy** rule
-    is eligible only when every one of its effects has a globally-installable block
-    (an action in :data:`_GLOBAL_INSTALLABLE_ACTIONS`); anything else stays on the
-    legacy engine. Conservative either way.
+    A rule is eligible iff it is **native** — it carries a block ``program`` (its
+    behaviour is authored as trigger blocks directly). Every shipped global rule is
+    native (Phase 3 §5); a non-native rule is not installed here.
     """
-    if getattr(rule, "program", None) is not None:
-        return True
-    effects = getattr(rule, "effects", None) or []
-    return bool(effects) and all(
-        e.get("action") in _GLOBAL_INSTALLABLE_ACTIONS for e in effects
-    )
+    return getattr(rule, "program", None) is not None
 
 
 def install_global_rules(
@@ -75,27 +47,18 @@ def install_global_rules(
     event_bus: Any,
     damage_processor: Optional[Any] = None,
 ) -> Set[str]:
-    """Install the block-eligible *rules* as permanent block-engine triggers.
+    """Install the native *rules* as permanent block-engine triggers.
 
-    Returns the set of rule names actually installed, so the caller can disable
-    exactly those on the legacy rule engine (avoiding double application). A global
-    rule has no caster/holder — its event-modifier effects reach the live event, not
-    an entity — so the install invocation carries no caster/target.
+    Returns the set of rule names actually installed. A global rule has no
+    caster/holder — its event-modifier effects reach the live event, not an entity —
+    so the install invocation carries no caster/target.
     """
     handled: Set[str] = set()
     env = CastEnv(action=None, event_bus=event_bus, damage_processor=damage_processor)
     for rule in rules:
-        if not block_eligible(rule):
-            continue
-        # Native rule: run its authored program directly. Legacy rule: fold its
-        # ``triggers``/``effects`` into trigger blocks at ``priority=0`` (matching the
-        # legacy dispatch priority) — the transitional shim, retired once every global
-        # rule is native (Phase 3 §5).
-        blocks = (
-            rule.program if rule.program is not None
-            else rule_to_trigger_blocks(rule, priority=0)
-        )
-        program = parse_program(blocks)
+        if rule.program is None:
+            continue  # only native rules install on the block engine
+        program = parse_program(rule.program)
         # A global rule has no caster/target — its event-modifier effects reach the
         # live event, not an entity — so pass None; the trigger never reads them.
         inv = Invocation(

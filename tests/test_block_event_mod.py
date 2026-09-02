@@ -272,31 +272,7 @@ class TestForceCriticalParity:
 
 
 # ---------------------------------------------------------------------------
-# 3. Fold: a rule ModifyDamage effect translates into a modify_damage block
-# ---------------------------------------------------------------------------
-
-class TestFoldModifyDamage:
-    def test_modify_damage_action_folds(self):
-        from src.spells.fold import _ACTION_TO_BLOCK
-
-        block = _ACTION_TO_BLOCK["ModifyDamage"](
-            {"action": "ModifyDamage", "multiplier": 0.5}
-        )
-        assert block["block"] == "modify_damage"
-        assert block["multiplier"] == 0.5
-        assert "damage_type" not in block
-
-    def test_modify_damage_preserves_type_filter(self):
-        from src.spells.fold import _ACTION_TO_BLOCK
-
-        block = _ACTION_TO_BLOCK["ModifyDamage"](
-            {"action": "ModifyDamage", "multiplier": 0, "damage_type": "POISON"}
-        )
-        assert block["damage_type"] == "POISON"
-
-
-# ---------------------------------------------------------------------------
-# 4. The condition-library event-modifiers: advantage / disadvantage / cancel
+# 3. The condition-library event-modifiers: advantage / disadvantage / cancel
 # ---------------------------------------------------------------------------
 
 class TestConditionEventModifiers:
@@ -357,42 +333,3 @@ class TestConditionEventModifiers:
         inv = _new_inv(bus, _entity())  # live_event=None
         for bt in ("grant_advantage", "grant_disadvantage", "cancel"):
             run_block(Block.from_dict({"block": bt}), inv)
-
-
-class TestFoldConditionActions:
-    def test_translators_name_the_blocks(self):
-        from src.spells.fold import _ACTION_TO_BLOCK
-
-        assert _ACTION_TO_BLOCK["GrantAdvantage"]({})["block"] == "grant_advantage"
-        assert (
-            _ACTION_TO_BLOCK["GrantDisadvantage"]({})["block"] == "grant_disadvantage"
-        )
-        assert _ACTION_TO_BLOCK["Cancel"]({})["block"] == "cancel"
-
-    def test_blinded_rule_folds_to_one_trigger_with_guarded_effects(self):
-        """A legacy condition rule translates into a trigger holding the two flags,
-        each carrying its per-effect `when` as the block's fire-time condition.
-
-        Blinded is a native block rule now (Phase 3 §5), so this exercises the
-        transitional fold against blinded's frozen *legacy* snapshot (the fold retires
-        with fold.py; until then this guards its condition-action translation)."""
-        from src.spells.fold import _triggers_from_rule
-
-        legacy_blinded = os.path.join(
-            os.path.dirname(__file__), "legacy_snapshots_rules", "blinded.json"
-        )
-        rule = RuleLoader.load(legacy_blinded)
-        step = {"type": "add_entity_effect", "on_caster": True}
-        blocks = _triggers_from_rule(step, rule)
-
-        assert len(blocks) == 1
-        tb = blocks[0]
-        assert tb["block"] == "trigger"
-        assert tb["event"] == "ATTACK_DECLARED"
-        assert tb["when"] == rule.condition
-        assert [b["block"] for b in tb["then"]] == [
-            "grant_disadvantage",
-            "grant_advantage",
-        ]
-        assert tb["then"][0]["condition"] == "event.attacker == entity"
-        assert tb["then"][1]["condition"] == "event.defender == entity"

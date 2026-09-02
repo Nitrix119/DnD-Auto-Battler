@@ -115,73 +115,27 @@ class TestGlobalRulesEndToEnd:
 
 
 # ---------------------------------------------------------------------------
-# The production flow: install on the block engine, disable on the rule engine
+# The production flow: RuleEngine.load_from_directory installs the natives on blocks
 # ---------------------------------------------------------------------------
 
-class TestNoDoubleApplication:
-    # A *legacy*-shaped resistance rule (``triggers``/``effects``, not a native block
-    # ``program``). The disable discipline this class documents only bites for a rule
-    # that is BOTH block-installed and on the legacy dispatch — i.e. an un-migrated rule.
-    # The shipped resistance rule migrated to native in §5d (empty triggers → never on
-    # legacy dispatch → structurally cannot double-apply), so this uses an inline legacy
-    # rule to keep exercising the coexistence discipline that still applies to the
-    # remaining legacy globals (crit/concentration/refill).
-    _LEGACY_RESISTANCE = {
-        "name": "damage_resistance_rule",
-        "triggers": ["DAMAGE_INCOMING"],
-        "condition": (
-            "event.damage_list[0].damage_type in "
-            "event.defender.stat_block.damage_resistances"
-        ),
-        "effects": [{"action": "ModifyDamage", "multiplier": 0.5}],
-    }
+class TestNativeGlobalInstall:
+    """All global rules are native now (Phase 3 §5): ``RuleEngine.load_rule`` installs a
+    native rule on the block engine (its single resolution path), so a plain
+    ``load_from_directory`` wires them for library/`CombatSystem` usage — no separate
+    install/disable step. Each installs once; a native rule is never on the legacy
+    dispatch, so it structurally cannot double-apply."""
 
-    def _production_flow(self, *, disable_handled):
-        """Mirror web/routers/combat.py: load a legacy global rule into a RuleEngine,
-        install it on the block engine, optionally disable it on the rule engine.
-        Returns (bus, processor)."""
-        bus = EventBus()
-        processor = DamageProcessor(bus)
-        engine = RuleEngine(bus, damage_processor=processor)
-        rule = RuleLoader.from_dict(dict(self._LEGACY_RESISTANCE))
-        engine.load_rule(rule)
-        rules = [rule]
-        handled = install_global_rules(
-            rules, event_bus=bus, damage_processor=processor
-        )
-        if disable_handled:
-            for r in rules:
-                if r.name in handled:
-                    r.enabled = False
-        return bus, processor
-
-    def test_disabling_handled_rules_prevents_double_application(self):
-        bus, processor = self._production_flow(disable_handled=True)
-        entity = _entity(resistances=[DamageType.COLD])
-        processor.apply_damage(entity, [Damage(DamageType.COLD, 10)])
-        assert entity.hp == 25  # halved exactly once (block engine only)
-
-    def test_without_disabling_the_rule_double_applies(self):
-        """Documents *why* the disable is load-bearing: both paths fire, so the
-        resistance is applied twice (legacy ×0.5 then block ×0.5 → 10→5→2)."""
-        bus, processor = self._production_flow(disable_handled=False)
-        entity = _entity(resistances=[DamageType.COLD])
-        processor.apply_damage(entity, [Damage(DamageType.COLD, 10)])
-        assert entity.hp == 28  # 30 - int(int(10*0.5)*0.5) = 30 - 2
-
-    def test_every_global_rule_is_handled_and_disabled(self):
-        """The whole rules/global/ directory now migrates: every rule is
-        block-installed and disabled on the legacy engine (nothing double-active)."""
+    def test_load_from_directory_installs_all_natives_once(self):
         bus = EventBus()
         processor = DamageProcessor(bus)
         engine = RuleEngine(bus, damage_processor=processor)
         rules = engine.load_from_directory(_GLOBAL)
-        handled = install_global_rules(rules, event_bus=bus, damage_processor=processor)
-        for r in rules:
-            if r.name in handled:
-                r.enabled = False
-        assert {r.name for r in rules} == handled  # all seven eligible
-        assert all(not r.enabled for r in rules)
+        # Every global rule is native and tracked as installed on the block engine.
+        assert {r.name for r in rules} == {r.name for r in engine._native_rules}
+        # Resistance fires exactly once (halved, not doubled) — no explicit install call.
+        entity = _entity(resistances=[DamageType.COLD])
+        processor.apply_damage(entity, [Damage(DamageType.COLD, 10)])
+        assert entity.hp == 25
 
 
 # ---------------------------------------------------------------------------
