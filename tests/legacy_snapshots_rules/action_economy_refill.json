@@ -1,0 +1,11 @@
+{
+  "name": "action_economy_refill",
+  "triggers": ["TURN_START"],
+  "condition": "True",
+  "effects": [
+    {
+      "action": "RefillResources",
+      "target": "event.entity"
+    }
+  ]
+}

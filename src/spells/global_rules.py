@@ -61,7 +61,7 @@ def block_eligible(rule: Any) -> bool:
     (an action in :data:`_GLOBAL_INSTALLABLE_ACTIONS`); anything else stays on the
     legacy engine. Conservative either way.
     """
-    if getattr(rule, "program", None):
+    if getattr(rule, "program", None) is not None:
         return True
     effects = getattr(rule, "effects", None) or []
     return bool(effects) and all(
@@ -91,7 +91,10 @@ def install_global_rules(
         # ``triggers``/``effects`` into trigger blocks at ``priority=0`` (matching the
         # legacy dispatch priority) — the transitional shim, retired once every global
         # rule is native (Phase 3 §5).
-        blocks = rule.program if rule.program else rule_to_trigger_blocks(rule, priority=0)
+        blocks = (
+            rule.program if rule.program is not None
+            else rule_to_trigger_blocks(rule, priority=0)
+        )
         program = parse_program(blocks)
         # A global rule has no caster/target — its event-modifier effects reach the
         # live event, not an entity — so pass None; the trigger never reads them.

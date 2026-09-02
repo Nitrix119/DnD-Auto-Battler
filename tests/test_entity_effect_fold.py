@@ -115,7 +115,7 @@ class TestFoldEndToEnd:
         assert cleric.ac == base + 2
 
         # A failed CON save from damage tears the scope down and restores AC.
-        with patch("src.rules.effects.roll_d20", return_value=1):
+        with patch("src.spells.blocks.global_effects.roll_d20", return_value=1):
             bus.emit(EventType.DAMAGE_DEALT, defender=cleric, damage_list=[], total=20)
         assert not cleric.has_concentration
         assert cleric.concentration_scope is None
@@ -227,7 +227,7 @@ class TestHasteFold:
         resolver.resolve(caster, [ally], _spell("haste"))
 
         # A failed CON save from damage to the caster breaks concentration.
-        with patch("src.rules.effects.roll_d20", return_value=1):
+        with patch("src.spells.blocks.global_effects.roll_d20", return_value=1):
             bus.emit(EventType.DAMAGE_DEALT, defender=caster, damage_list=[], total=20)
         assert not caster.has_concentration
 

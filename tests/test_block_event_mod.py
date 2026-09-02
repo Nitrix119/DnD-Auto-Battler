@@ -38,10 +38,6 @@ _GLOBAL = os.path.join(os.path.dirname(__file__), "..", "rules", "global")
 RESISTANCE_JSON = os.path.join(_GLOBAL, "damage_resistance_rule.json")
 CRIT_HIT_JSON = os.path.join(_GLOBAL, "critical_hit.json")
 CRIT_MISS_JSON = os.path.join(_GLOBAL, "critical_miss.json")
-BLINDED_JSON = os.path.join(
-    os.path.dirname(__file__), "..", "rules", "entity_effects", "conditions",
-    "blinded.json",
-)
 
 # The resistance rule as a native block program: a permanent (lifetime-less)
 # trigger that halves matching damage on the in-flight DAMAGE_INCOMING event.
@@ -374,11 +370,18 @@ class TestFoldConditionActions:
         assert _ACTION_TO_BLOCK["Cancel"]({})["block"] == "cancel"
 
     def test_blinded_rule_folds_to_one_trigger_with_guarded_effects(self):
-        """A real condition rule translates into a trigger holding the two flags,
-        each carrying its per-effect `when` as the block's fire-time condition."""
+        """A legacy condition rule translates into a trigger holding the two flags,
+        each carrying its per-effect `when` as the block's fire-time condition.
+
+        Blinded is a native block rule now (Phase 3 §5), so this exercises the
+        transitional fold against blinded's frozen *legacy* snapshot (the fold retires
+        with fold.py; until then this guards its condition-action translation)."""
         from src.spells.fold import _triggers_from_rule
 
-        rule = RuleLoader.load(BLINDED_JSON)
+        legacy_blinded = os.path.join(
+            os.path.dirname(__file__), "legacy_snapshots_rules", "blinded.json"
+        )
+        rule = RuleLoader.load(legacy_blinded)
         step = {"type": "add_entity_effect", "on_caster": True}
         blocks = _triggers_from_rule(step, rule)
 

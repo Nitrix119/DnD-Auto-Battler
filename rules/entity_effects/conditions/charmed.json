@@ -1,12 +1,15 @@
 {
   "name": "charmed",
-  "triggers": ["ATTACK_DECLARED"],
-  "condition": "event.attacker == entity",
-  "effects": [
+  "program": [
     {
-      "action": "Cancel",
-      "when": "event.defender == instance_fields.charmer"
+      "block": "trigger",
+      "event": "ATTACK_DECLARED",
+      "holder": "defender",
+      "when": "event.attacker == entity",
+      "then": [
+        { "block": "cancel", "condition": "event.defender == instance_fields.charmer" }
+      ]
     }
   ],
-  "_note": "Apply via engine.apply_effect(target, rule, instance_fields={'charmer': caster_entity}). Charmer has advantage on social ability checks against the charmed creature (pending ability check system)."
+  "_note": "The charmer is bound at apply time via apply_condition bindings={'charmer': <caster>} (charm_person), exposed to the rider as instance_fields.charmer. Charmer has advantage on social ability checks against the charmed creature (pending ability check system)."
 }

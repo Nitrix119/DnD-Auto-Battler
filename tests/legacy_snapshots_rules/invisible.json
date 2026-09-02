@@ -1,0 +1,10 @@
+{
+  "name": "invisible",
+  "triggers": ["ATTACK_DECLARED"],
+  "condition": "event.attacker == entity or event.defender == entity",
+  "effects": [
+    { "action": "GrantAdvantage", "when": "event.attacker == entity" },
+    { "action": "GrantDisadvantage", "when": "event.defender == entity" }
+  ],
+  "_note": "TODO: Treated as heavily obscured for hiding (pending stealth/hiding system)."
+}

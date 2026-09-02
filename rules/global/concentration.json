@@ -1,12 +1,19 @@
 {
   "name": "concentration_damage_check",
-  "triggers": ["DAMAGE_DEALT"],
-  "condition": "event.defender.has_concentration and event.total > 0",
-  "effects": [
+  "program": [
     {
-      "action": "ForceConcentrationCheck",
+      "block": "trigger",
+      "event": "DAMAGE_DEALT",
+      "priority": 0,
       "target": "event.defender",
-      "dc": "max(10, event.total // 2)"
+      "when": "event.defender.has_concentration and event.total > 0",
+      "then": [
+        {
+          "block": "force_concentration_check",
+          "target": "defender",
+          "dc": "max(10, event.total // 2)"
+        }
+      ]
     }
   ]
 }

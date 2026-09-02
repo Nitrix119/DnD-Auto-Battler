@@ -131,6 +131,9 @@ class RuleEngine:
         self._effect_registry: Dict[str, EffectHandler] = dict(BUILTIN_EFFECTS)
         # Track which triggers already have a subscription to avoid duplicates.
         self._subscribed_triggers: Set[EventType] = set()
+        # Native rules (a block ``program``) installed on the block engine by this
+        # loader, kept for inspection (they are not on the legacy ``_rules`` dispatch).
+        self._native_rules: List[Rule] = []
         if entities_getter is not None:
             for event_type in EventType:
                 # Priority -10 so entity-scoped effects fire after global rules
@@ -153,11 +156,32 @@ class RuleEngine:
         self._effect_registry[name] = handler
 
     def load_rule(self, rule: Rule) -> None:
-        """Register a Rule and subscribe it to the event bus.
+        """Register a Rule on the engine that resolves it.
+
+        A **native** rule (one carrying a block ``program``) is installed on the
+        **block engine** — its single resolution path — as permanent triggers on the
+        shared bus, exactly as the web layer does, so it fires in library/`CombatSystem`
+        usage too (not only under the web router). It is *not* placed on the legacy
+        dispatch, so there is no double application. A **legacy** rule (``triggers``/
+        ``effects``) subscribes to the legacy dispatch as before.
 
         Args:
             rule: A Rule instance (e.g. from RuleLoader).
         """
+        if rule.program is not None:
+            # Lazy import avoids the rules -> spells -> combat import cycle (mirrors
+            # apply_effect). install_global_rules installs the rule's trigger blocks on
+            # the bus with this engine's damage_processor (None is fine — no global rule
+            # rolls damage).
+            from src.spells.global_rules import install_global_rules
+
+            install_global_rules(
+                [rule], event_bus=self.event_bus,
+                damage_processor=self._damage_processor,
+            )
+            self._native_rules.append(rule)
+            return
+
         for trigger in rule.triggers:
             if trigger not in self._rules:
                 self._rules[trigger] = []

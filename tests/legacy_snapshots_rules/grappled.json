@@ -1,0 +1,7 @@
+{
+  "name": "grappled",
+  "triggers": ["TURN_START"],
+  "condition": "event.entity == entity",
+  "effects": [],
+  "_note": "TODO: No implementable combat effects in the current system. Speed becomes 0 and cannot benefit from any bonus to speed (pending movement system). Condition ends if the grappler is incapacitated or if the creature is moved outside the grappler's reach (pending grappler reference tracking and movement system)."
+}

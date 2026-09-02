@@ -1,10 +1,14 @@
 {
   "name": "critical_miss_on_nat_1",
-  "triggers": ["ATTACK_ROLLED"],
-  "condition": "event.roll == 1",
-  "effects": [
+  "program": [
     {
-      "action": "ForceCriticalMiss"
+      "block": "trigger",
+      "event": "ATTACK_ROLLED",
+      "priority": 0,
+      "when": "event.roll == 1",
+      "then": [
+        { "block": "force_critical", "outcome": "miss" }
+      ]
     }
   ]
 }

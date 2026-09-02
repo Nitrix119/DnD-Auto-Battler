@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 from src.models import Entity, Damage, DamageType
 from src.combat import EventBus, EventType
+from src.combat.damage_processor import DamageProcessor
 from src.loaders import StatBlockLoader
 from src.rules import RuleEngine, RuleLoader
 
@@ -29,10 +30,15 @@ def load_goblin() -> Entity:
 
 
 def setup_engine(*entities):
-    """Create a RuleEngine with entity effect support."""
+    """Create a RuleEngine with entity effect support.
+
+    A damage_processor is required so apply_effect installs a *native* rule (blinded is
+    a native block rule now, Phase 3 §5) on the block engine rather than the legacy
+    dispatch (which a native rule, having no legacy triggers, never reaches)."""
     entity_list = list(entities)
     bus = EventBus()
-    engine = RuleEngine(bus, entities_getter=lambda: entity_list)
+    engine = RuleEngine(bus, entities_getter=lambda: entity_list,
+                        damage_processor=DamageProcessor(bus))
     return bus, engine
 
 

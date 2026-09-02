@@ -75,7 +75,7 @@ def _install_condition_rider(inv, rule, holder, bindings, scope) -> None:
     supplied here. Both run identically on the child — the fold is retired once every
     condition is native (Phase 3 §5).
     """
-    if getattr(rule, "program", None):
+    if getattr(rule, "program", None) is not None:
         blocks = [dict(b) for b in rule.program]
     else:
         blocks = rule_to_trigger_blocks(rule, holder=holder)

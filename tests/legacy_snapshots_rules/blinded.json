@@ -1,0 +1,10 @@
+{
+  "name": "blinded",
+  "triggers": ["ATTACK_DECLARED"],
+  "condition": "event.attacker == entity or event.defender == entity",
+  "effects": [
+    { "action": "GrantDisadvantage", "when": "event.attacker == entity" },
+    { "action": "GrantAdvantage", "when": "event.defender == entity" }
+  ],
+  "_note": "TODO: Auto-fail on ability checks requiring sight (needs ability check system)."
+}

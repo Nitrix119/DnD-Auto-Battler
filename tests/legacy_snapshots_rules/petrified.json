@@ -1,0 +1,11 @@
+{
+  "name": "petrified",
+  "triggers": ["ATTACK_DECLARED", "DAMAGE_INCOMING"],
+  "condition": "event.attacker == entity or event.defender == entity",
+  "effects": [
+    { "action": "Cancel", "on": "ATTACK_DECLARED", "when": "event.attacker == entity" },
+    { "action": "GrantAdvantage", "on": "ATTACK_DECLARED", "when": "event.defender == entity" },
+    { "action": "ModifyDamage", "on": "DAMAGE_INCOMING", "multiplier": 0.5, "when": "event.defender == entity" }
+  ],
+  "_note": "TODO: Immune to poison and disease (pending condition immunity system). Auto-fail STR and DEX saving throws (pending save system). SPELL_CAST cancellation (pending spell cast cancellation support)."
+}

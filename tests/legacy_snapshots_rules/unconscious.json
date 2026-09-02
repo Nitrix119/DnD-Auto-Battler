@@ -1,16 +1,10 @@
 {
   "name": "unconscious",
-  "program": [
-    {
-      "block": "trigger",
-      "event": "ATTACK_DECLARED",
-      "holder": "defender",
-      "when": "event.attacker == entity or event.defender == entity",
-      "then": [
-        { "block": "cancel", "condition": "event.attacker == entity" },
-        { "block": "grant_advantage", "condition": "event.defender == entity" }
-      ]
-    }
+  "triggers": ["ATTACK_DECLARED"],
+  "condition": "event.attacker == entity or event.defender == entity",
+  "effects": [
+    { "action": "Cancel", "when": "event.attacker == entity" },
+    { "action": "GrantAdvantage", "when": "event.defender == entity" }
   ],
   "_note": "TODO: Prone applied on onset (pending ApplyCondition on CONDITION_ADDED trigger). Any attack that hits within 5 ft is a critical hit (pending melee/ranged distinction and auto-crit logic). Auto-fail STR and DEX saving throws (pending save system). SPELL_CAST cancellation (pending spell cast cancellation support)."
 }

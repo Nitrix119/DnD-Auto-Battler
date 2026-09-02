@@ -10,6 +10,7 @@ import os
 
 from src.models import Entity
 from src.combat import EventBus, EventType
+from src.combat.damage_processor import DamageProcessor
 from src.loaders import StatBlockLoader
 from src.rules import RuleEngine, RuleLoader
 
@@ -30,10 +31,15 @@ def load_goblin() -> Entity:
 
 
 def setup_engine(*entities):
-    """Create a RuleEngine with entity effect support."""
+    """Create a RuleEngine with entity effect support.
+
+    A damage_processor is required so apply_effect installs a *native* rule (charmed is
+    a native block rule now, Phase 3 §5) on the block engine — the instance_fields
+    (charmer) ride the installed triggers as captured bindings."""
     entity_list = list(entities)
     bus = EventBus()
-    engine = RuleEngine(bus, entities_getter=lambda: entity_list)
+    engine = RuleEngine(bus, entities_getter=lambda: entity_list,
+                        damage_processor=DamageProcessor(bus))
     return bus, engine
 
 
@@ -134,12 +140,19 @@ class TestCharmedInstanceIndependence:
         assert event4.cancelled is False
 
     def test_same_rule_applied_twice_independent_duration(self):
-        """Two applications of the charmed rule to different entities have
-        independent duration counters — ticking one does not affect the other."""
+        """Two applications of the charmed rule to different entities have independent
+        duration counters — ticking one does not affect the other.
+
+        Charmed is a native block rule now (Phase 3 §5): each application owns its own
+        ``LifetimeScope`` on the entity (not a legacy ``active_effects`` EffectInstance),
+        ticked by the per-turn lifetime clock on that entity's TURN_END."""
+        from src.combat.lifetime_clock import install_lifetime_clock
+
         fighter = load_fighter()
         goblin = load_goblin()
         charmer = load_fighter()
         bus, engine = setup_engine(fighter, goblin, charmer)
+        install_lifetime_clock(bus)
 
         rule = RuleLoader.load(os.path.join(CONDITIONS_DIR, "charmed.json"))
         rule.duration_rounds = 2
@@ -147,14 +160,14 @@ class TestCharmedInstanceIndependence:
         engine.apply_effect(fighter, rule, instance_fields={"charmer": charmer})
         engine.apply_effect(goblin, rule, instance_fields={"charmer": charmer})
 
-        # Both entities should have their own EffectInstance with duration 2
-        fighter_instance = fighter.active_effects["attack_declared"][0]
-        goblin_instance = goblin.active_effects["attack_declared"][0]
-        assert fighter_instance is not goblin_instance
-        assert fighter_instance.duration_remaining == 2
-        assert goblin_instance.duration_remaining == 2
+        # Each entity has its own charmed lifetime scope with duration 2.
+        fighter_scope = next(s for s in fighter.lifetimes if s.source == "charmed")
+        goblin_scope = next(s for s in goblin.lifetimes if s.source == "charmed")
+        assert fighter_scope is not goblin_scope
+        assert fighter_scope.rounds_remaining == 2
+        assert goblin_scope.rounds_remaining == 2
 
-        # Tick fighter's turn — only fighter's instance should decrement
+        # Tick fighter's turn — only fighter's scope decrements.
         bus.emit(EventType.TURN_END, entity=fighter)
-        assert fighter_instance.duration_remaining == 1
-        assert goblin_instance.duration_remaining == 2
+        assert fighter_scope.rounds_remaining == 1
+        assert goblin_scope.rounds_remaining == 2

@@ -37,18 +37,27 @@ _ENTITY = os.path.join(_HERE, "..", "rules", "entity_effects")
 _CONDITIONS = os.path.join(_ENTITY, "conditions")
 
 # (snapshot filename, live native file path, fold kwargs the install seam uses)
-PILOT = [
-    ("damage_resistance_rule.json",
-     os.path.join(_GLOBAL, "damage_resistance_rule.json"), {"priority": 0}),
-    ("damage_immunity_rule.json",
-     os.path.join(_GLOBAL, "damage_immunity_rule.json"), {"priority": 0}),
-    ("damage_vulnerability_rule.json",
-     os.path.join(_GLOBAL, "damage_vulnerability_rule.json"), {"priority": 0}),
-    ("colossus_slayer.json",
-     os.path.join(_ENTITY, "colossus_slayer.json"), {"holder": "caster"}),
-    ("restrained.json",
-     os.path.join(_CONDITIONS, "restrained.json"), {"holder": "defender"}),
+# Global rules fold at priority=0 (install_global_rules); conditions fold at
+# holder="defender" (apply_condition applies them to the target — the shipped usage);
+# Colossus, an entity-effect rider, folds at holder="caster" (run on caster == holder).
+_GLOBAL_RULES = [
+    "damage_resistance_rule", "damage_immunity_rule", "damage_vulnerability_rule",
+    "critical_hit", "critical_miss", "concentration", "action_economy_refill",
 ]
+_CONDITION_RULES = [
+    "blinded", "charmed", "deafened", "exhaustion", "frightened", "grappled",
+    "incapacitated", "invisible", "paralyzed", "petrified", "poisoned", "prone",
+    "restrained", "stunned", "unconscious",
+]
+
+PILOT = (
+    [(f"{g}.json", os.path.join(_GLOBAL, f"{g}.json"), {"priority": 0})
+     for g in _GLOBAL_RULES]
+    + [("colossus_slayer.json",
+        os.path.join(_ENTITY, "colossus_slayer.json"), {"holder": "caster"})]
+    + [(f"{c}.json", os.path.join(_CONDITIONS, f"{c}.json"), {"holder": "defender"})
+       for c in _CONDITION_RULES]
+)
 
 _IDS = [p[0] for p in PILOT]
 
@@ -63,7 +72,9 @@ def _folded_from_snapshot(snapshot_name, **fold_kwargs):
 def test_native_program_matches_folded_legacy(snapshot, native_path, fold_kwargs):
     """The live native ``program`` parses to exactly the fold's output for its snapshot."""
     native_rule = RuleLoader.load(native_path)
-    assert native_rule.program, f"{native_path} is not native yet (no program)"
+    # ``is not None`` (not truthiness): a marker-only condition is a valid native rule
+    # with an empty program (``[]``); legacy rules have ``program is None``.
+    assert native_rule.program is not None, f"{native_path} is not native yet (no program)"
     native = parse_program(native_rule.program)
     expected = _folded_from_snapshot(snapshot, **fold_kwargs)
     assert native == expected

@@ -15,7 +15,6 @@ from src.loaders.stat_block_loader import StatBlockLoader
 from src.models.action import AttackAction, SpellAction
 from src.models.entity import Entity
 from src.rules.rule_engine import RuleEngine
-from src.spells.global_rules import install_global_rules
 from src.spatial.geometry import Point3D
 
 _RULES_DIR = Path(__file__).parent.parent.parent / "rules"
@@ -256,20 +255,11 @@ async def handle_start_combat(
         damage_processor=combat._damage_processor,
         effect_registry=effect_registry,
     )
-    global_rules = rule_engine.load_from_directory(_GLOBAL_RULES_DIR)
-    # Route the event-modifier global rules (damage resistance/immunity/
-    # vulnerability, the nat-20/nat-1 crit rules) through the block engine, and
-    # disable exactly those on the legacy rule engine so nothing is applied twice.
-    # Side-effecting globals (concentration, resource refill) stay on the rule
-    # engine for now (§4.7 step 3 — the small first repoint).
-    handled = install_global_rules(
-        global_rules,
-        event_bus=combat.event_bus,
-        damage_processor=combat._damage_processor,
-    )
-    for rule in global_rules:
-        if rule.name in handled:
-            rule.enabled = False
+    # All global rules are native block programs now (Phase 3 §5), so loading them
+    # installs them on the block engine (their single resolution path) directly —
+    # RuleEngine.load_rule routes a native rule there, not to the legacy dispatch. No
+    # separate install/disable step is needed (that was the transitional §4.7 repoint).
+    rule_engine.load_from_directory(_GLOBAL_RULES_DIR)
     combat.rule_engine = rule_engine
 
     combat.start_combat()

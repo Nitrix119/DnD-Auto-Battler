@@ -1,10 +1,14 @@
 {
   "name": "critical_hit_on_nat_20",
-  "triggers": ["ATTACK_ROLLED"],
-  "condition": "event.roll == 20",
-  "effects": [
+  "program": [
     {
-      "action": "ForceCriticalHit"
+      "block": "trigger",
+      "event": "ATTACK_ROLLED",
+      "priority": 0,
+      "when": "event.roll == 20",
+      "then": [
+        { "block": "force_critical", "outcome": "hit" }
+      ]
     }
   ]
 }

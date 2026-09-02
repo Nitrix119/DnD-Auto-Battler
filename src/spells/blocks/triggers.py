@@ -68,6 +68,14 @@ def _capture_bindings(bindings, inv: Invocation):
     ctx = eval_context(inv)
     captured = {}
     for name, expr in bindings.items():
+        # A string binding is an expression evaluated against the installing invocation
+        # (native authoring, e.g. Charm Person's ``"charmer": "event.caster"``). A
+        # non-string is an already-resolved value passed straight through — the contract
+        # of ``RuleEngine.apply_effect(instance_fields={"charmer": <Entity>})``, whose
+        # values are objects, not expressions.
+        if not isinstance(expr, str):
+            captured[name] = expr
+            continue
         try:
             captured[name] = evaluate(expr, ctx)
         except Exception:

@@ -50,7 +50,7 @@ def install_entity_effect(
     ``duration_rounds`` rule expires on the holder's turn and ``remove_effect`` can
     dispose it by name.
     """
-    if rule.program:
+    if rule.program is not None:
         # Native rule: its trigger blocks are authored directly (holder defaults to
         # ``caster`` = this entity, since the install runs on caster == entity below).
         blocks = [dict(b) for b in rule.program]

@@ -1,0 +1,12 @@
+{
+  "name": "charmed",
+  "triggers": ["ATTACK_DECLARED"],
+  "condition": "event.attacker == entity",
+  "effects": [
+    {
+      "action": "Cancel",
+      "when": "event.defender == instance_fields.charmer"
+    }
+  ],
+  "_note": "Apply via engine.apply_effect(target, rule, instance_fields={'charmer': caster_entity}). Charmer has advantage on social ability checks against the charmed creature (pending ability check system)."
+}

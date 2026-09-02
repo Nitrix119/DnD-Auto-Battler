@@ -79,12 +79,16 @@ class TestRuleLoader:
             })
 
     def test_load_from_file(self):
+        # concentration is a native block rule now (Phase 3 §5): a DAMAGE_DEALT trigger
+        # running a force_concentration_check block. It carries no legacy triggers/effects.
         rule = RuleLoader.load(CONCENTRATION_JSON)
         assert rule.name == "concentration_damage_check"
-        assert rule.triggers == [EventType.DAMAGE_DEALT]
-        assert rule.condition == "event.defender.has_concentration and event.total > 0"
-        assert len(rule.effects) == 1
-        assert rule.effects[0]["action"] == "ForceConcentrationCheck"
+        assert rule.triggers == []
+        assert rule.program and len(rule.program) == 1
+        tb = rule.program[0]
+        assert tb["block"] == "trigger" and tb["event"] == "DAMAGE_DEALT"
+        assert tb["when"] == "event.defender.has_concentration and event.total > 0"
+        assert tb["then"][0]["block"] == "force_concentration_check"
 
 
 # ── RuleEngine core ───────────────────────────────────────────────────────────
@@ -206,8 +210,11 @@ class TestRuleEngine:
         assert results == [42]
 
     def test_load_from_file_registers_rule(self, bus, engine):
+        # A native rule installs on the block engine (not the legacy dispatch), so it is
+        # tracked in _native_rules and its trigger fires on the bus without crashing.
         rule = engine.load_from_file(CONCENTRATION_JSON)
-        assert rule.triggers == [EventType.DAMAGE_DEALT]
+        assert rule.program is not None and rule.triggers == []
+        assert rule in engine._native_rules
         # Verify it's subscribed: a non-concentrating entity causes no crash
         entity = make_entity()
         bus.emit(EventType.DAMAGE_DEALT, defender=entity, damage_list=[], total=10)
@@ -439,13 +446,13 @@ class TestConcentrationRule:
         entity = make_entity()
         assert not entity.has_concentration
         # Emit with a DC that would always fail any save — proves handler wasn't called
-        with patch("src.rules.effects.roll_d20", return_value=1):
+        with patch("src.spells.blocks.global_effects.roll_d20", return_value=1):
             bus.emit(EventType.DAMAGE_DEALT, defender=entity, damage_list=[], total=20)
         assert entity.concentrating_on is None  # was None to start, still None
 
     def test_rule_fires_for_concentrating_entity(self, bus, engine, concentrating_entity):
         """When entity IS concentrating, ForceConcentrationCheck runs."""
-        with patch("src.rules.effects.roll_d20", return_value=20):  # always pass
+        with patch("src.spells.blocks.global_effects.roll_d20", return_value=20):  # pass
             bus.emit(EventType.DAMAGE_DEALT,
                      defender=concentrating_entity, damage_list=[], total=10)
         # High roll → passed save → still concentrating
@@ -453,21 +460,21 @@ class TestConcentrationRule:
 
     def test_failed_save_ends_concentration(self, bus, engine, concentrating_entity):
         # Damage = 20 → DC = max(10, 10) = 10; CON +0; roll 1 → total 1 < 10
-        with patch("src.rules.effects.roll_d20", return_value=1):
+        with patch("src.spells.blocks.global_effects.roll_d20", return_value=1):
             bus.emit(EventType.DAMAGE_DEALT,
                      defender=concentrating_entity, damage_list=[], total=20)
         assert concentrating_entity.concentrating_on is None
 
     def test_passed_save_keeps_concentration(self, bus, engine, concentrating_entity):
         # Damage = 20 → DC = 10; CON +0; roll 10 → total 10 >= 10
-        with patch("src.rules.effects.roll_d20", return_value=10):
+        with patch("src.spells.blocks.global_effects.roll_d20", return_value=10):
             bus.emit(EventType.DAMAGE_DEALT,
                      defender=concentrating_entity, damage_list=[], total=20)
         assert concentrating_entity.concentrating_on == "Bless"
 
     def test_dc_scales_with_damage_low(self, bus, engine, concentrating_entity):
         """Low damage → DC 10 (minimum). Roll 10 should pass."""
-        with patch("src.rules.effects.roll_d20", return_value=10):
+        with patch("src.spells.blocks.global_effects.roll_d20", return_value=10):
             bus.emit(EventType.DAMAGE_DEALT,
                      defender=concentrating_entity, damage_list=[], total=8)
         # DC = max(10, 8//2=4) = 10; 10 + 0 = 10 → pass
@@ -475,7 +482,7 @@ class TestConcentrationRule:
 
     def test_dc_scales_with_damage_high(self, bus, engine, concentrating_entity):
         """High damage → DC rises above minimum. Same roll that passed above now fails."""
-        with patch("src.rules.effects.roll_d20", return_value=10):
+        with patch("src.spells.blocks.global_effects.roll_d20", return_value=10):
             bus.emit(EventType.DAMAGE_DEALT,
                      defender=concentrating_entity, damage_list=[], total=30)
         # DC = max(10, 30//2=15) = 15; 10 + 0 = 10 < 15 → fail
@@ -507,7 +514,7 @@ class TestConcentrationRule:
 
         # Attack roll → 20 (hit); concentration save → 1 (fail)
         with patch("src.spells.blocks.rolls.roll_d20", return_value=20), \
-             patch("src.rules.effects.roll_d20", return_value=1):
+             patch("src.spells.blocks.global_effects.roll_d20", return_value=1):
             combat.resolve_attack(attacker, defender, attack)
 
         assert defender.concentrating_on is None
