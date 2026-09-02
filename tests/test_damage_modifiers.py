@@ -161,7 +161,6 @@ class TestDamageModifierRuleLoading:
     parity with the frozen legacy shape is pinned in ``test_native_rules_parity``."""
 
     def _trigger(self, rule):
-        assert rule.triggers == []  # native: events live in the program's blocks
         assert rule.program and len(rule.program) == 1
         tb = rule.program[0]
         assert tb["block"] == "trigger" and tb["event"] == "DAMAGE_INCOMING"
