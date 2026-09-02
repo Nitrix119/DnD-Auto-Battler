@@ -21,23 +21,16 @@ the one engine (`src/spells/`). Every translation layer is deleted — `EffectPi
 `fold.py`, `adapter.py`, `BUILTIN_EFFECTS`, `EffectInstance`, `step_schema.py`, and both
 legacy authoring shapes (`Rule.triggers`/`effects` and `SpellAction.pipeline_effects`).
 Content that is not a block program no longer loads. What remains is **no legacy code at
-all**: a short list of carried deviations, some awkwardness worth refining, and the
-post-rework feature threads — of which **rich program linting (§4) is the priority**.
+all** and nothing structural outstanding: a short list of carried deviations, some
+awkwardness worth refining, and the post-rework feature threads.
 
 ---
 
-## 1. The one structural loose end
+## 1. Nothing structural
 
-**`RuleEngine.load_rule` installing rules on the block engine is an inverted dependency.**
-`RuleEngine` is now only a loader seam — it reads rule JSON and hands each program to
-`spells.global_rules.install_global_rules` / `spells.entity_effects.install_entity_effect` —
-plus a carrier for the `effect_registry` that `blocks/state.py` and `SpellResolver` read.
-The clean end state is a small native rule loader in `src/spells/` that owns global and
-condition install, with no `RuleEngine` at all, and the registry passed explicitly.
-
-Small and low-risk, but it is a *rename-and-move*, not a deletion: worth doing when the rich
-linting work (§4) is next in that area, so the two land together rather than churning the
-same files twice.
+The last loose end — `RuleEngine`'s inverted dependency — is gone: `src/spells/rules.py`
+owns rule install, the plumbing carries `condition_rules` (an `EffectRegistry`) explicitly,
+and `src/rules` is pure data. What remains is all in §2–§5 below.
 
 ---
 
@@ -57,11 +50,11 @@ noted condition.
   its event-modifier/forward effects reach the live *event* entity, not a caster/target. If
   `Invocation.caster`/`target` are ever made `Optional`, this is the reason; until then the
   `type: ignore`s stay.
-- **Double-install of a native global is the caller's responsibility.** `RuleEngine.load_rule`
-  installs a native rule on the block engine once; calling `install_global_rules` *again* on
-  a rule already loaded through the engine double-subscribes it. Production is fine (the web
-  router calls only `load_from_directory`), but any new setup path must install a given
-  global rule through exactly one route.
+- **Double-install of a global rule is the caller's responsibility.** `install_rule`
+  subscribes a rule's triggers each time it is called; installing the same rule twice
+  double-subscribes it. Production is fine (the web router calls
+  `load_rules_from_directory` once), but any new setup path must install a given global
+  rule through exactly one route.
 
 ---
 
@@ -89,7 +82,7 @@ translator (`fold.py`) is gone, these can be cleaned up as standalone refinement
   default `holder: "caster"` is always correct — and drop the baked `holder` from the files.
 - **`_capture_bindings` distinguishes string bindings (expressions) from non-string
   (already-resolved values).** This lets both native `bindings: {"charmer": "event.caster"}`
-  and `apply_effect(instance_fields={"charmer": <Entity>})` work. Fine, but a string value
+  and `apply_entity_rule(instance_fields={"charmer": <Entity>})` work. Fine, but a string value
   that was *meant* literally would be evaluated as an expression — no caller does this today.
   (`src/spells/blocks/triggers.py`.)
 - **Marker-only conditions are `program: []`.** `deafened` / `exhaustion` / `grappled` have
@@ -101,7 +94,7 @@ translator (`fold.py`) is gone, these can be cleaned up as standalone refinement
 
 ## 4. Deferred design threads (post-rework features)
 
-Unblocked once §1 lands; each is its own design.
+Each is its own design.
 
 - **Upcasting framework** — count/multiplicative scaling (extra darts, summon counts, longer
   durations). The user has a specific idea to discuss first. [[upcasting-framework-pending]]
@@ -115,29 +108,27 @@ Unblocked once §1 lands; each is its own design.
   pointer-safe initiative, "downed but present", `ENTITY_DIES`/dismissal).
 - **Meta / `cast_spell`** — a block that invokes the resolver on another spell (Wish,
   Contingency) + copy/counter. The "add one block absorbs the exotic tail" proof; built last.
-- **Rich program linting: a per-field block schema + generated `BLOCK_REFERENCE.md`**
-  (vision §5) — the `program` analogue of `STEP_SCHEMAS`, with a drift-tested generated
-  reference. Raised as a priority after the §1 slice, where two separate silent failures
-  (`petrified`'s dead trigger guard, the marker-only condition clock) were both *shapes the
-  validator could have rejected*. The engine's stance is §2.5 "fail loudly": **an authoring
-  mistake must not be silently ignored** — today an unrecognised field simply does nothing,
-  which is the worst outcome for clarity.
+- **Richer program linting — the remaining checks.** The per-field block schema shipped
+  (`BlockContract.fields`, `src/spells/validate.py`, drift-guarded by
+  `tests/test_block_schema_drift.py`), so unknown args, wrong kinds and domains, enums,
+  nested object shapes, unparseable or out-of-sandbox expressions, unknown expression
+  roots, and dead `then`s are all caught at load. What is deliberately **not** done:
 
-  `src/spells/validate.py` currently covers registered-type / required-arg / arity /
-  `context.X` refs / `event.<field>` refs. The catches wanted on top, roughly in value order:
-
-  | Check | Example it catches |
+  | Check | Why it was deferred |
   |---|---|
-  | **Unknown/unused field on a block** | `{"block": "damage", "fomula": "1d6"}` — silently deals nothing today |
-  | **Type/domain per field** | `when: 4`, `multiplier: "half"`, `duration_rounds: "2"` |
-  | **Iterator/arity mismatch beyond the current lint** | a set-producing block feeding a block wanting a single target, and the converse |
-  | **Unreachable / dead references** | a `context.X` read before any block writes it; a `then` under a block that never runs one |
-  | **Enum values** | `damage_type: "SLASHNG"`, `event: "ATTACK_HITT"` (the latter now caught) |
-  | **Nested entity attributes** | `event.defender.typo` — the remaining half of E6 (§5) |
+  | **Context flow analysis** — `context.damage_dealt` read before anything writes it; `save_result` with no preceding `saving_throw`; `requires_hit` with no `attack_roll` | A `trigger`/`lifetime` `then` body runs later in a **fresh invocation with a fresh context**, so lexical order is not execution order. A naive check produces false positives, and in a gate that refuses to load content a false positive is worse than a miss. Needs a per-scope reachability model. |
+  | **Nested entity attributes** — `event.defender.typo` | Needs an Entity-attribute schema; E6's remaining half (§5). |
+  | **Expression result types** — `when: "event.total"` (an int used as a bool), `value: "'abc'"` | Needs type inference over the expression language. |
+  | **"One of these is required"** — `healing` needs `amount` **or** `formula`, and silently returns when neither is present | `Field.required` cannot express an either/or; it wants a block-level constraint. |
+  | **Unknown *top-level* keys** on spell/rule/creature JSON, outside any block | The same hole one level up. `_note` already lives there, so the `_`-prefix convention carries over. |
 
-  Design note: the required/optional/domain data belongs on `BlockContract` (beside
-  `required_args`) so a block's schema lives with its handler and the generated reference
-  cannot drift from it.
+- **`target` is overloaded.** On `trigger` it is an *expression* naming an entity to rebind
+  to; on state/healing/global blocks it is a `caster`/`defender` selector. The per-block
+  schema declares both correctly so nothing breaks, but one of them should be renamed
+  (`trigger.rebind_target`) — a content migration, not a lint.
+- **`damage`/`attack_roll`/`saving_throw` have no target selector.** They act on the current
+  target; retargeting is the enclosing `trigger`'s job. If a spell ever needs self-damage
+  that is a deliberate feature (implement `target` on `damage`), not a lint fix.
 
 ---
 
@@ -148,10 +139,10 @@ Noticed while working; recorded so they aren't lost, but they predate the block 
 - **Composite damage / per-type resistance** — see §4 and its doc (this is the one with a
   written fix; the others below are just flags).
 - **E6 nested entity-attribute typos are still swallowed at runtime.** Load-time validation
-  catches a `trigger`'s `event.<field>` typos (`spells.validate._check_event_refs`), but a
-  nested `event.defender.typo` still raises `AttributeError` and is skipped — in a trigger
-  guard that reads as "did not fire". Needs an Entity-attribute schema — folds naturally into
-  the fuller block schema (§4). (See [CODEBASE_REVIEW.md](CODEBASE_REVIEW.md) E6.)
+  catches a `trigger`'s `event.<field>` typos and unknown expression *roots*, but a nested
+  `event.defender.typo` still raises `AttributeError` and is skipped — in a trigger guard
+  that reads as "did not fire". Needs an Entity-attribute schema (§4).
+  (See [CODEBASE_REVIEW.md](CODEBASE_REVIEW.md) E6.)
 - **No block removes a condition.** The legacy `RemoveConditionType` verb was not ported: no
   shipped content needs it (removal happens by disposing the owning lifetime scope, which
   tears the marker and its mechanics down together). If a future spell must strip a condition

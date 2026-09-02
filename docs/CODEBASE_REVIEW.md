@@ -51,7 +51,7 @@ via **sandboxed Python expressions** (`src/rules/expressions.py` — AST whiteli
 `__builtins__={}`, no dunder access). Weapon attacks are translated into pipeline steps by
 `AttackResolver._default_program`. This unification is the design's best feature.
 
-**Rules & effects are data-driven too.** `src/rules/rule_engine.py` `RuleEngine` loads global
+**Rules & effects are data-driven too.** `src/spells/rules.py` loads global
 rules (`rules/global/`: crits, concentration, damage modifiers) and named entity effects
 (`rules/entity_effects/`: colossus slayer, the condition library) as JSON. Each is a block
 `program` of `trigger` blocks that the engine installs on the block engine — it is a loader
@@ -86,8 +86,9 @@ LLM-driven action selection is a README "Future Goal."
 
 **Real weaknesses are wiring/coverage, not structure:** silent under-implementation of declared
 spell riders (e.g. Chill Touch's no-heal, Ray of Frost's slow are absent from the JSON); two
-parallel effect vocabularies bridged by synthetic stub events (`_handle_apply_condition` /
-`_handle_add_modifier` reach into `rule_engine._effect_registry`); and no structured upcasting.
+parallel effect vocabularies bridged by synthetic stub events; and no structured upcasting.
+_(The two vocabularies and the stub-event bridge are gone as of 2026-09-03; one block
+catalogue remains.)_
 
 ## 4. Significant missing features
 
@@ -192,8 +193,8 @@ parallel effect vocabularies bridged by synthetic stub events (`_handle_apply_co
 
 - **Engine core:** `src/combat/effect_pipeline.py` · `combat_system.py` · `attack_resolver.py` ·
   `spell_resolver.py` · `damage_processor.py` · `turn_manager.py` · `initiative.py`.
-- **Rules:** `src/rules/rule_engine.py` · `effects.py` · `expressions.py` · `rule.py` ·
-  `rule_loader.py`.
+- **Rules:** `src/rules/expressions.py` · `rule.py` · `rule_loader.py` ·
+  `effect_registry.py` (data); `src/spells/rules.py` (install).
 - **Data/loading:** `src/loaders/stat_block_loader.py` · `src/models/entity.py` ·
   `stat_block.py` · `action.py` · `spell_properties.py`.
 - **Web:** `web/routers/combat.py` · `web/app.py` · `web/static/js/*`.

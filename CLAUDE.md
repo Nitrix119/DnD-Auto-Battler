@@ -70,13 +70,18 @@ Non-negotiable. Every change should be justifiable against these.
    Enumerate the unhappy paths — malformed JSON, missing fields, dead targets,
    concentration loss, both-advantage-and-disadvantage — and decide each deliberately.
 5. **Fail loudly, early, and specifically.** Validate at boundaries (the JSON loaders);
-   raise precise errors that name the bad value and the valid options. A rule or spell
-   `program` is validated at load by `src/spells/validate.py` — registered block types,
-   required args, arity, `context.X` refs, and `event.<field>` refs against the enclosing
-   `trigger`'s declared event, and any `scaling` object. Spells, weapons and rules all go
-   through it; content that is not a block `program` does not load at all. _(Why the event check matters: a
-   trigger guard that raises `AttributeError` at fire time is swallowed as "did not fire",
-   so a typo is invisible — see §9 2026-09-03.)_
+   raise precise errors that name the bad value and the valid options. Every spell, weapon
+   and rule `program` goes through `src/spells/validate.py`, which rejects: an unregistered
+   block, an **undeclared arg** (with a did-you-mean), a value of the wrong kind or outside
+   its domain, an arity error, a `context.X` key nothing writes, an `event.<field>` the
+   enclosing `trigger`'s event does not carry, an expression that will not parse or leaves
+   the sandbox, and a `then` on a block that never runs one. Content that is not a block
+   `program` does not load at all. _(Why this matters more than it looks: a failure at run
+   time is usually **invisible** — an unknown arg is ignored, and a trigger guard that
+   raises is swallowed as "did not fire". See §9 2026-09-03.)_
+   - **A block's args are declared, not implied.** Adding an arg to a handler means adding
+     a `Field` to its `BlockContract` — `tests/test_block_schema_drift.py` reads the
+     handlers' real `block.get` calls and fails if the two disagree.
 6. **Small, reversible changes.** Many small, well-tested commits over one large one.
    Keep `main` clean; do non-trivial work on a branch.
 7. **Debt and convolution are first-class.** In an engine whose whole value is modular
@@ -105,13 +110,17 @@ Non-negotiable. Every change should be justifiable against these.
 - **The authoring reference is generated.** `docs/BLOCK_REFERENCE.md` is rendered from the
   block `REGISTRY` (`python -m src.spells.reference`) and drift-tested, so it cannot fall
   behind the code. Adding a block means writing its docstring and contract, then regenerating.
+- **`src/rules` is data; `src/spells` is the engine.** `src/rules` defines a rule (`Rule`),
+  loads it (`RuleLoader`), catalogues it (`EffectRegistry`) and evaluates expressions.
+  *Installing* a rule is `src/spells/rules.py`. Never let the data layer reach into the
+  engine — that inversion is what `RuleEngine` was, and it is deleted.
 - **Registry, never `if/elif` on type.** New block type → add a handler under
   `src/spells/blocks/` and register it in the block `REGISTRY` (`src/spells/registry.py`),
   dispatched on the block's type. New spell → drop a JSON file in `examples/spells/`
   (auto-scanned at startup). Do **not** branch on a spell's name. The block `REGISTRY` is the
   **only** effect vocabulary — the legacy `BUILTIN_EFFECTS` `action`-verb registry is deleted.
 - **Rules are block programs too.** A rule (`rules/global/*`, `rules/entity_effects/**`) is a
-  `program` of `trigger` blocks. `RuleEngine` loads and installs them; it dispatches nothing.
+  `program` of `trigger` blocks; `src/spells/rules.py` loads and installs them.
   There is no second rule vocabulary and no legacy `triggers`/`effects` shape — such a file
   now fails at load, naming itself.
 - **Cross-cutting behaviour rides the EventBus.** Resolvers emit typed events
@@ -247,6 +256,21 @@ leave a brief note here.
 - **What went wrong:** the mistake or surprise.
 - **Rule going forward:** the concrete, testable rule.
 ```
+
+### 2026-09-03 — A hand-written schema needs a machine-checked link to the code it describes
+- **Context:** Building the per-field block schema (`BlockContract.fields`) that lets the loader
+  reject an unknown or malformed arg. The declarations are written by hand, next to each handler.
+- **What went wrong (in waiting):** nothing yet — but a hand-maintained schema *always* rots, and
+  here it rots dangerously in both directions. Add `block.get("x")` without declaring it and the
+  validator rejects the arg you just added; declare a field nothing reads and the generated
+  reference documents a lie. Neither shows up in ordinary tests.
+- **Rule going forward:** when a declaration describes code, add a test that reads the code and
+  compares. `tests/test_block_schema_drift.py` AST-parses the handlers for literal
+  `block.get("...")` keys and checks both directions against the declared fields; a companion
+  test fails if anyone introduces a *dynamic* key, since that would silently make the guard
+  incomplete. Same pattern as `EXPRESSION_ROOTS` (checked against a real `eval_context`) and
+  `CONTEXT_KEYS` (derived from `seed_context`). **Declare, then verify against reality** — a
+  declaration nobody checks is a comment.
 
 ### 2026-09-03 — Deleting a validator with its legacy shape silently dropped a live check
 - **Context:** Removing the legacy `RuleEngine` dispatch and the `triggers`/`effects` rule shape
