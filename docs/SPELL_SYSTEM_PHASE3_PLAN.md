@@ -264,8 +264,11 @@ blocks at install time). This slice builds the native read path and migrates a p
   existing iterators/lifetimes.
 - **Meta / `cast_spell`** — a block that invokes the resolver on another spell (Wish, Contingency) +
   copy/counter. The "add one block absorbs the exotic tail" proof; built last.
-- **Multi-component damage / per-entry resistance** — one `damage` block currently = one type; a true
-  multi-type bundle needs a multi-component block + per-entry resistance. [[damage-typing-per-entry-resistance]]
+- **Multi-component damage / per-entry resistance** — one `damage` block currently = one type, and the
+  resistance/immunity/vulnerability rules gate on `damage_list[0]` and scale the whole packet (wrong for a
+  composite hit). A true fix is a first-class "damage packet" wrapping typed components, applying each
+  defender modifier per type. Full write-up: [COMPOSITE_DAMAGE_DESIGN.md](COMPOSITE_DAMAGE_DESIGN.md).
+  [[damage-typing-per-entry-resistance]]
 
 ---
 
