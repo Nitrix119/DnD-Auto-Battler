@@ -38,10 +38,9 @@ _CONTEXT_REF_RE = re.compile(r"\bcontext\.([A-Za-z_][A-Za-z0-9_]*)")
 # Mirrors ``src.loaders.stat_block_loader._FORMULA_RE`` — kept in sync deliberately.
 _FORMULA_RE = re.compile(r"^[+-]?\d+(?:d\d+)?(?:[+-]\d+(?:d\d+)?)*$")
 
-# ``scaling`` is the one block arg with an internal shape, so it carries a schema of
-# its own until the fuller per-field block schema lands (REMAINING §4). A malformed
-# one silently scales nothing at cast time, so it must fail at load.
-_SCALING_FIELDS = {"per_slot_above": int, "add_dice": str}
+# A bare Python identifier. Used to stop an `allow_expr` field treating a misspelled
+# enum name ("FIREE") as an expression — it parses as one, but is never meant as one.
+_IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
 class ProgramValidationError(ValueError):
@@ -184,46 +183,152 @@ def _check_context_refs(program: Sequence[Block], spell_name: str) -> None:
         _check_context_refs(block.then, spell_name)
 
 
-def _check_scaling(program: Sequence[Block], spell_name: str) -> None:
-    """Validate a block's ``scaling`` object: required subfields, types, formula."""
-    for block in program:
-        scaling = block.args.get("scaling")
-        if scaling is not None:
-            _check_one_scaling(scaling, block.type, spell_name)
-        _check_scaling(block.then, spell_name)
+def _is_expression(value: Any) -> bool:
+    """True if *value* parses as a Python expression (so it could be one)."""
+    if not isinstance(value, str):
+        return False
+    try:
+        ast.parse(value, mode="eval")
+    except SyntaxError:
+        return False
+    return True
 
 
-def _check_one_scaling(scaling: Any, block_type: str, spell_name: str) -> None:
-    where = f"spell {spell_name!r}: block {block_type!r}"
-    valid = ", ".join(sorted(_SCALING_FIELDS))
-    if not isinstance(scaling, dict):
-        raise ProgramValidationError(
-            f"{where} has a 'scaling' that is not an object; expected "
-            f"an object with {valid}."
-        )
-    for name, expected in _SCALING_FIELDS.items():
-        if name not in scaling:
+def _check_value(value: Any, spec: Field, where: str) -> None:
+    """Validate one arg value against its declared :class:`Field`.
+
+    *where* names the block (and, inside a nested object, the path to the value) so
+    the message points at the exact key that is wrong.
+    """
+    # A declared sentinel is accepted verbatim in place of the kind — the literal
+    # special values the engine reads directly ("use_caster_bonus", "caster").
+    if spec.sentinels and isinstance(value, str) and value in spec.sentinels:
+        return
+
+    kind = spec.kind
+    if kind == "any":
+        return
+
+    if kind == "bool":
+        if not isinstance(value, bool):
             raise ProgramValidationError(
-                f"{where} 'scaling' is missing required subfield {name!r}; "
-                f"required: {valid}."
-            )
-        value = scaling[name]
-        if isinstance(value, bool) or not isinstance(value, expected):
-            raise ProgramValidationError(
-                f"{where} 'scaling.{name}' must be {expected.__name__}, got "
+                f"{where} must be true or false, got "
                 f"{type(value).__name__} ({value!r})."
             )
-    unknown = sorted(set(scaling) - set(_SCALING_FIELDS))
-    if unknown:
-        raise ProgramValidationError(
-            f"{where} 'scaling' has unknown subfield(s) {', '.join(unknown)}; "
-            f"valid: {valid}."
+    elif kind in ("int", "number"):
+        # bool is an int in Python; a `true` where a number belongs is an error.
+        ok = (not isinstance(value, bool)) and isinstance(
+            value, int if kind == "int" else (int, float)
         )
-    if not _FORMULA_RE.match(scaling["add_dice"]):
+        if not ok:
+            extra = (
+                f" (or one of: {', '.join(spec.sentinels)})" if spec.sentinels else ""
+            )
+            raise ProgramValidationError(
+                f"{where} must be {'an integer' if kind == 'int' else 'a number'}"
+                f"{extra}, got {type(value).__name__} ({value!r})."
+            )
+    elif kind == "str":
+        if not isinstance(value, str):
+            raise ProgramValidationError(
+                f"{where} must be a string, got {type(value).__name__} ({value!r})."
+            )
+    elif kind == "formula":
+        if not isinstance(value, str) or not _FORMULA_RE.match(value):
+            raise ProgramValidationError(
+                f"{where} is not a dice formula ('2d6', '1d8+3', '20'): {value!r}."
+            )
+    elif kind == "expr":
+        if not _is_expression(value) and not isinstance(value, (int, float, bool)):
+            raise ProgramValidationError(
+                f"{where} must be an expression or a number, got "
+                f"{type(value).__name__} ({value!r})."
+            )
+    elif kind == "enum":
+        assert spec.enum is not None  # guaranteed by Field.__post_init__
+        names = [m.name for m in spec.enum]
+        if not isinstance(value, str) or value.upper() not in names:
+            # The one hybrid: `damage.damage_type` also takes an expression yielding
+            # a type (a rider dealing the weapon's own). A *bare identifier* does not
+            # count — "FIREE" parses as an expression but is plainly a misspelled
+            # enum name, and nothing in the expression namespace is a bare word.
+            if spec.allow_expr and _is_expression(value) and not _IDENT_RE.match(value):
+                return
+            suggestion = difflib.get_close_matches(
+                str(value).upper(), names, n=1, cutoff=0.6
+            )
+            hint = f" — did you mean {suggestion[0]!r}?" if suggestion else ""
+            raise ProgramValidationError(
+                f"{where} is not a {spec.enum.__name__}: {value!r}{hint} "
+                f"Valid: {', '.join(sorted(names))}."
+            )
+    elif kind == "choice":
+        if value not in spec.choices:
+            suggestion = difflib.get_close_matches(
+                str(value), list(spec.choices), n=1, cutoff=0.6
+            )
+            hint = f" — did you mean {suggestion[0]!r}?" if suggestion else ""
+            raise ProgramValidationError(
+                f"{where} is {value!r}{hint} Valid: {', '.join(spec.choices)}."
+            )
+    elif kind == "map_expr":
+        if not isinstance(value, dict):
+            raise ProgramValidationError(
+                f"{where} must be an object of name -> expression, got "
+                f"{type(value).__name__}."
+            )
+    elif kind == "object":
+        _check_object(value, spec, where)
+    elif kind == "list":
+        if not isinstance(value, list):
+            raise ProgramValidationError(
+                f"{where} must be a list, got {type(value).__name__} ({value!r})."
+            )
+        for i, entry in enumerate(value):
+            _check_object(entry, spec, f"{where}[{i}]")
+
+
+def _check_object(value: Any, spec: Field, where: str) -> None:
+    """Validate a nested object against ``spec.subfields``."""
+    valid = sorted(f.name for f in spec.subfields)
+    if not isinstance(value, dict):
         raise ProgramValidationError(
-            f"{where} 'scaling.add_dice' is not a dice formula: "
-            f"{scaling['add_dice']!r}."
+            f"{where} must be an object with {', '.join(valid)}, got "
+            f"{type(value).__name__} ({value!r})."
         )
+    for sub in spec.subfields:
+        if sub.required and sub.name not in value:
+            raise ProgramValidationError(
+                f"{where} is missing required subfield {sub.name!r}; "
+                f"required: {', '.join(f.name for f in spec.subfields if f.required)}."
+            )
+    for key, sub_value in value.items():
+        if key.startswith("_"):
+            continue
+        sub = next((f for f in spec.subfields if f.name == key), None)
+        if sub is None:
+            suggestion = difflib.get_close_matches(key, valid, n=1, cutoff=0.6)
+            hint = f" — did you mean {suggestion[0]!r}?" if suggestion else ""
+            raise ProgramValidationError(
+                f"{where} has unknown subfield {key!r}{hint} "
+                f"Valid: {', '.join(valid)}."
+            )
+        _check_value(sub_value, sub, f"{where}.{key}")
+
+
+def _check_field_kinds(
+    program: Sequence[Block], registry: BlockRegistry, spell_name: str
+) -> None:
+    """Validate every present arg against its declared field."""
+    for block in program:
+        contract = registry.get(block.type).contract
+        for spec in _allowed_fields(contract):
+            if spec.name in block.args:
+                _check_value(
+                    block.args[spec.name], spec,
+                    f"spell {spell_name!r}: block {block.type!r} arg {spec.name!r}",
+                )
+        _check_field_kinds(block.then, registry, spell_name)
 
 
 def validate_program(
@@ -239,8 +344,8 @@ def validate_program(
     target-arity rule holds (the same :func:`.lint_program` the evaluator asserts at
     run time, seeded from whether the top level consumes a target set); no expression
     references a ``context.X`` key nothing writes; no expression under a ``trigger``
-    references an ``event.<field>`` that trigger's event does not carry; and any
-    ``scaling`` object is well formed.
+    references an ``event.<field>`` that trigger's event does not carry; every arg
+    is declared by the block and matches its declared kind and domain.
 
     Returns the parsed program on success.
 
@@ -266,5 +371,5 @@ def validate_program(
 
     _check_context_refs(program, spell_name)
     _check_event_refs(program, spell_name)
-    _check_scaling(program, spell_name)
+    _check_field_kinds(program, registry, spell_name)
     return program

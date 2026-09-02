@@ -144,3 +144,124 @@ class TestUnknownArgs:
                 [{"block": "apply_condition", "condition_type": "blinded",
                   "formula": "1d6"}],
                 spell_name="Confused")
+
+
+# ── Field kinds and domains ───────────────────────────────────────────────────
+
+class TestFieldKinds:
+    """Each declared field states a kind; a value of the wrong shape is an
+    authoring error the engine would otherwise crash on or silently ignore."""
+
+    def test_bool_kind_rejects_a_number(self):
+        with pytest.raises(ProgramValidationError, match="requires_hit"):
+            validate_program(
+                [{"block": "damage", "damage_type": "FIRE", "formula": "1d6",
+                  "requires_hit": 4}],
+                spell_name="Bad")
+
+    def test_int_kind_rejects_a_string(self):
+        with pytest.raises(ProgramValidationError, match="priority"):
+            validate_program(
+                [{"block": "trigger", "event": "TURN_END", "priority": "high"}],
+                spell_name="Bad")
+
+    def test_int_kind_rejects_a_bool(self):
+        """True is an int in Python; that must not sneak through."""
+        with pytest.raises(ProgramValidationError, match="priority"):
+            validate_program(
+                [{"block": "trigger", "event": "TURN_END", "priority": True}],
+                spell_name="Bad")
+
+    def test_formula_kind_rejects_a_non_formula(self):
+        with pytest.raises(ProgramValidationError, match="formula"):
+            validate_program(
+                [{"block": "damage", "damage_type": "FIRE", "formula": "1d"}],
+                spell_name="Bad")
+
+    def test_enum_kind_rejects_an_unknown_member(self):
+        with pytest.raises(ProgramValidationError) as exc:
+            validate_program(
+                [{"block": "damage", "damage_type": "FIREE", "formula": "1d6"}],
+                spell_name="Bad")
+        assert "FIREE" in str(exc.value) and "FIRE" in str(exc.value)
+
+    def test_choice_kind_rejects_a_non_choice(self):
+        with pytest.raises(ProgramValidationError) as exc:
+            validate_program(
+                [{"block": "saving_throw", "attribute": "wisdumb", "dc": 15}],
+                spell_name="Bad")
+        assert "wisdumb" in str(exc.value) and "wisdom" in str(exc.value)
+
+    def test_sentinel_is_accepted_in_place_of_the_kind(self):
+        validate_program(
+            [{"block": "attack_roll", "attack_bonus": "use_caster_bonus"}],
+            spell_name="Fine")
+        validate_program(
+            [{"block": "saving_throw", "attribute": "dexterity",
+              "dc": "use_caster_dc"}],
+            spell_name="Fine")
+
+    def test_a_non_sentinel_string_still_fails_an_int_field(self):
+        with pytest.raises(ProgramValidationError, match="attack_bonus"):
+            validate_program(
+                [{"block": "attack_roll", "attack_bonus": "use_caster_bonuss"}],
+                spell_name="Bad")
+
+    def test_damage_type_also_accepts_an_expression(self):
+        """The one hybrid field: a rider dealing the weapon's own damage type."""
+        validate_program(
+            [{"block": "trigger", "event": "ATTACK_HIT", "then": [
+                {"block": "damage", "formula": "1d8",
+                 "damage_type": "event.action.primary_damage_type"}]}],
+            spell_name="Colossus")
+
+    def test_resource_choice_rejects_a_typo(self):
+        with pytest.raises(ProgramValidationError, match="action"):
+            validate_program(
+                [{"block": "add_resource", "resource": "action", "amount": 1}],
+                spell_name="Bad")
+
+
+class TestNestedFieldShapes:
+    """`save_result`, `scaling` and `grant_action.damage` have internal shapes."""
+
+    def test_save_result_choice_is_checked(self):
+        with pytest.raises(ProgramValidationError, match="quarter_damage"):
+            validate_program(
+                [{"block": "damage", "damage_type": "FIRE", "formula": "8d6",
+                  "save_result": {"on_success": "quarter_damage"}}],
+                spell_name="Bad")
+
+    def test_save_result_unknown_subfield_is_rejected(self):
+        with pytest.raises(ProgramValidationError, match="on_failure"):
+            validate_program(
+                [{"block": "damage", "damage_type": "FIRE", "formula": "8d6",
+                  "save_result": {"on_success": "half_damage", "on_failure": "x"}}],
+                spell_name="Bad")
+
+    def test_object_kind_rejects_a_scalar(self):
+        with pytest.raises(ProgramValidationError, match="save_result"):
+            validate_program(
+                [{"block": "damage", "damage_type": "FIRE", "formula": "8d6",
+                  "save_result": "half_damage"}],
+                spell_name="Bad")
+
+    def test_list_kind_checks_each_entry(self):
+        with pytest.raises(ProgramValidationError, match="SLASHNG"):
+            validate_program(
+                [{"block": "grant_action", "name": "Bite",
+                  "damage": [{"type": "SLASHNG", "formula": "1d6"}]}],
+                spell_name="Bad")
+
+    def test_list_kind_rejects_a_non_list(self):
+        with pytest.raises(ProgramValidationError, match="damage"):
+            validate_program(
+                [{"block": "grant_action", "name": "Bite",
+                  "damage": {"type": "SLASHING", "formula": "1d6"}}],
+                spell_name="Bad")
+
+    def test_a_valid_nested_shape_passes(self):
+        validate_program(
+            [{"block": "grant_action", "name": "Bite",
+              "damage": [{"type": "PIERCING", "formula": "1d6"}]}],
+            spell_name="Fine")
