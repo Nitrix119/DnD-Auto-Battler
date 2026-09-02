@@ -13,7 +13,7 @@ from src.combat.event_data import HealingAppliedData
 from src.utils.dice import roll_formula
 from src.rules.expressions import resolve
 
-from ..contract import BlockContract, TargetArity
+from ..contract import BlockContract, Field, TargetArity
 from ..context import Invocation, eval_context
 from ..block import Block
 from ..registry import REGISTRY
@@ -57,6 +57,20 @@ REGISTRY.register(
     "healing",
     healing,
     BlockContract(
+        # One of `amount`/`formula` is required in practice — the handler returns
+        # silently when neither is present — but that is an either/or constraint
+        # `Field.required` cannot express. See SPELL_SYSTEM_REMAINING §4.
+        fields=(
+            Field("target", "choice", choices=("caster", "defender"),
+                  description="'caster' heals the caster; otherwise the current target."),
+            Field("amount", "expr",
+                  description="Expression for a computed amount; takes precedence "
+                              "over formula."),
+            Field("formula", "formula",
+                  description="Dice formula rolled at cast time."),
+            Field("bonus", "expr",
+                  description="Added to the formula roll (a number or an expression)."),
+        ),
         reads=("damage_dealt",),
         writes=("healing_amount",),
         # SINGLE by default; a `target: "caster"` instance acts on the caster and

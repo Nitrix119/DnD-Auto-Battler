@@ -21,7 +21,7 @@ from __future__ import annotations
 from src.rules.expressions import resolve
 from src.utils.dice import roll_d20
 
-from ..contract import BlockContract, TargetArity
+from ..contract import BlockContract, Field, TargetArity
 from ..context import Invocation, eval_context
 from ..block import Block
 from ..registry import REGISTRY
@@ -52,7 +52,23 @@ def refill_resources(block: Block, inv: Invocation) -> None:
     _target(block, inv).refill_resources()
 
 
-_FORWARD_CONTRACT = BlockContract(target_arity=TargetArity.SINGLE)
+_TARGET = Field("target", "choice", choices=("caster", "defender"),
+                description="'caster' acts on the caster; otherwise the current target.")
 
-REGISTRY.register("force_concentration_check", force_concentration_check, _FORWARD_CONTRACT)
-REGISTRY.register("refill_resources", refill_resources, _FORWARD_CONTRACT)
+REGISTRY.register(
+    "force_concentration_check", force_concentration_check,
+    BlockContract(
+        fields=(
+            _TARGET,
+            # Unlike saving_throw's `dc` (an int literal), this one is resolved as an
+            # expression against the event — e.g. "max(10, event.total // 2)".
+            Field("dc", "expr", required=True,
+                  description="Expression for the save DC, evaluated at fire time."),
+        ),
+        target_arity=TargetArity.SINGLE,
+    ),
+)
+REGISTRY.register(
+    "refill_resources", refill_resources,
+    BlockContract(fields=(_TARGET,), target_arity=TargetArity.SINGLE),
+)

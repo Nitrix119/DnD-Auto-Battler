@@ -19,11 +19,22 @@ from src.combat.events import EventType
 from src.combat.event_data import ConditionAddedData
 from src.rules.expressions import resolve
 
-from ..contract import BlockContract, TargetArity
+from ..contract import BlockContract, Field, TargetArity
 from ..context import Invocation, eval_context
 from ..block import Block, parse_program
 from ..registry import REGISTRY
 from ..runner import run_program
+
+# `target` here is a two-value selector, not an expression — unlike `trigger.target`.
+# (The naming overlap is a recorded design smell: SPELL_SYSTEM_REMAINING §4.)
+_TARGET = Field("target", "choice", choices=("caster", "defender"),
+                description="'caster' acts on the caster; otherwise the current target.")
+_SOURCE = Field("source", "str", description="Label for what applied this (a spell name).")
+_EFFECT_NAME = Field("effect_name", "str",
+                     description="Effect name, used to remove this by name later.")
+_BINDINGS = Field("bindings", "map_expr",
+                  description="Per-application values captured once at install and "
+                              "read later as instance_fields.<name>.")
 
 
 def _target(block: Block, inv: Invocation):
@@ -205,23 +216,82 @@ def grant_action(block: Block, inv: Invocation) -> None:
 
 REGISTRY.register(
     "apply_condition", apply_condition,
-    BlockContract(required_args=("condition_type",), target_arity=TargetArity.SINGLE),
+    BlockContract(
+        fields=(
+            _TARGET,
+            Field("condition_type", "enum", required=True, enum=ConditionType,
+                  description="Which condition to apply."),
+            Field("duration", "expr",
+                  description="Rounds the condition lasts; omitted = until dispelled."),
+            _SOURCE,
+            _EFFECT_NAME,
+            _BINDINGS,
+            Field("instance_fields", "map_expr",
+                  description="Deprecated spelling of `bindings`; prefer `bindings`."),
+        ),
+        target_arity=TargetArity.SINGLE,
+    ),
 )
 REGISTRY.register(
     "add_modifier", add_modifier,
-    BlockContract(required_args=("stat", "value"), target_arity=TargetArity.SINGLE),
+    BlockContract(
+        fields=(
+            _TARGET,
+            # `stat` is an open namespace by design (see StatModifier) — not a choice.
+            Field("stat", "str", required=True,
+                  description="Stat to modify: 'ac', 'spell_save_dc', "
+                              "'saving_throw.<ability>', 'max_hp', …"),
+            Field("value", "expr", required=True,
+                  description="How much to add (negative to subtract)."),
+            _SOURCE,
+            _EFFECT_NAME,
+        ),
+        target_arity=TargetArity.SINGLE,
+    ),
 )
 REGISTRY.register(
     "grant_temporary_hp", grant_temporary_hp,
-    BlockContract(writes=("temp_hp_granted",), required_args=("amount",),
-                  target_arity=TargetArity.SINGLE),
+    BlockContract(
+        fields=(
+            _TARGET,
+            Field("amount", "expr", required=True,
+                  description="Temporary hit points to grant (non-stacking)."),
+        ),
+        writes=("temp_hp_granted",),
+        target_arity=TargetArity.SINGLE,
+    ),
 )
 REGISTRY.register(
     "add_resource", add_resource,
-    BlockContract(required_args=("resource", "amount"),
-                  target_arity=TargetArity.SINGLE),
+    BlockContract(
+        fields=(
+            _TARGET,
+            Field("resource", "choice", required=True,
+                  choices=("actions", "bonus_actions", "reactions", "movement"),
+                  description="Which per-turn resource to top up."),
+            Field("amount", "expr", required=True,
+                  description="How much to add."),
+        ),
+        target_arity=TargetArity.SINGLE,
+    ),
 )
 REGISTRY.register(
     "grant_action", grant_action,
-    BlockContract(required_args=("name",), target_arity=TargetArity.SINGLE),
+    BlockContract(
+        fields=(
+            _TARGET,
+            Field("name", "str", required=True,
+                  description="Name of the granted action."),
+            Field("description", "str", description="Flavour text for the action."),
+            Field("bonus_to_hit", "expr",
+                  description="Attack bonus for the granted action."),
+            Field("range_ft", "number", description="Reach in feet. Default 5."),
+            Field("damage", "list", subfields=(
+                Field("type", "enum", enum=DamageType,
+                      description="Damage type name. Default GENERIC."),
+                Field("formula", "formula", description="Dice formula for this entry."),
+            ), description="Damage entries the granted action deals."),
+        ),
+        target_arity=TargetArity.SINGLE,
+    ),
 )

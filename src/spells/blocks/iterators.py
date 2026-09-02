@@ -64,5 +64,5 @@ def for_each_target(block: Block, inv: Invocation) -> None:
 REGISTRY.register(
     "for_each_target",
     for_each_target,
-    BlockContract(target_arity=TargetArity.SET),
+    BlockContract(target_arity=TargetArity.SET, consumes_then=True),
 )

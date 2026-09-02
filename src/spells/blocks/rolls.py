@@ -12,10 +12,15 @@ from src.combat.event_data import (
 from src.utils.dice import roll_d20, roll_with_advantage, roll_with_disadvantage
 from src.utils.saving_throw import roll_saving_throw
 
-from ..contract import BlockContract, TargetArity
+from ..contract import BlockContract, Field, TargetArity
 from ..context import Invocation
 from ..block import Block
 from ..registry import REGISTRY
+
+_ABILITIES = (
+    "strength", "dexterity", "constitution",
+    "intelligence", "wisdom", "charisma",
+)
 
 
 def _roll_d20(advantage: bool, disadvantage: bool) -> int:
@@ -87,6 +92,11 @@ REGISTRY.register(
     "attack_roll",
     attack_roll,
     BlockContract(
+        fields=(
+            Field("attack_bonus", "int", sentinels=("use_caster_bonus",),
+                  description="Flat bonus, or 'use_caster_bonus' for the caster's "
+                              "spell attack bonus."),
+        ),
         writes=("hit", "attack_roll", "attack_total", "critical_hit", "critical_miss"),
         target_arity=TargetArity.SINGLE,
         is_gate=True,
@@ -131,8 +141,15 @@ REGISTRY.register(
     "saving_throw",
     saving_throw,
     BlockContract(
+        fields=(
+            Field("attribute", "choice", required=True, choices=_ABILITIES,
+                  description="Which ability the save is rolled against."),
+            # Note this `dc` is an int literal, *not* an expression — unlike
+            # force_concentration_check's `dc`, which is resolved.
+            Field("dc", "int", required=True, sentinels=("use_caster_dc",),
+                  description="Flat DC, or 'use_caster_dc' for the caster's spell save DC."),
+        ),
         writes=("save_roll", "save_dc", "save_success"),
-        required_args=("attribute", "dc"),
         target_arity=TargetArity.SINGLE,
         is_gate=True,
     ),

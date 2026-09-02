@@ -20,7 +20,7 @@ from src.rules.expressions import evaluate
 
 from ..scaling import effective_damage_formula
 
-from ..contract import BlockContract, TargetArity
+from ..contract import BlockContract, Field, TargetArity
 from ..context import Invocation, eval_context
 from ..block import Block
 from ..registry import REGISTRY
@@ -108,9 +108,32 @@ REGISTRY.register(
     "damage",
     damage,
     BlockContract(
+        fields=(
+            Field("formula", "formula", required=True,
+                  description="Dice formula rolled at cast time."),
+            Field("damage_type", "enum", required=True, enum=DamageType,
+                  allow_expr=True,
+                  description="Damage type name, or an expression yielding one "
+                              "(a rider dealing the weapon's own type)."),
+            Field("requires_hit", "bool",
+                  description="Skip unless a preceding attack_roll hit."),
+            Field("roll_once", "bool",
+                  description="Inside for_each_target, roll once and share the result "
+                              "across every target (read by the iterator)."),
+            Field("save_result", "object", subfields=(
+                Field("on_success", "choice", required=True,
+                      choices=("half_damage", "no_damage"),
+                      description="How a passed save reduces this damage."),
+            ), description="Modify damage based on a preceding saving_throw."),
+            Field("scaling", "object", subfields=(
+                Field("per_slot_above", "int", required=True,
+                      description="Threshold slot level; dice are added per level above it."),
+                Field("add_dice", "formula", required=True,
+                      description="Dice added per slot level above the threshold."),
+            ), description="Upcasting: add dice when cast with a higher slot."),
+        ),
         reads=("hit", "save_success", "save_roll", "critical_hit", "slot_level"),
         writes=("damage_dealt", "damage_rolled"),
-        required_args=("formula", "damage_type"),
         target_arity=TargetArity.SINGLE,
     ),
 )

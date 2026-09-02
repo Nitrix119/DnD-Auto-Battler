@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from src.models.lifetime import LifetimeScope, LifetimeKind
 
-from ..contract import BlockContract, TargetArity
+from ..contract import BlockContract, Field, TargetArity
 from ..context import Invocation
 from ..block import Block
 from ..registry import REGISTRY
@@ -81,7 +81,21 @@ def end_lifetime(block: Block, inv: Invocation) -> None:
 REGISTRY.register(
     "lifetime",
     lifetime,
-    BlockContract(target_arity=TargetArity.SINGLE, installs_reactions=True),
+    BlockContract(
+        fields=(
+            Field("kind", "choice", choices=("concentration", "rounds", "instant"),
+                  description="What ends this lifetime. Default 'rounds'."),
+            Field("concentration", "bool",
+                  description="Sugar for kind='concentration'."),
+            Field("duration_rounds", "int",
+                  description="Rounds until it expires; omitted = permanent."),
+            Field("source", "str",
+                  description="Label for the scope; defaults to the action's name."),
+        ),
+        target_arity=TargetArity.SINGLE,
+        installs_reactions=True,
+        consumes_then=True,
+    ),
 )
 REGISTRY.register(
     "end_lifetime",

@@ -135,7 +135,7 @@ Force the target's CON save; on a failure, end its concentration.
 
 | | |
 |---|---|
-| **Required args** | _(none)_ |
+| **Required args** | `dc` |
 | **Reads context** | _(none)_ |
 | **Writes context** | _(none)_ |
 | **Target** | acts on the current target, which must be exactly one entity |
@@ -243,7 +243,7 @@ Scale the amounts on the live ``DAMAGE_INCOMING`` event in place.
 
 | | |
 |---|---|
-| **Required args** | _(none)_ |
+| **Required args** | `multiplier` |
 | **Reads context** | _(none)_ |
 | **Writes context** | _(none)_ |
 | **Target** | acts on the current target, which must be exactly one entity |
