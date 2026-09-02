@@ -169,7 +169,7 @@ class TestSpellEffectApplicationOnFailedSave:
         with patch("src.utils.saving_throw.roll_d20", return_value=1):
             resolver.resolve(wizard, [goblin], spell)
 
-        # Folded onto the new engine: a lifetime on the goblin holds the charmed
+        # A lifetime on the goblin holds the charmed
         # rider, and the captured charmer (the wizard) blocks the goblin's attack
         # on the wizard (the instance_fields closure took effect).
         assert len(goblin.lifetimes) == 1
@@ -322,7 +322,7 @@ class TestCombatSystemIntegration:
         with patch("src.utils.saving_throw.roll_d20", return_value=1):
             cs.resolve_spell(wizard, [goblin], spell)
 
-        # Folded onto the new engine: the goblin holds a charmed lifetime and cannot
+        # The goblin holds a charmed lifetime and cannot
         # attack the wizard (its captured charmer).
         assert len(goblin.lifetimes) == 1
         action = next(a for a in goblin.stat_block.actions if a.name == "Scimitar")
