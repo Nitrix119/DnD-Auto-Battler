@@ -7,7 +7,7 @@ than writing forward state. These tests prove the primitive three ways:
    ``Invocation.live_event``.
 2. **Parity end-to-end** — a native ``trigger{ modify_damage }`` program installed
    on the bus produces the *same* result as the legacy ``damage_resistance_rule``
-   JSON run through the RuleEngine, under one DamageProcessor path on identical
+   JSON run through the rule loader, under one DamageProcessor path on identical
    entities. This is the gate: the new path must match the old exactly.
 3. **Fail-safe** — a ``modify_damage`` with no live event (run outside a trigger)
    no-ops instead of crashing.
@@ -25,7 +25,7 @@ from src.combat.event_data import (
 )
 from src.combat.events import EventType
 from src.combat.damage_processor import DamageProcessor
-from src.rules import RuleEngine
+from src.spells.rules import load_rule_file
 
 import src.spells.blocks  # noqa: F401  (registers the block catalogue)
 from src.spells.block import Block
@@ -221,12 +221,12 @@ class TestForceCriticalHandle:
 
 class TestForceCriticalParity:
     """The crit rule produces the same flags whether it is loaded from its shipped
-    JSON through RuleEngine or installed directly as a block trigger."""
+    JSON through the loader or installed directly as a block trigger."""
 
     def _emit(self, roll, *, legacy_json=None, trigger=None):
         bus = EventBus()
         if legacy_json is not None:
-            RuleEngine(bus).load_from_file(legacy_json)
+            load_rule_file(legacy_json, event_bus=bus)
         if trigger is not None:
             _install_native_trigger(bus, trigger)
         event = bus.emit(

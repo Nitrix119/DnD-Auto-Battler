@@ -17,7 +17,6 @@ from src.combat.damage_processor import DamageProcessor
 from src.combat.attack_resolver import AttackResolver
 from src.combat.spell_resolver import SpellResolver
 from src.loaders.stat_block_loader import StatBlockLoader
-from src.rules.rule_engine import RuleEngine
 from src.rules.effect_registry import EffectRegistry
 from pathlib import Path
 
@@ -58,19 +57,14 @@ def _make_attacker(name="Goblin"):
 
 
 def _setup(*entities):
-    """Wire up EventBus, RuleEngine, DamageProcessor, and resolvers."""
+    """Wire up EventBus, DamageProcessor, the condition catalogue, and resolvers."""
     bus = EventBus()
     damage_proc = DamageProcessor(bus)
     registry = EffectRegistry()
     registry.scan_directory("rules/entity_effects")
-    engine = RuleEngine(
-        bus,
-        damage_processor=damage_proc,
-        effect_registry=registry,
-    )
     attack_res = AttackResolver(bus, damage_proc)
-    spell_res = SpellResolver(bus, damage_proc, rule_engine=engine)
-    return bus, engine, damage_proc, attack_res, spell_res
+    spell_res = SpellResolver(bus, damage_proc, condition_rules=registry)
+    return bus, registry, damage_proc, attack_res, spell_res
 
 
 def _load_spell():

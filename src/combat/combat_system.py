@@ -98,10 +98,10 @@ class CombatSystem:
         self._damage_processor = DamageProcessor(bus)
         self._attack_resolver = AttackResolver(bus, self._damage_processor)
         self._spell_resolver = SpellResolver(bus, self._damage_processor)
-        # Preserve any previously set rule_engine across bus re-assignments
-        if hasattr(self, "_rule_engine") and self._rule_engine is not None:
-            self._spell_resolver.rule_engine = self._rule_engine
-            self._attack_resolver.rule_engine = self._rule_engine
+        # Preserve any previously set condition_rules across bus re-assignments
+        if hasattr(self, "_condition_rules") and self._condition_rules is not None:
+            self._spell_resolver.condition_rules = self._condition_rules
+            self._attack_resolver.condition_rules = self._condition_rules
 
     @property
     def spell_registry(self):
@@ -139,15 +139,15 @@ class CombatSystem:
         return self._spell_registry.get(spell_name)
 
     @property
-    def rule_engine(self):
+    def condition_rules(self):
         """The rule engine used for spell effect application."""
-        return getattr(self, "_rule_engine", None)
+        return getattr(self, "_condition_rules", None)
 
-    @rule_engine.setter
-    def rule_engine(self, engine) -> None:
-        self._rule_engine = engine
-        self._spell_resolver.rule_engine = engine
-        self._attack_resolver.rule_engine = engine
+    @condition_rules.setter
+    def condition_rules(self, engine) -> None:
+        self._condition_rules = engine
+        self._spell_resolver.condition_rules = engine
+        self._attack_resolver.condition_rules = engine
 
     @property
     def round(self) -> int:

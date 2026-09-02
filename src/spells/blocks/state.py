@@ -54,13 +54,12 @@ def _own(inv: Invocation, handle) -> None:
 def _condition_rule(inv: Invocation, ctype: ConditionType):
     """The reactive rule that gives a condition its mechanics, or None.
 
-    Looked up by name (``ConditionType.value``) in the rule engine's effect
-    registry — the same registry ``rules/entity_effects/conditions/*.json`` is
-    scanned into. None when nothing is wired (a bare block run), so the block
+    Looked up by name (``ConditionType.value``) in the cast's ``condition_rules``
+    catalogue — the same ``EffectRegistry`` ``rules/entity_effects/conditions/*.json``
+    is scanned into. None when nothing is wired (a bare block run), so the block
     degrades to a marker-only condition.
     """
-    engine = getattr(inv.env, "rule_engine", None)
-    reg = getattr(engine, "effect_registry", None)
+    reg = getattr(inv.env, "condition_rules", None)
     if reg is None:
         return None
     try:

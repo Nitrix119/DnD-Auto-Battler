@@ -41,10 +41,10 @@ def _default_program(action: AttackAction) -> List[Dict[str, Any]]:
 class AttackResolver:
     """Resolves melee/ranged attack actions on the block engine."""
 
-    def __init__(self, event_bus: EventBus, damage_processor: DamageProcessor, rule_engine=None) -> None:
+    def __init__(self, event_bus: EventBus, damage_processor: DamageProcessor, condition_rules=None) -> None:
         self._event_bus = event_bus
         self._damage_processor = damage_processor
-        self.rule_engine = rule_engine
+        self.condition_rules = condition_rules
 
     def resolve(
         self,
@@ -79,7 +79,7 @@ class AttackResolver:
             attacker, defender, action, program,
             event_bus=self._event_bus,
             damage_processor=self._damage_processor,
-            rule_engine=self.rule_engine,
+            condition_rules=self.condition_rules,
         )
 
     def _format(self, attacker, defender, action, result):

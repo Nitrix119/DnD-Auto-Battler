@@ -20,11 +20,11 @@ class SpellResolver:
         self,
         event_bus: EventBus,
         damage_processor: DamageProcessor,
-        rule_engine=None,
+        condition_rules=None,
     ) -> None:
         self._event_bus = event_bus
         self._damage_processor = damage_processor
-        self.rule_engine = rule_engine
+        self.condition_rules = condition_rules
 
     def resolve(
         self,
@@ -104,7 +104,7 @@ class SpellResolver:
             program,
             event_bus=self._event_bus,
             damage_processor=self._damage_processor,
-            rule_engine=self.rule_engine,
+            condition_rules=self.condition_rules,
             slot_level=slot_level,
         )
         return [

@@ -69,7 +69,7 @@ class CastEnv:
     action: Any  # SpellAction-like: .name, .spell_level
     event_bus: Any
     damage_processor: Any
-    rule_engine: Any = None
+    condition_rules: Any = None
     slot_level: Optional[int] = None
 
 
@@ -113,8 +113,8 @@ class Invocation:
         return self.env.damage_processor
 
     @property
-    def rule_engine(self) -> Any:
-        return self.env.rule_engine
+    def condition_rules(self) -> Any:
+        return self.env.condition_rules
 
     @property
     def slot_level(self) -> Optional[int]:

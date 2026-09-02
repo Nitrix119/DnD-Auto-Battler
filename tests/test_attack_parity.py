@@ -13,7 +13,8 @@ from src.models import AbilityScores, StatBlock, Entity, AttackAction, Damage, D
 from src.combat.event_bus import EventBus
 from src.combat.damage_processor import DamageProcessor
 from src.combat.attack_resolver import AttackResolver
-from src.rules import RuleEngine, RuleLoader
+from src.rules import RuleLoader
+from src.spells.rules import apply_entity_rule
 from src.rules.effect_registry import EffectRegistry
 
 
@@ -74,15 +75,15 @@ class TestAttackRouting:
         reg.scan_directory("rules/entity_effects")
         ranger = _entity("Ranger", hp=40)
         target = _entity("Target", hp=40)
-        engine = RuleEngine(bus,
-                            damage_processor=dp, effect_registry=reg)
-        engine.apply_effect(ranger, RuleLoader.load("rules/entity_effects/colossus_slayer.json"))
+        apply_entity_rule(
+            ranger, RuleLoader.load("rules/entity_effects/colossus_slayer.json"),
+            event_bus=bus, damage_processor=dp)
         # Installed on the block engine, owned by a scope keyed to the rule name.
         assert [s.source for s in ranger.lifetimes] == ["colossus_slayer"]
 
         target.take_damage(Damage(DamageType.SLASHING, 5))  # wound so Colossus fires
         hp_before = target.hp
-        ar = AttackResolver(bus, dp, rule_engine=engine)
+        ar = AttackResolver(bus, dp, condition_rules=reg)
         with patch("src.spells.blocks.rolls.roll_d20", return_value=15), \
              patch("src.spells.blocks.damage.roll_formula", return_value=3):
             hit, damage, _log, _detail = ar.resolve(ranger, target, _weapon(20, [(DamageType.SLASHING, "1d8")]))

@@ -15,7 +15,8 @@ import os
 from src.models import AbilityScores, StatBlock, Entity, Damage, DamageType
 from src.combat import EventBus, EventType
 from src.combat.damage_processor import DamageProcessor
-from src.rules import RuleEngine, RuleLoader
+from src.rules import RuleLoader
+from src.spells.rules import apply_entity_rule
 
 CONDITIONS_DIR = os.path.join(
     os.path.dirname(__file__), "..", "..", "..", "..",
@@ -34,20 +35,20 @@ def _entity(name="Statue", hp=40):
 
 def _wire():
     bus = EventBus()
-    dp = DamageProcessor(bus)
-    return bus, dp, RuleEngine(bus, damage_processor=dp)
+    return bus, DamageProcessor(bus)
 
 
-def _petrify(engine, entity):
-    engine.apply_effect(entity, RuleLoader.load(PETRIFIED_JSON))
+def _petrify(bus, dp, entity):
+    apply_entity_rule(entity, RuleLoader.load(PETRIFIED_JSON),
+                      event_bus=bus, damage_processor=dp)
 
 
 class TestPetrifiedDamageResistance:
 
     def test_petrified_creature_takes_half_damage(self):
         victim = _entity()
-        _bus, dp, engine = _wire()
-        _petrify(engine, victim)
+        bus, dp = _wire()
+        _petrify(bus, dp, victim)
 
         hp0 = victim.hp
         dp.apply_damage(victim, [Damage(DamageType.SLASHING, 10)])
@@ -55,8 +56,8 @@ class TestPetrifiedDamageResistance:
 
     def test_damage_to_others_is_untouched(self):
         victim, bystander = _entity("Statue"), _entity("Bystander")
-        _bus, dp, engine = _wire()
-        _petrify(engine, victim)
+        bus, dp = _wire()
+        _petrify(bus, dp, victim)
 
         hp0 = bystander.hp
         dp.apply_damage(bystander, [Damage(DamageType.SLASHING, 10)])
@@ -67,8 +68,8 @@ class TestPetrifiedIncapacitation:
 
     def test_petrified_creature_cannot_attack(self):
         victim, other = _entity("Statue"), _entity("Other")
-        bus, _dp, engine = _wire()
-        _petrify(engine, victim)
+        bus, dp = _wire()
+        _petrify(bus, dp, victim)
 
         event = bus.emit(EventType.ATTACK_DECLARED,
                          attacker=victim, defender=other, action=None)
@@ -76,8 +77,8 @@ class TestPetrifiedIncapacitation:
 
     def test_attacks_against_a_petrified_creature_have_advantage(self):
         victim, other = _entity("Statue"), _entity("Other")
-        bus, _dp, engine = _wire()
-        _petrify(engine, victim)
+        bus, dp = _wire()
+        _petrify(bus, dp, victim)
 
         event = bus.emit(EventType.ATTACK_DECLARED,
                          attacker=other, defender=victim, action=None)

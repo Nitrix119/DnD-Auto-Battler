@@ -17,7 +17,7 @@ from src.models.spell_properties import TargetingType
 from src.combat.event_bus import EventBus
 from src.combat.damage_processor import DamageProcessor
 from src.combat.attack_resolver import AttackResolver
-from src.rules import RuleEngine
+from src.spells.rules import load_rules_from_directory
 
 GLOBAL_RULES_DIR = os.path.join(os.path.dirname(__file__), "..", "rules", "global")
 
@@ -39,8 +39,7 @@ def _make_entity(name: str, ac: int = 10, hp: int = 100) -> Entity:
 def _make_resolver():
     bus = EventBus()
     dp = DamageProcessor(bus)
-    engine = RuleEngine(bus)
-    engine.load_from_directory(GLOBAL_RULES_DIR)
+    load_rules_from_directory(GLOBAL_RULES_DIR, event_bus=bus)
     return AttackResolver(bus, dp), dp
 
 
@@ -51,8 +50,7 @@ def _resolve_spell(caster, defender, spell):
 
     bus = EventBus()
     dp = DamageProcessor(bus)
-    engine = RuleEngine(bus)
-    engine.load_from_directory(GLOBAL_RULES_DIR)  # subscribes nat-20/nat-1 on the bus
+    load_rules_from_directory(GLOBAL_RULES_DIR, event_bus=bus)  # nat-20/nat-1
     program = parse_program(spell.program)
     return resolve_blocks(caster, defender, spell, program,
                           event_bus=bus, damage_processor=dp)

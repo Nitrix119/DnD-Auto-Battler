@@ -12,7 +12,8 @@ from src.models import Entity
 from src.combat import EventBus, EventType
 from src.combat.damage_processor import DamageProcessor
 from src.loaders import StatBlockLoader
-from src.rules import RuleEngine, RuleLoader
+from src.rules import RuleLoader
+from src.spells.rules import apply_entity_rule
 
 EXAMPLES_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "examples")
 CONDITIONS_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "rules", "entity_effects", "conditions")
@@ -31,18 +32,16 @@ def load_goblin() -> Entity:
 
 
 def setup_engine(*entities):
-    """Create a RuleEngine with entity effect support.
-
-    The instance_fields (charmer) ride the installed triggers as captured bindings."""
+    """An event bus and damage processor for the installed riders."""
     bus = EventBus()
-    engine = RuleEngine(bus, damage_processor=DamageProcessor(bus))
-    return bus, engine
+    return bus, DamageProcessor(bus)
 
 
-def apply_charmed(engine, target, charmer):
+def apply_charmed(bus, dp, target, charmer):
     """Load and apply the charmed entity effect, binding the charmer."""
     rule = RuleLoader.load(os.path.join(CONDITIONS_DIR, "charmed.json"))
-    engine.apply_effect(target, rule, instance_fields={"charmer": charmer})
+    apply_entity_rule(target, rule, event_bus=bus, damage_processor=dp,
+                      instance_fields={"charmer": charmer})
     return rule
 
 
@@ -58,8 +57,8 @@ class TestCharmedCannotAttackCharmer:
         """A charmed entity's attack targeting the charmer should be cancelled."""
         fighter = load_fighter()
         goblin = load_goblin()
-        bus, engine = setup_engine(fighter, goblin)
-        apply_charmed(engine, goblin, charmer=fighter)
+        bus, dp = setup_engine(fighter, goblin)
+        apply_charmed(bus, dp, goblin, charmer=fighter)
 
         action = get_action(goblin, "Scimitar")
         event = bus.emit(EventType.ATTACK_DECLARED,
@@ -72,8 +71,8 @@ class TestCharmedCannotAttackCharmer:
         fighter = load_fighter()
         goblin = load_goblin()
         bystander = load_fighter()
-        bus, engine = setup_engine(fighter, goblin, bystander)
-        apply_charmed(engine, goblin, charmer=fighter)
+        bus, dp = setup_engine(fighter, goblin, bystander)
+        apply_charmed(bus, dp, goblin, charmer=fighter)
 
         action = get_action(goblin, "Scimitar")
         event = bus.emit(EventType.ATTACK_DECLARED,
@@ -85,9 +84,9 @@ class TestCharmedCannotAttackCharmer:
         """An entity that is not charmed should be able to attack anyone freely."""
         fighter = load_fighter()
         goblin = load_goblin()
-        bus, engine = setup_engine(fighter, goblin)
+        bus, dp = setup_engine(fighter, goblin)
         # goblin is charmed, but fighter is not — fighter should attack freely
-        apply_charmed(engine, goblin, charmer=fighter)
+        apply_charmed(bus, dp, goblin, charmer=fighter)
 
         action = get_action(fighter, "Longsword")
         event = bus.emit(EventType.ATTACK_DECLARED,
@@ -106,11 +105,11 @@ class TestCharmedInstanceIndependence:
         fighter = load_fighter()
         goblin = load_goblin()
         bystander = load_goblin()
-        bus, engine = setup_engine(wizard, fighter, goblin, bystander)
+        bus, dp = setup_engine(wizard, fighter, goblin, bystander)
 
         # goblin is charmed by wizard; bystander is charmed by fighter
-        apply_charmed(engine, goblin, charmer=wizard)
-        apply_charmed(engine, bystander, charmer=fighter)
+        apply_charmed(bus, dp, goblin, charmer=wizard)
+        apply_charmed(bus, dp, bystander, charmer=fighter)
 
         action_goblin = get_action(goblin, "Scimitar")
         action_bystander = get_action(bystander, "Scimitar")
@@ -146,14 +145,15 @@ class TestCharmedInstanceIndependence:
         fighter = load_fighter()
         goblin = load_goblin()
         charmer = load_fighter()
-        bus, engine = setup_engine(fighter, goblin, charmer)
+        bus, dp = setup_engine(fighter, goblin, charmer)
         install_lifetime_clock(bus)
 
         rule = RuleLoader.load(os.path.join(CONDITIONS_DIR, "charmed.json"))
         rule.duration_rounds = 2
 
-        engine.apply_effect(fighter, rule, instance_fields={"charmer": charmer})
-        engine.apply_effect(goblin, rule, instance_fields={"charmer": charmer})
+        for holder in (fighter, goblin):
+            apply_entity_rule(holder, rule, event_bus=bus, damage_processor=dp,
+                              instance_fields={"charmer": charmer})
 
         # Each entity has its own charmed lifetime scope with duration 2.
         fighter_scope = next(s for s in fighter.lifetimes if s.source == "charmed")

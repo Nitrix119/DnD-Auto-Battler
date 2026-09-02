@@ -44,7 +44,7 @@ def _new_invocation(
     *,
     event_bus: Any,
     damage_processor: Any,
-    rule_engine: Any,
+    condition_rules: Any,
     slot_level: int,
     targets: Optional[List[Any]] = None,
 ) -> Invocation:
@@ -52,7 +52,7 @@ def _new_invocation(
         action=action,
         event_bus=event_bus,
         damage_processor=damage_processor,
-        rule_engine=rule_engine,
+        condition_rules=condition_rules,
         slot_level=slot_level,
     )
     return Invocation(
@@ -72,7 +72,7 @@ def resolve(
     *,
     event_bus: Any,
     damage_processor: Any,
-    rule_engine: Any = None,
+    condition_rules: Any = None,
     slot_level: Optional[int] = None,
     registry: BlockRegistry = REGISTRY,
 ) -> InvocationResult:
@@ -86,7 +86,7 @@ def resolve(
     inv = _new_invocation(
         caster, target, action,
         event_bus=event_bus, damage_processor=damage_processor,
-        rule_engine=rule_engine, slot_level=slot_level,
+        condition_rules=condition_rules, slot_level=slot_level,
     )
     return run_target(inv, program, registry)
 
@@ -99,7 +99,7 @@ def resolve_program(
     *,
     event_bus: Any,
     damage_processor: Any,
-    rule_engine: Any = None,
+    condition_rules: Any = None,
     slot_level: Optional[int] = None,
     registry: BlockRegistry = REGISTRY,
 ) -> List[InvocationResult]:
@@ -125,7 +125,7 @@ def resolve_program(
     root = _new_invocation(
         caster, caster, action,
         event_bus=event_bus, damage_processor=damage_processor,
-        rule_engine=rule_engine, slot_level=slot_level, targets=targets,
+        condition_rules=condition_rules, slot_level=slot_level, targets=targets,
     )
     if not set_consumer:
         return [run_target(root.child(target=t), program, registry) for t in targets]

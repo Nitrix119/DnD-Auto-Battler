@@ -1,14 +1,14 @@
 """Install a per-entity reactive rule (a creature feature) as block triggers.
 
 The entity-effect sibling of :func:`src.spells.global_rules.install_global_rules`.
-``RuleEngine.apply_effect`` routes a reactive rule here: the rule's ``program``
+``spells.rules.apply_entity_rule`` routes a reactive rule here: the rule's ``program``
 trigger blocks are subscribed on the shared event bus, with the holder bound to the
 entity the effect is applied to. Colossus Slayer — a permanent ``ATTACK_HIT``
 bonus-damage rider — is the canonical user.
 
 The installed triggers are owned by a :class:`LifetimeScope` on the entity: a
 ``duration_rounds`` rule expires through ``Entity.tick_lifetimes`` on the holder's
-turn, and ``RuleEngine.remove_effect`` / ``Entity.remove_effect`` disposes the scope
+turn, and ``Entity.remove_effect`` disposes the scope
 by name to tear the rider down. A rider with no duration is a permanent scope (never
 auto-expires) that removal can still dispose — Colossus Slayer is such a rider.
 """

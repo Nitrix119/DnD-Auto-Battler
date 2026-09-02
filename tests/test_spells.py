@@ -11,7 +11,6 @@ from src.models import (
 )
 from src.loaders.stat_block_loader import StatBlockLoader
 from src.combat import CombatSystem, CombatState, EventType
-from src.rules.rule_engine import RuleEngine
 from src.rules.effect_registry import EffectRegistry
 from src.spatial.geometry import Point3D
 from src.utils.dice import roll_d20, roll_formula
@@ -492,15 +491,10 @@ class TestNewSpellsCombat:
         cs.add_combatant(wizard)
         for goblin in goblins:
             cs.add_combatant(goblin)
-        # Attach a RuleEngine with EffectRegistry so on_apply effects (e.g. HealTarget, AddModifier) work
+        # The condition catalogue, so a condition's reactive mechanics are found.
         effect_registry = EffectRegistry()
         effect_registry.scan_directory("rules/entity_effects")
-        cs.rule_engine = RuleEngine(
-            cs.event_bus,
-
-            damage_processor=cs._damage_processor,
-            effect_registry=effect_registry,
-        )
+        cs.condition_rules = effect_registry
         cs.start_combat()
         # Ensure wizard is always the active entity regardless of initiative roll.
         for i, entry in enumerate(cs.initiative_tracker.initiative_order):
@@ -696,12 +690,7 @@ class TestVampiricTouch:
         cs.add_combatant(goblin)
         effect_registry = EffectRegistry()
         effect_registry.scan_directory("rules/entity_effects")
-        cs.rule_engine = RuleEngine(
-            cs.event_bus,
-
-            damage_processor=cs._damage_processor,
-            effect_registry=effect_registry,
-        )
+        cs.condition_rules = effect_registry
         cs.start_combat()
         for i, entry in enumerate(cs.initiative_tracker.initiative_order):
             if entry.entity is wizard:

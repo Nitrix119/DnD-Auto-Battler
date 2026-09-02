@@ -11,7 +11,8 @@ from src.models import Entity, Damage, DamageType
 from src.combat import EventBus, EventType
 from src.combat.damage_processor import DamageProcessor
 from src.loaders import StatBlockLoader
-from src.rules import RuleEngine, RuleLoader
+from src.rules import RuleLoader
+from src.spells.rules import apply_entity_rule
 
 EXAMPLES_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "examples")
 CONDITIONS_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "rules", "entity_effects", "conditions")
@@ -30,18 +31,15 @@ def load_goblin() -> Entity:
 
 
 def setup_engine(*entities):
-    """Create a RuleEngine with entity effect support.
-
-    A damage_processor is wired so the rider's damage blocks can roll."""
+    """An event bus and damage processor; the rider's damage blocks need the latter."""
     bus = EventBus()
-    engine = RuleEngine(bus, damage_processor=DamageProcessor(bus))
-    return bus, engine
+    return bus, DamageProcessor(bus)
 
 
-def apply_blinded(engine, entity):
+def apply_blinded(bus, dp, entity):
     """Load and apply the blinded entity effect to an entity."""
     rule = RuleLoader.load(os.path.join(CONDITIONS_DIR, "blinded.json"))
-    engine.apply_effect(entity, rule)
+    apply_entity_rule(entity, rule, event_bus=bus, damage_processor=dp)
     return rule
 
 
@@ -57,8 +55,8 @@ class TestBlindedAttackerDisadvantage:
         """A blinded entity attacking should have disadvantage set on the event."""
         fighter = load_fighter()
         goblin = load_goblin()
-        bus, engine = setup_engine(fighter, goblin)
-        apply_blinded(engine, fighter)
+        bus, dp = setup_engine(fighter, goblin)
+        apply_blinded(bus, dp, fighter)
 
         action = get_action(fighter, "Longsword")
         event = bus.emit(EventType.ATTACK_DECLARED,
@@ -71,8 +69,8 @@ class TestBlindedAttackerDisadvantage:
         """resolve_attack should call roll_with_disadvantage for a blinded attacker."""
         fighter = load_fighter()
         goblin = load_goblin()
-        bus, engine = setup_engine(fighter, goblin)
-        apply_blinded(engine, fighter)
+        bus, dp = setup_engine(fighter, goblin)
+        apply_blinded(bus, dp, fighter)
 
         from src.combat.combat_system import CombatSystem
         combat = CombatSystem()
@@ -96,8 +94,8 @@ class TestBlindedDefenderAdvantage:
         """Attacking a blinded entity should have advantage set on the event."""
         fighter = load_fighter()
         goblin = load_goblin()
-        bus, engine = setup_engine(fighter, goblin)
-        apply_blinded(engine, goblin)
+        bus, dp = setup_engine(fighter, goblin)
+        apply_blinded(bus, dp, goblin)
 
         action = get_action(fighter, "Longsword")
         event = bus.emit(EventType.ATTACK_DECLARED,
@@ -110,8 +108,8 @@ class TestBlindedDefenderAdvantage:
         """resolve_attack should call roll_with_advantage when defender is blinded."""
         fighter = load_fighter()
         goblin = load_goblin()
-        bus, engine = setup_engine(fighter, goblin)
-        apply_blinded(engine, goblin)
+        bus, dp = setup_engine(fighter, goblin)
+        apply_blinded(bus, dp, goblin)
 
         from src.combat.combat_system import CombatSystem
         combat = CombatSystem()
@@ -136,9 +134,9 @@ class TestBlindedBothCancelOut:
         cancel out per D&D 5e rules — a normal d20 should be rolled."""
         fighter = load_fighter()
         goblin = load_goblin()
-        bus, engine = setup_engine(fighter, goblin)
-        apply_blinded(engine, fighter)
-        apply_blinded(engine, goblin)
+        bus, dp = setup_engine(fighter, goblin)
+        apply_blinded(bus, dp, fighter)
+        apply_blinded(bus, dp, goblin)
 
         action = get_action(fighter, "Longsword")
         event = bus.emit(EventType.ATTACK_DECLARED,
@@ -151,9 +149,9 @@ class TestBlindedBothCancelOut:
         """resolve_attack should call plain roll_d20 when both flags are set."""
         fighter = load_fighter()
         goblin = load_goblin()
-        bus, engine = setup_engine(fighter, goblin)
-        apply_blinded(engine, fighter)
-        apply_blinded(engine, goblin)
+        bus, dp = setup_engine(fighter, goblin)
+        apply_blinded(bus, dp, fighter)
+        apply_blinded(bus, dp, goblin)
 
         from src.combat.combat_system import CombatSystem
         combat = CombatSystem()
@@ -181,8 +179,8 @@ class TestBlindedDoesNotAffectOthers:
         fighter = load_fighter()
         goblin = load_goblin()
         bystander = load_fighter()
-        bus, engine = setup_engine(fighter, goblin, bystander)
-        apply_blinded(engine, bystander)
+        bus, dp = setup_engine(fighter, goblin, bystander)
+        apply_blinded(bus, dp, bystander)
 
         action = get_action(fighter, "Longsword")
         event = bus.emit(EventType.ATTACK_DECLARED,

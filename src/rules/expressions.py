@@ -1,7 +1,7 @@
 """Unified expression evaluation for the rule engine.
 
 This module is the single source of truth for sandboxed ``eval()`` in rule
-conditions and effect fields.  Both ``RuleEngine`` and the built-in effect
+conditions and block args.  Both the block evaluator and the built-in effect
 handlers import from here.
 """
 

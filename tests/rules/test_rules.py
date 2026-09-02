@@ -1,9 +1,9 @@
 """Tests for the JSON-driven rule loader and the rules it installs.
 
-A rule is authored as a native block ``program``; ``RuleEngine`` loads it and installs
-its trigger blocks on the block engine, which resolves them. The engine dispatches
-nothing itself, so what is worth testing here is the *loading* seam and that a real
-shipped rule fires end to end — the concentration rule serves as the worked example.
+A rule is authored as a block ``program``; loading it installs its trigger blocks on
+the block engine, which resolves them (``src.spells.rules``). What is worth testing
+here is that *loading* seam, and that a real shipped rule fires end to end — the
+concentration rule serves as the worked example.
 
 Effect-level behaviour belongs with the blocks (``tests/test_block_*.py``) and the
 global-rule install with ``tests/test_global_rules_via_blocks.py``.
@@ -17,7 +17,8 @@ from src.models import (
     AbilityScores, StatBlock, Entity, Damage, DamageType, AttackAction,
 )
 from src.combat import CombatSystem, EventBus, EventType
-from src.rules import RuleEngine, RuleLoader
+from src.rules import RuleLoader
+from src.spells.rules import apply_entity_rule, load_rule_file
 
 GLOBAL_RULES_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "rules", "global")
 CONCENTRATION_JSON = os.path.join(GLOBAL_RULES_DIR, "concentration.json")
@@ -52,24 +53,22 @@ class TestRuleLoader:
         assert tb["then"][0]["block"] == "force_concentration_check"
 
 
-# ── RuleEngine: the install seam ──────────────────────────────────────────────
+# ── The install seam ──────────────────────────────────────────────────────────
 
-class TestRuleEngineInstall:
+class TestRuleInstall:
 
     def test_load_from_file_installs_and_subscribes(self):
         bus = EventBus()
-        engine = RuleEngine(bus)
-        rule = engine.load_from_file(CONCENTRATION_JSON)
-        assert rule in engine._native_rules
+        rule = load_rule_file(CONCENTRATION_JSON, event_bus=bus)
+        assert rule.name == "concentration_damage_check"
         # Subscribed: a non-concentrating entity causes no crash.
         bus.emit(EventType.DAMAGE_DEALT, defender=make_entity(), damage_list=[], total=10)
 
     def test_apply_effect_rejects_a_rule_with_nothing_to_install(self):
         """An empty program has no triggers to install — say so rather than no-op."""
-        engine = RuleEngine(EventBus())
         rule = RuleLoader.from_dict({"name": "hollow", "program": []})
         with pytest.raises(ValueError, match="hollow"):
-            engine.apply_effect(make_entity(), rule)
+            apply_entity_rule(make_entity(), rule, event_bus=EventBus())
 
 
 # ── Concentration rule integration ───────────────────────────────────────────
@@ -83,9 +82,7 @@ class TestConcentrationRule:
 
     @pytest.fixture
     def engine(self, bus):
-        eng = RuleEngine(bus)
-        eng.load_from_file(CONCENTRATION_JSON)
-        return eng
+        return load_rule_file(CONCENTRATION_JSON, event_bus=bus)
 
     @pytest.fixture
     def concentrating_entity(self):
@@ -155,8 +152,7 @@ class TestConcentrationRule:
                 combat.initiative_tracker.current_turn_index = i
                 break
 
-        engine = RuleEngine(combat.event_bus)
-        engine.load_from_file(CONCENTRATION_JSON)
+        load_rule_file(CONCENTRATION_JSON, event_bus=combat.event_bus)
 
         attack = AttackAction(
             name="Sword", description="",

@@ -1,6 +1,6 @@
 """Duration-bound / removable entity effects install on the block engine.
 
-`RuleEngine.apply_effect` installs a reactive rule's trigger blocks on the shared bus
+`apply_entity_rule` installs a reactive rule's trigger blocks on the shared bus
 (`install_entity_effect`), owned by a `LifetimeScope` on the entity — so a
 `duration_rounds` rule expires on the holder's turn (via `tick_lifetimes`) and
 `remove_effect` disposes it by name. Proven here with a poison DoT
@@ -14,7 +14,8 @@ from src.combat.event_bus import EventBus
 from src.combat.damage_processor import DamageProcessor
 from src.combat.events import EventType
 from src.combat.lifetime_clock import install_lifetime_clock
-from src.rules import RuleEngine, RuleLoader
+from src.rules import RuleLoader
+from src.spells.rules import apply_entity_rule
 from src.rules.effect_registry import EffectRegistry
 
 # A duration-bound entity-effect DoT: on the holder's TURN_START, 1d6 poison for
@@ -50,26 +51,26 @@ def _wire(*entities):
     dp = DamageProcessor(bus)
     reg = EffectRegistry()
     reg.scan_directory("rules/entity_effects")
-    engine = RuleEngine(bus, damage_processor=dp, effect_registry=reg)
-    return bus, engine
+    return bus, dp
 
 
-def _poison(engine, entity):
-    engine.apply_effect(entity, RuleLoader.from_dict(dict(_NATIVE_POISON)))
+def _poison(bus, dp, entity):
+    apply_entity_rule(entity, RuleLoader.from_dict(dict(_NATIVE_POISON)),
+                      event_bus=bus, damage_processor=dp)
 
 
 class TestBlockInstall:
 
     def test_installed_as_a_scope_owned_rider(self):
         victim = _ent("Victim")
-        _bus, engine = _wire(victim)
-        _poison(engine, victim)
+        _bus, dp = _wire(victim)
+        _poison(_bus if 'bus' not in dir() else bus, dp, victim)
         assert [s.source for s in victim.lifetimes] == ["poison_dot"]
 
     def test_fires_on_turn_start(self):
         victim, other = _ent("Victim"), _ent("Other")
-        bus, engine = _wire(victim, other)
-        _poison(engine, victim)
+        bus, dp = _wire(victim, other)
+        _poison(_bus if 'bus' not in dir() else bus, dp, victim)
         hp0 = victim.hp
         with patch("src.spells.blocks.damage.roll_formula", return_value=4):
             bus.emit(EventType.TURN_START, entity=victim, round_num=1)
@@ -81,8 +82,8 @@ class TestBlockInstall:
 
     def test_expires_after_duration(self):
         victim = _ent("Victim", hp=100)
-        bus, engine = _wire(victim)
-        _poison(engine, victim)
+        bus, dp = _wire(victim)
+        _poison(_bus if 'bus' not in dir() else bus, dp, victim)
         hp0 = victim.hp
         with patch("src.spells.blocks.damage.roll_formula", return_value=4):
             for rnd in range(1, 4):                   # rounds 1-3: fires, then ticks down
@@ -95,9 +96,9 @@ class TestBlockInstall:
 
     def test_remove_effect_disposes_the_rider(self):
         victim = _ent("Victim")
-        bus, engine = _wire(victim)
-        _poison(engine, victim)
-        engine.remove_effect(victim, "poison_dot")
+        bus, dp = _wire(victim)
+        _poison(_bus if 'bus' not in dir() else bus, dp, victim)
+        victim.remove_effect("poison_dot")
         assert victim.lifetimes == []
         with patch("src.spells.blocks.damage.roll_formula", return_value=4):
             hp0 = victim.hp

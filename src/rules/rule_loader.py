@@ -15,7 +15,7 @@ class RuleLoader:
             path: Path to the JSON rule file.
 
         Returns:
-            A Rule instance ready to be installed by RuleEngine.
+            A Rule instance ready for ``src.spells.rules`` to install.
 
         Raises:
             FileNotFoundError: If the file does not exist.

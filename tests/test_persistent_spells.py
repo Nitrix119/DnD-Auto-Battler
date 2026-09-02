@@ -15,7 +15,8 @@ from src.models import Entity, AbilityScores, StatBlock, ACTION_COST
 from src.combat.event_bus import EventBus
 from src.combat.damage_processor import DamageProcessor
 from src.combat.events import EventType
-from src.rules import EffectRegistry, RuleEngine
+from src.rules import EffectRegistry
+from src.spells.rules import load_rule_file
 from src.loaders import StatBlockLoader
 
 SPELLS_DIR = os.path.join(os.path.dirname(__file__), "..", "examples", "spells")
@@ -58,10 +59,9 @@ class TestLongstriderEndToEnd:
         dp = DamageProcessor(bus)
         reg = EffectRegistry()
         reg.scan_directory("rules/entity_effects")
-        engine = RuleEngine(bus,
-                            damage_processor=dp, effect_registry=reg)
-        engine.load_from_file("rules/global/action_economy_refill.json")
-        resolver = SpellResolver(bus, dp, rule_engine=engine)
+        load_rule_file("rules/global/action_economy_refill.json",
+                       event_bus=bus, damage_processor=dp)
+        resolver = SpellResolver(bus, dp, condition_rules=reg)
 
         resolver.resolve(wizard, [goblin], _spell("longstrider"))
         assert len(goblin.lifetimes) == 1  # the spell's lifetime scope is open
@@ -90,10 +90,9 @@ def _resolver(*entities):
     dp = DamageProcessor(bus)
     reg = EffectRegistry()
     reg.scan_directory("rules/entity_effects")
-    engine = RuleEngine(bus,
-                        damage_processor=dp, effect_registry=reg)
-    engine.load_from_file("rules/global/concentration.json")
-    return bus, engine, SpellResolver(bus, dp, rule_engine=engine)
+    load_rule_file("rules/global/concentration.json",
+                   event_bus=bus, damage_processor=dp)
+    return bus, reg, SpellResolver(bus, dp, condition_rules=reg)
 
 
 class TestShieldOfFaithEndToEnd:
@@ -183,11 +182,10 @@ class TestHaste:
         dp = DamageProcessor(bus)
         reg = EffectRegistry()
         reg.scan_directory("rules/entity_effects")
-        engine = RuleEngine(bus,
-                            damage_processor=dp, effect_registry=reg)
-        engine.load_from_file("rules/global/action_economy_refill.json")
-        engine.load_from_file("rules/global/concentration.json")
-        return bus, engine, SpellResolver(bus, dp, rule_engine=engine)
+        for rule_path in ("rules/global/action_economy_refill.json",
+                          "rules/global/concentration.json"):
+            load_rule_file(rule_path, event_bus=bus, damage_processor=dp)
+        return bus, reg, SpellResolver(bus, dp, condition_rules=reg)
 
     def _turn_start(self, bus, entity, round_num=2):
         from src.combat.event_data import TurnEventData

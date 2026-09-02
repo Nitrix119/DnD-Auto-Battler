@@ -15,7 +15,8 @@ from src.combat.event_bus import EventBus
 from src.combat.event_data import AttackRolledData, TurnEventData
 from src.combat.events import EventType
 from src.combat.damage_processor import DamageProcessor
-from src.rules import RuleEngine, RuleLoader
+from src.rules import RuleLoader
+from src.spells.rules import load_rules_from_directory
 
 from src.spells.global_rules import block_eligible, install_global_rules
 
@@ -117,23 +118,20 @@ class TestGlobalRulesEndToEnd:
 
 
 # ---------------------------------------------------------------------------
-# The production flow: RuleEngine.load_from_directory installs the natives on blocks
+# The production flow: load_rules_from_directory installs them on the block engine
 # ---------------------------------------------------------------------------
 
 class TestNativeGlobalInstall:
-    """All global rules are native now (Phase 3 §5): ``RuleEngine.load_rule`` installs a
-    native rule on the block engine (its single resolution path), so a plain
-    ``load_from_directory`` wires them for library/`CombatSystem` usage — no separate
-    install/disable step. Each installs once; a native rule is never on the legacy
-    dispatch, so it structurally cannot double-apply."""
+    """Loading a rule *is* installing it on the block engine — its single resolution
+    path — so ``load_rules_from_directory`` wires every global rule for library and
+    `CombatSystem` usage with no separate install step. Each installs exactly once."""
 
     def test_load_from_directory_installs_all_natives_once(self):
         bus = EventBus()
         processor = DamageProcessor(bus)
-        engine = RuleEngine(bus, damage_processor=processor)
-        rules = engine.load_from_directory(_GLOBAL)
-        # Every global rule is native and tracked as installed on the block engine.
-        assert {r.name for r in rules} == {r.name for r in engine._native_rules}
+        rules = load_rules_from_directory(
+            _GLOBAL, event_bus=bus, damage_processor=processor)
+        assert len(rules) == 7  # every shipped global rule loaded
         # Resistance fires exactly once (halved, not doubled) — no explicit install call.
         entity = _entity(resistances=[DamageType.COLD])
         processor.apply_damage(entity, [Damage(DamageType.COLD, 10)])

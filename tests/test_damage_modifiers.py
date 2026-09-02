@@ -186,7 +186,7 @@ class TestDamageModifierRuleLoading:
 
 
 # ---------------------------------------------------------------------------
-# End-to-end via DamageProcessor + RuleEngine
+# End-to-end via DamageProcessor + the installed global rules
 # ---------------------------------------------------------------------------
 
 class TestDamageModifierEndToEnd:

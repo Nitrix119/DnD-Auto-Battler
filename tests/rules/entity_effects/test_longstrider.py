@@ -15,7 +15,7 @@ from src.combat.event_data import TurnEventData
 from src.combat.damage_processor import DamageProcessor
 from src.combat.spell_resolver import SpellResolver
 from src.combat.lifetime_clock import install_lifetime_clock
-from src.rules.rule_engine import RuleEngine
+from src.spells.rules import load_rule_file
 from src.rules.effect_registry import EffectRegistry
 from src.loaders import StatBlockLoader
 
@@ -54,17 +54,16 @@ def _cast_longstrider_on(entity, *others):
     install_lifetime_clock(bus)
     reg = EffectRegistry()
     reg.scan_directory("rules/entity_effects")
-    engine = RuleEngine(bus,
-                        damage_processor=DamageProcessor(bus), effect_registry=reg)
-    engine.load_from_file(REFILL_RULE_PATH)
-    resolver = SpellResolver(bus, engine._damage_processor, rule_engine=engine)
+    dp = DamageProcessor(bus)
+    load_rule_file(REFILL_RULE_PATH, event_bus=bus, damage_processor=dp)
+    resolver = SpellResolver(bus, dp, condition_rules=reg)
     resolver.resolve(entity, [entity],
                      StatBlockLoader.load_spell_from_json(LONGSTRIDER_SPELL_PATH))
-    return bus, engine
+    return bus, reg
 
 
 def _setup(entity):
-    """Cast Longstrider on *entity* and return its (bus, engine)."""
+    """Cast Longstrider on *entity* and return its (bus, condition catalogue)."""
     return _cast_longstrider_on(entity)
 
 

@@ -15,7 +15,7 @@ from src.combat.event_data import TurnEventData
 from src.combat.damage_processor import DamageProcessor
 from src.combat.spell_resolver import SpellResolver
 from src.combat.lifetime_clock import install_lifetime_clock
-from src.rules.rule_engine import RuleEngine
+from src.spells.rules import load_rule_file
 from src.rules.effect_registry import EffectRegistry
 from src.loaders import StatBlockLoader
 
@@ -45,24 +45,24 @@ def _emit_turn_end(bus, entity, round_num=1, turn_num=1):
     ))
 
 
-def _engine(bus, entities):
+def _wire(bus, entities):
+    """The condition catalogue plus a damage processor, with the refill rule loaded."""
     reg = EffectRegistry()
     reg.scan_directory("rules/entity_effects")
-    engine = RuleEngine(bus,
-                        damage_processor=DamageProcessor(bus), effect_registry=reg)
-    engine.load_from_file(REFILL_RULE_PATH)
-    return engine
+    dp = DamageProcessor(bus)
+    load_rule_file(REFILL_RULE_PATH, event_bus=bus, damage_processor=dp)
+    return reg, dp
 
 
 def _cast_haste_on(entity, *others):
     """Cast Haste (self-cast) so its native rider is installed on *entity*."""
     bus = EventBus()
     install_lifetime_clock(bus)  # ticks the concentration duration on TURN_END
-    engine = _engine(bus, [entity, *others])
-    resolver = SpellResolver(bus, engine._damage_processor, rule_engine=engine)
+    reg, dp = _wire(bus, [entity, *others])
+    resolver = SpellResolver(bus, dp, condition_rules=reg)
     resolver.resolve(entity, [entity],
                      StatBlockLoader.load_spell_from_json(HASTE_SPELL_PATH))
-    return bus, engine
+    return bus, reg
 
 
 def _setup(entity):

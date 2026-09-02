@@ -25,7 +25,8 @@ from src.models.spell_properties import (
     TargetingType,
 )
 from src.models.stat_block import StatBlock
-from src.rules import RuleEngine, RuleLoader
+from src.rules import RuleLoader
+from src.spells.rules import apply_entity_rule
 from src.utils.saving_throw import roll_saving_throw
 
 CONDITIONS_DIR = os.path.join(
@@ -86,15 +87,12 @@ class TestRollSavingThrowRollMode:
 
 class TestRestrainedSaveWiring:
     def _setup(self, target):
-        # Restrained is a native block rule now (§5d): apply_effect installs it on the
-        # block engine, which needs a damage_processor present (the no-dp legacy path
-        # cannot run a native rule — it has no legacy triggers to dispatch on).
+        # Restrained installs on the block engine as holder-scoped triggers; a
+        # damage_processor is wired so any damage block in the rider can roll.
         bus = EventBus()
-        engine = RuleEngine(
-            bus, damage_processor=DamageProcessor(bus)
-        )
         rule = RuleLoader.load(RESTRAINED_JSON)
-        engine.apply_effect(target, rule)
+        apply_entity_rule(target, rule, event_bus=bus,
+                          damage_processor=DamageProcessor(bus))
         return bus
 
     def test_dex_save_gets_disadvantage(self):
@@ -119,11 +117,8 @@ class TestRestrainedSaveWiring:
         target = _plain_entity("Restrained")
         other = _plain_entity("Free")
         bus = EventBus()
-        engine = RuleEngine(
-            bus,
-            damage_processor=DamageProcessor(bus),
-        )
-        engine.apply_effect(target, RuleLoader.load(RESTRAINED_JSON))
+        apply_entity_rule(target, RuleLoader.load(RESTRAINED_JSON),
+                          event_bus=bus, damage_processor=DamageProcessor(bus))
         event = bus.emit(
             EventType.SAVING_THROW_DECLARED,
             defender=other, ability="dexterity", dc=15,

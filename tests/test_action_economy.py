@@ -11,7 +11,7 @@ from src.combat import CombatSystem, CombatState
 from src.combat.event_bus import EventBus
 from src.combat.events import EventType
 from src.combat.event_data import TurnEventData
-from src.rules.rule_engine import RuleEngine
+from src.spells.rules import load_rule_file
 
 
 # ---------------------------------------------------------------------------
@@ -293,8 +293,7 @@ class TestRefillRule:
     def test_refill_on_turn_start(self):
         """Resources are refilled when TURN_START fires with the refill rule loaded."""
         bus = EventBus()
-        engine = RuleEngine(bus)
-        engine.load_from_file("rules/global/action_economy_refill.json")
+        load_rule_file("rules/global/action_economy_refill.json", event_bus=bus)
 
         entity = Entity(_make_stat_block())
         entity.spend_resources(ACTION_COST)

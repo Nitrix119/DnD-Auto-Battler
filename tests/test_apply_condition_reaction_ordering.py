@@ -17,7 +17,7 @@ from unittest.mock import patch
 from src.models import AbilityScores, StatBlock, Entity, SpellAction
 from src.combat.event_bus import EventBus
 from src.combat.damage_processor import DamageProcessor
-from src.rules import RuleEngine, RuleLoader
+from src.rules import RuleLoader
 from src.rules.effect_registry import EffectRegistry
 from src.spells.block import parse_program
 from src.spells.evaluator import resolve as resolve_blocks
@@ -60,8 +60,7 @@ def test_a_condition_rider_does_not_fire_on_its_own_casts_damage():
     caster, target = _entity("Caster"), _entity("Target")
     bus = EventBus()
     dp = DamageProcessor(bus)
-    engine = RuleEngine(bus, damage_processor=dp,
-                        effect_registry=_registry_with_reactive_condition())
+    condition_rules = _registry_with_reactive_condition()
 
     program = parse_program([
         {"block": "damage", "formula": "10", "damage_type": "FIRE"},
@@ -71,7 +70,7 @@ def test_a_condition_rider_does_not_fire_on_its_own_casts_damage():
         resolve_blocks(caster, target, SpellAction(name="Blight", description="",
                                                    spell_level=2),
                        program, event_bus=bus, damage_processor=dp,
-                       rule_engine=engine)
+                       condition_rules=condition_rules)
 
     # The spell's own 10 fire damage, and nothing from the rider it just installed.
     assert target.hp == 100 - 10

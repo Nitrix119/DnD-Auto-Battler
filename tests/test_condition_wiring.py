@@ -16,7 +16,6 @@ from src.combat.damage_processor import DamageProcessor
 from src.combat.events import EventType
 from src.combat.spell_resolver import SpellResolver
 from src.models.action import SpellAction
-from src.rules import RuleEngine
 from src.rules.effect_registry import EffectRegistry
 
 import src.spells.blocks  # noqa: F401  (registers the block catalogue)
@@ -39,16 +38,13 @@ def _wire(*entities, with_registry=True):
     reg = EffectRegistry() if with_registry else None
     if reg is not None:
         reg.scan_directory("rules/entity_effects")
-    engine = RuleEngine(
-        bus,
-        damage_processor=dp, effect_registry=reg,
-    )
-    return bus, dp, engine
+    return bus, dp, reg
 
 
-def _apply_condition(bus, dp, engine, *, caster, target, ctype, **extra):
+def _apply_condition(bus, dp, reg, *, caster, target, ctype, **extra):
     """Run an `apply_condition` block on a wired invocation (caster casts on target)."""
-    env = CastEnv(action=None, event_bus=bus, damage_processor=dp, rule_engine=engine)
+    env = CastEnv(action=None, event_bus=bus, damage_processor=dp,
+                  condition_rules=reg)
     inv = Invocation(env=env, caster=caster, target=target, context=seed_context(0))
     run_block(Block.from_dict({"block": "apply_condition", "condition_type": ctype, **extra}), inv)
 
@@ -64,8 +60,8 @@ class TestConditionMechanicsFire:
     def test_blinded_attacker_gets_disadvantage(self):
         caster, blind = _ent("Caster"), _ent("Blind")
         other = _ent("Other")
-        bus, dp, engine = _wire(caster, blind, other)
-        _apply_condition(bus, dp, engine, caster=caster, target=blind, ctype="blinded")
+        bus, dp, reg = _wire(caster, blind, other)
+        _apply_condition(bus, dp, reg, caster=caster, target=blind, ctype="blinded")
 
         ev = _declare(bus, attacker=blind, defender=other)
         assert ev.data.get("disadvantage") is True
@@ -74,8 +70,8 @@ class TestConditionMechanicsFire:
     def test_blinded_defender_gives_attacker_advantage(self):
         caster, blind = _ent("Caster"), _ent("Blind")
         other = _ent("Other")
-        bus, dp, engine = _wire(caster, blind, other)
-        _apply_condition(bus, dp, engine, caster=caster, target=blind, ctype="blinded")
+        bus, dp, reg = _wire(caster, blind, other)
+        _apply_condition(bus, dp, reg, caster=caster, target=blind, ctype="blinded")
 
         ev = _declare(bus, attacker=other, defender=blind)
         assert ev.data.get("advantage") is True
@@ -83,18 +79,18 @@ class TestConditionMechanicsFire:
 
     def test_marker_is_still_added(self):
         caster, blind = _ent("Caster"), _ent("Blind")
-        bus, dp, engine = _wire(caster, blind)
-        _apply_condition(bus, dp, engine, caster=caster, target=blind, ctype="blinded")
+        bus, dp, reg = _wire(caster, blind)
+        _apply_condition(bus, dp, reg, caster=caster, target=blind, ctype="blinded")
         assert [c.condition_type for c in blind.conditions] == [ConditionType.BLINDED]
 
     def test_emits_condition_added(self):
         """The block announces the condition on the bus, carrying entity + marker."""
         caster, target = _ent("Caster"), _ent("Target")
-        bus, dp, engine = _wire(caster, target)
+        bus, dp, reg = _wire(caster, target)
         received = []
         bus.subscribe(EventType.CONDITION_ADDED, lambda e: received.append(e))
 
-        _apply_condition(bus, dp, engine, caster=caster, target=target, ctype="poisoned")
+        _apply_condition(bus, dp, reg, caster=caster, target=target, ctype="poisoned")
 
         assert len(received) == 1
         assert received[0].data["entity"] is target
@@ -102,8 +98,8 @@ class TestConditionMechanicsFire:
 
     def test_condition_does_not_affect_bystanders(self):
         caster, blind, a, b = _ent("Caster"), _ent("Blind"), _ent("A"), _ent("B")
-        bus, dp, engine = _wire(caster, blind, a, b)
-        _apply_condition(bus, dp, engine, caster=caster, target=blind, ctype="blinded")
+        bus, dp, reg = _wire(caster, blind, a, b)
+        _apply_condition(bus, dp, reg, caster=caster, target=blind, ctype="blinded")
 
         ev = _declare(bus, attacker=a, defender=b)
         assert ev.data.get("disadvantage", False) is False
@@ -116,8 +112,8 @@ class TestConditionLifetime:
 
     def test_expires_after_duration(self):
         caster, blind, other = _ent("Caster"), _ent("Blind"), _ent("Other")
-        bus, dp, engine = _wire(caster, blind, other)
-        _apply_condition(bus, dp, engine, caster=caster, target=blind,
+        bus, dp, reg = _wire(caster, blind, other)
+        _apply_condition(bus, dp, reg, caster=caster, target=blind,
                          ctype="blinded", duration=2)
 
         # Still blinded before expiry.
@@ -131,8 +127,8 @@ class TestConditionLifetime:
 
     def test_permanent_condition_persists(self):
         caster, blind, other = _ent("Caster"), _ent("Blind"), _ent("Other")
-        bus, dp, engine = _wire(caster, blind, other)
-        _apply_condition(bus, dp, engine, caster=caster, target=blind, ctype="blinded")
+        bus, dp, reg = _wire(caster, blind, other)
+        _apply_condition(bus, dp, reg, caster=caster, target=blind, ctype="blinded")
 
         for _ in range(5):
             blind.tick_lifetimes()
@@ -140,8 +136,8 @@ class TestConditionLifetime:
 
     def test_dispel_removes_marker_and_mechanics(self):
         caster, blind, other = _ent("Caster"), _ent("Blind"), _ent("Other")
-        bus, dp, engine = _wire(caster, blind, other)
-        _apply_condition(bus, dp, engine, caster=caster, target=blind, ctype="blinded")
+        bus, dp, reg = _wire(caster, blind, other)
+        _apply_condition(bus, dp, reg, caster=caster, target=blind, ctype="blinded")
 
         blind.remove_condition(0)  # dispel
 
@@ -151,14 +147,14 @@ class TestConditionLifetime:
     def test_removed_when_concentration_drops(self):
         """A condition applied inside a concentration spell ends when it does."""
         caster, blind, other = _ent("Caster"), _ent("Blind"), _ent("Other")
-        bus, dp, engine = _wire(caster, blind, other)
+        bus, dp, reg = _wire(caster, blind, other)
         program = parse_program([{
             "block": "lifetime", "concentration": True,
             "then": [{"block": "apply_condition", "condition_type": "blinded"}],
         }])
         from src.spells.evaluator import resolve as resolve_blocks
         resolve_blocks(caster, blind, SpellAction(name="Hold", description="", spell_level=2),
-                       program, event_bus=bus, damage_processor=dp, rule_engine=engine)
+                       program, event_bus=bus, damage_processor=dp, condition_rules=reg)
 
         assert _declare(bus, blind, other).data.get("disadvantage") is True
         caster.end_concentration()
@@ -172,8 +168,8 @@ class TestWiringSeams:
 
     def test_no_registry_still_adds_marker(self):
         caster, blind, other = _ent("Caster"), _ent("Blind"), _ent("Other")
-        bus, dp, engine = _wire(caster, blind, other, with_registry=False)
-        _apply_condition(bus, dp, engine, caster=caster, target=blind, ctype="blinded")
+        bus, dp, reg = _wire(caster, blind, other, with_registry=False)
+        _apply_condition(bus, dp, reg, caster=caster, target=blind, ctype="blinded")
 
         assert [c.condition_type for c in blind.conditions] == [ConditionType.BLINDED]
         # No rule wired → marker only, no mechanics, no crash.
@@ -186,8 +182,8 @@ class TestWiringSeams:
         the lifetime clock is the only duration mechanism.
         """
         caster, blind = _ent("Caster"), _ent("Blind")
-        bus, dp, engine = _wire(caster, blind, with_registry=False)
-        _apply_condition(bus, dp, engine, caster=caster, target=blind,
+        bus, dp, reg = _wire(caster, blind, with_registry=False)
+        _apply_condition(bus, dp, reg, caster=caster, target=blind,
                          ctype="blinded", duration=2)
 
         assert [c.condition_type for c in blind.conditions] == [ConditionType.BLINDED]
@@ -198,8 +194,8 @@ class TestWiringSeams:
 
     def test_marker_only_condition_without_duration_is_permanent(self):
         caster, blind = _ent("Caster"), _ent("Blind")
-        bus, dp, engine = _wire(caster, blind, with_registry=False)
-        _apply_condition(bus, dp, engine, caster=caster, target=blind, ctype="blinded")
+        bus, dp, reg = _wire(caster, blind, with_registry=False)
+        _apply_condition(bus, dp, reg, caster=caster, target=blind, ctype="blinded")
 
         for _ in range(5):
             blind.tick_lifetimes()
@@ -209,8 +205,8 @@ class TestWiringSeams:
         """A `bindings` field carries per-instance closure values (Charmed's charmer),
         so a charm-shaped condition works through `apply_condition` too."""
         charmer, victim, other = _ent("Charmer"), _ent("Victim"), _ent("Other")
-        bus, dp, engine = _wire(charmer, victim, other)
-        _apply_condition(bus, dp, engine, caster=charmer, target=victim,
+        bus, dp, reg = _wire(charmer, victim, other)
+        _apply_condition(bus, dp, reg, caster=charmer, target=victim,
                          ctype="charmed", bindings={"charmer": "event.caster"})
 
         # The charmed victim cannot attack the charmer (event cancelled)...
@@ -222,8 +218,8 @@ class TestWiringSeams:
         """A spell whose effect is an apply_condition step, cast on the block engine,
         produces a mechanically-functioning condition end-to-end."""
         caster, target, other = _ent("Caster"), _ent("Target"), _ent("Other")
-        bus, dp, engine = _wire(caster, target, other)
-        resolver = SpellResolver(bus, dp, rule_engine=engine)
+        bus, dp, reg = _wire(caster, target, other)
+        resolver = SpellResolver(bus, dp, condition_rules=reg)
         spell = SpellAction(
             name="Blind", description="", spell_level=2,
             program=[{"block": "apply_condition", "condition_type": "blinded"}],

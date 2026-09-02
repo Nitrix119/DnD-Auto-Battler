@@ -14,7 +14,7 @@ from src.models import AbilityScores, StatBlock, Entity, SpellAction
 from src.combat.event_bus import EventBus
 from src.combat.damage_processor import DamageProcessor
 from src.combat.events import EventType
-from src.rules import RuleEngine
+from src.spells.rules import load_rule_file
 from src.spells.block import parse_program
 from src.spells.evaluator import resolve as resolve_blocks
 
@@ -26,7 +26,7 @@ CONCENTRATION_JSON = os.path.join(
 def _bus_with_concentration_rule():
     """A bus carrying the real shipped concentration-break rule."""
     bus = EventBus()
-    RuleEngine(bus).load_from_file(CONCENTRATION_JSON)
+    load_rule_file(CONCENTRATION_JSON, event_bus=bus)
     return bus
 
 
@@ -139,7 +139,7 @@ def test_concentration_break_on_damage_revokes_the_buff_end_to_end():
     _run(caster, target, _SHIELD_OF_FAITH)
     assert target.ac == 14 and caster.has_concentration
 
-    # The real global concentration rule on a shared bus/engine.
+    # The real global concentration rule on a shared bus.
     bus = _bus_with_concentration_rule()
 
     # Caster takes damage and fails the CON save (rolls a 1).
