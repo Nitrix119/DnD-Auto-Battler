@@ -140,14 +140,14 @@ parallel effect vocabularies bridged by synthetic stub events (`_handle_apply_co
   field legitimately absent on a wrong event type. **Fixed:** a per-event field schema
   (`EVENT_DATA_CLASSES` / `event_fields` in `src/combat/event_data.py`) now backs a load-time check
   that rejected any `event.<field>` reference no trigger carried, so typos failed loudly at load.
-  _(Superseded 2026-09-03: that load-time check went with the legacy `triggers`/`effects` rule
-  shape it validated. The `event_fields` schema it was built on is kept in
-  `src/combat/event_data.py` — tested by `tests/rules/test_rule_loading.py` — as the primitive for
-  the block-level replacement, which belongs with the fuller block schema in
-  [SPELL_SYSTEM_REMAINING.md](SPELL_SYSTEM_REMAINING.md) §4. **Until that lands, a typo'd
-  `event.<field>` in a rule's block program is not caught at load.**)_ Nested entity-attribute
-  typos like `event.defender.typo` are still swallowed at runtime — that needs an Entity attribute
-  schema and was always outside E6's scope.
+  _(Re-homed 2026-09-03: when the legacy `triggers`/`effects` shape was deleted, the check moved
+  onto the block program — `spells.validate._check_event_refs` now checks every `event.<field>`
+  under a `trigger` against that trigger's declared event, reusing the same `event_fields` schema.
+  Necessary, not cosmetic: at fire time `triggers._passes` swallows the AttributeError and returns
+  False, so a typo reads as "did not fire". It found a live instance on its first run —
+  `petrified`'s DAMAGE_INCOMING trigger guarded on `event.attacker`, so its damage halving had
+  never fired.)_ Nested entity-attribute typos like `event.defender.typo` are still swallowed at
+  runtime — that needs an Entity attribute schema and was always outside E6's scope.
 
 **MEDIUM:**
 - **E7. Return-shape drift vs. docstrings — fixed.** `resolve_attack`/`parse_dice_formula`

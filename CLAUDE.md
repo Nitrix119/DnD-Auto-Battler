@@ -70,12 +70,13 @@ Non-negotiable. Every change should be justifiable against these.
    Enumerate the unhappy paths — malformed JSON, missing fields, dead targets,
    concentration loss, both-advantage-and-disadvantage — and decide each deliberately.
 5. **Fail loudly, early, and specifically.** Validate at boundaries (the JSON loaders);
-   raise precise errors that name the bad value and the valid options. Spell `effects`
-   and rule `event.<field>` references are schema-validated at load
-   (`src/rules/step_schema.py`, `RuleLoader._validate_event_field_refs`). The runtime
-   `AttributeError` skip in `RuleEngine` now covers only the legitimate multi-trigger
-   case (a field absent on one of a rule's several triggers), not typos — those are
-   caught at load (E6 resolved).
+   raise precise errors that name the bad value and the valid options. A rule or spell
+   `program` is validated at load by `src/spells/validate.py` — registered block types,
+   required args, arity, `context.X` refs, and `event.<field>` refs against the enclosing
+   `trigger`'s declared event; legacy spell `effects` by `src/rules/step_schema.py`. A rule
+   that is not a block `program` does not load at all. _(Why the event check matters: a
+   trigger guard that raises `AttributeError` at fire time is swallowed as "did not fire",
+   so a typo is invisible — see §9 2026-09-03.)_
 6. **Small, reversible changes.** Many small, well-tested commits over one large one.
    Keep `main` clean; do non-trivial work on a branch.
 7. **Debt and convolution are first-class.** In an engine whose whole value is modular
@@ -105,9 +106,12 @@ Non-negotiable. Every change should be justifiable against these.
 - **Registry, never `if/elif` on type.** New block type → add a handler under
   `src/spells/blocks/` and register it in the block `REGISTRY` (`src/spells/registry.py`),
   dispatched on the block's type. New spell → drop a JSON file in `examples/spells/`
-  (auto-scanned at startup). Do **not** branch on a spell's name. (The legacy
-  `BUILTIN_EFFECTS`/`effects.py` rule-effect vocabulary is transitional — reached only via
-  the `fold`/`adapter` shims — and retires in §5.)
+  (auto-scanned at startup). Do **not** branch on a spell's name. The block `REGISTRY` is the
+  **only** effect vocabulary — the legacy `BUILTIN_EFFECTS` `action`-verb registry is deleted.
+- **Rules are block programs too.** A rule (`rules/global/*`, `rules/entity_effects/**`) is a
+  `program` of `trigger` blocks. `RuleEngine` loads and installs them; it dispatches nothing.
+  There is no second rule vocabulary and no legacy `triggers`/`effects` shape — such a file
+  now fails at load, naming itself.
 - **Cross-cutting behaviour rides the EventBus.** Resolvers emit typed events
   (`ATTACK_DECLARED`, `ATTACK_ROLLED`, `SAVING_THROW_DECLARED`, `DAMAGE_INCOMING`,
   `DAMAGE_DEALT`, `SPELL_HIT`, …). Rules and entity effects subscribe and may modify or
@@ -241,6 +245,23 @@ leave a brief note here.
 - **What went wrong:** the mistake or surprise.
 - **Rule going forward:** the concrete, testable rule.
 ```
+
+### 2026-09-03 — Deleting a validator with its legacy shape silently dropped a live check
+- **Context:** Removing the legacy `RuleEngine` dispatch and the `triggers`/`effects` rule shape
+  (SPELL_SYSTEM_REMAINING §1). `RuleLoader._validate_event_field_refs` — the load-time `event.<field>`
+  typo check (E6) — validated that shape, so it went with it.
+- **What went wrong:** I reasoned it protected nothing, because a native rule carries no top-level
+  `condition` or `effects`. Wrong: a native rule's event references live *inside* its `trigger` blocks
+  (`when`, `bindings`, nested block args). And at fire time `triggers._passes` catches `AttributeError`
+  and returns `False` — so a typo is indistinguishable from "the guard was false". The deletion would
+  have shipped a silent regression of exactly the bug E6 exists to prevent. Porting the check onto the
+  block program found a live instance immediately: `petrified`'s DAMAGE_INCOMING trigger guarded on
+  `event.attacker`, which that event does not carry, so its damage halving had **never fired**.
+- **Rule going forward:** When deleting a validator along with the shape it validated, first ask what
+  the *successor* shape can express that the check covered — a guarantee must be re-homed, not assumed
+  redundant. And treat "the new form has no top-level X" as a claim to verify against the new form's
+  nesting, not a conclusion. Corollary: a guard that swallows an exception to mean "didn't match" can
+  never report a typo at run time, so its inputs must be validated at load.
 
 ### 2026-09-02 — A load-time validator needed the block catalogue, which nothing had imported
 - **Context:** Building `spells.validate.validate_program`, the loader-boundary validator for native block

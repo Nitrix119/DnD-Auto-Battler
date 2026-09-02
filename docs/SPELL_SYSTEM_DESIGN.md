@@ -563,9 +563,10 @@ skip. The schema also becomes the generated source for the authoring guide, endi
   `STEP_REFERENCE.md` (drift-guarded), and all 22 spells lint clean.
 - **Rule side (the literal E6):** a per-event field schema (`EVENT_DATA_CLASSES` / `event_fields` in
   `src/combat/event_data.py`) backed `RuleLoader._validate_event_field_refs`, which rejected any
-  `event.<field>` reference no trigger event carried. _Superseded 2026-09-03: that check was tied to
-  the legacy `triggers`/`effects` rule shape and went with it. The schema itself is kept as the
-  primitive for the block-level version, which lands with the fuller block schema (§5)._
+  `event.<field>` reference no trigger event carried. _Re-homed 2026-09-03 onto the block program
+  (`spells.validate._check_event_refs`) when the legacy rule shape was deleted: a `trigger` declares
+  its `event`, so every reference beneath it is checked against that event's fields, and a nested
+  trigger rebinds the scope for its own subtree._
   _Remaining, out of E6's scope: nested entity-attribute typos (`event.defender.typo`) — would need
   an Entity attribute schema._
 

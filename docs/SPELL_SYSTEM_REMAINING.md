@@ -17,38 +17,31 @@
 ## 0. Where the rework stands (one breath)
 
 Every shipped spell, every rule (`rules/global/*`, `rules/entity_effects/**`), and weapon
-attacks resolve on the **one** block engine (`src/spells/`). `EffectPipeline` and `fold.py`
-are gone; content is authored as native block `program`s. What remains is the **legacy
-`RuleEngine` dispatch machinery** (kept alive by one test-only fixture), a short list of
-carried deviations, some awkwardness worth refining, and the post-rework feature threads.
+attacks resolve on the **one** block engine (`src/spells/`). `EffectPipeline`, `fold.py` and
+the legacy `RuleEngine` dispatch (with `BUILTIN_EFFECTS`, `EffectInstance` and the legacy
+`Rule` shape) are **all gone** — a rule that is not a block `program` no longer loads. What
+remains is **one legacy compiler on the weapon path**, a short list of carried deviations,
+some awkwardness worth refining, and the post-rework feature threads.
 
 ---
 
-## 1. Legacy machinery still to delete (the last removal)
+## 1. The last legacy code: `adapter.py` on the weapon path
 
-These have **no production caller** — they're reached only by the one intentionally-legacy
-fixture and the legacy-handler unit tests. The removal is a distinct slice: re-home or
-retire those tests, then delete.
+`adapter.to_program` / `can_run_on_blocks` is the last legacy-`pipeline_effects` → block
+compiler. It survives because **weapon attacks** are still authored as a flat
+`damage`/`bonus_to_hit` list that `AttackResolver._build_pipeline_effects` compiles at cast
+time, rather than as a native `program`.
 
-- **`BUILTIN_EFFECTS`** (`src/rules/effects.py`) — the `action`-verb handler registry.
-- **`RuleEngine` legacy dispatch** — `_dispatch`, `_dispatch_trigger`, `_handle_entity_effects`,
-  and `apply_effect`'s `EffectInstance` fallback (the `else` after `install_entity_effect`
-  returns `False`).
-- **`_tick_durations`** — the legacy effect-instance/condition-marker duration clock (the
-  block-engine lifetime clock is already standalone in `src/combat/lifetime_clock.py`).
-- **`spider_bite_poison`** (`rules/entity_effects/conditions/spider_bite_poison.json`) — the
-  **one deliberately-legacy rule**, a DoT with no creature/spell that applies it. It exists
-  only to exercise the machinery above; it is the documented exception in the
-  `test_native_rules_parity` invariant. Retire it together with that machinery.
-- Tests pinned to the legacy path (retire/convert with the above): the legacy-handler unit
-  tests in `tests/rules/test_rules.py` and `tests/rules/test_entity_effects.py`
-  (`deal_damage`, `modify_damage`, `force_concentration_check`, `heal_target`,
-  `grant_advantage`, … imported from `src.rules.effects`), and the legacy-dispatch tests in
-  `tests/test_block_entity_effects.py` (`test_without_damage_processor_falls_back_to_legacy`).
+The slice: author weapon attacks as native `program`s, delete `adapter.py`, then rename
+`Action.pipeline_effects` away. Two §3 items fall out with it — `adapter.py`'s vestigial
+`rule_lookup` param, and `can_run_on_blocks` being effectively always-true.
 
-**After that:** author **weapon attacks** as native `program`s so `adapter.py`
-(`to_program` / `can_run_on_blocks`, the last legacy-`pipeline_effects` → block compiler)
-can be deleted, and then rename `Action.pipeline_effects` away.
+Also lands here, because it is the last thing keeping the legacy engine's *shape* in the
+loader: **`RuleEngine.load_rule` installing rules on the block engine is still an inverted
+dependency** (§3). The clean end state is a small native rule loader that owns global and
+condition install with no `RuleEngine` at all. It shrank a lot with the dispatch deletion —
+`RuleEngine` is now only a loader seam plus the `effect_registry` it carries — but the
+inversion is real until then.
 
 ---
 
@@ -98,10 +91,8 @@ translator (`fold.py`) is gone, these can be cleaned up as standalone refinement
   spell does this, so it's latent. *Refinement:* make the condition rider holder-agnostic —
   install it on a child invocation whose `caster` **is** the conditioned entity, so the
   default `holder: "caster"` is always correct — and drop the baked `holder` from the files.
-- **`RuleEngine.load_rule` installing native rules on the block engine is a transitional
-  bridge.** The *legacy* engine reaching into the *new* engine is an inverted dependency we
-  accept only until the legacy `RuleEngine` is deleted (§1). The clean end state is a small
-  native rule loader that owns global/condition install with no `RuleEngine` involved.
+- **`RuleEngine.load_rule` installing rules on the block engine is a transitional bridge.**
+  The loader reaching into the block engine is an inverted dependency; see §1, where it lands.
 - **`adapter.py`'s `rule_lookup` param is vestigial**, and `can_run_on_blocks` is effectively
   always-true for shipped content (no spell has `pipeline_effects`). Both disappear when
   weapons author natively and `adapter.py` goes (§1).
@@ -148,14 +139,16 @@ Noticed while working; recorded so they aren't lost, but they predate the block 
 - **Composite damage / per-type resistance** — see §4 and its doc (this is the one with a
   written fix; the others below are just flags).
 - **E6 nested entity-attribute typos are still swallowed at runtime.** Load-time validation
-  catches `event.<field>` typos, but a nested `event.defender.typo` still raises
-  `AttributeError` and is skipped. Needs an Entity-attribute schema — folds naturally into
+  catches a `trigger`'s `event.<field>` typos (`spells.validate._check_event_refs`), but a
+  nested `event.defender.typo` still raises `AttributeError` and is skipped — in a trigger
+  guard that reads as "did not fire". Needs an Entity-attribute schema — folds naturally into
   the fuller block schema (§4). (See [CODEBASE_REVIEW.md](CODEBASE_REVIEW.md) E6.)
+- **No block removes a condition.** The legacy `RemoveConditionType` verb was not ported: no
+  shipped content needs it (removal happens by disposing the owning lifetime scope, which
+  tears the marker and its mechanics down together). If a future spell must strip a condition
+  by *type* rather than by the scope that applied it, that is a new block, not a regression.
 - **The spell/effect registry is a process-wide singleton** shared across web sessions — a
   concern once more than one battle runs concurrently. (CODEBASE_REVIEW E12.)
-- **`src/rules/rule_engine.py` carries pre-existing flake8** (E402 module-level imports after
-  the logger, one F401 `SAFE_BUILTINS`). Left alone to avoid unrelated churn; clean it when
-  that file is next substantially edited (likely the §1 dispatch removal).
 
 ---
 
