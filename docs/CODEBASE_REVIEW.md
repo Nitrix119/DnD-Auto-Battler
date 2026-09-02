@@ -49,7 +49,7 @@ orchestrates and delegates to: `TurnManager` (round/turn lifecycle, condition-ba
 results (`context.hit`, `context.damage_dealt`, `context.save_success`) that later steps read
 via **sandboxed Python expressions** (`src/rules/expressions.py` — AST whitelist,
 `__builtins__={}`, no dunder access). Weapon attacks are translated into pipeline steps by
-`AttackResolver._build_pipeline_effects`. This unification is the design's best feature.
+`AttackResolver._default_program`. This unification is the design's best feature.
 
 **Rules & effects are data-driven too.** `src/rules/rule_engine.py` `RuleEngine` loads global
 rules (`rules/global/`: crits, concentration, damage modifiers) and named entity effects
@@ -179,8 +179,8 @@ parallel effect vocabularies bridged by synthetic stub events (`_handle_apply_co
 - **P0 — done:** E1 resistance loader · E2 `grant_temporary_hp` · E3 save advantage/disadvantage.
 - **P1 — done:** E4 friendly loader validation (enum lookups + `json.load`) · E8 logging fix ·
   E7 reconcile return shapes / update docstrings · E9 delete dead code (reconnection removed) ·
-  spell `effects` schema + linter (`src/rules/step_schema.py`), the foundation the "new spell" skill
-  builds on (design stage 1).
+  spell schema + linter — originally `src/rules/step_schema.py` for the legacy `effects` shape,
+  now `src/spells/validate.py` for the block `program` that replaced it (design stage 1).
 - **P2 — mostly done:** E11 seedable RNG · E5 multi-term formula validation · E10 dropped
   `for_each_defender` · E12 CELL_FEET sync comments · **E6 resolved** (per-event field schema +
   load-time rule validation). _Still open: the per-session spell registry. E13 (license) resolved:

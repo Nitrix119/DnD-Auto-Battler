@@ -16,32 +16,28 @@
 
 ## 0. Where the rework stands (one breath)
 
-Every shipped spell, every rule (`rules/global/*`, `rules/entity_effects/**`), and weapon
-attacks resolve on the **one** block engine (`src/spells/`). `EffectPipeline`, `fold.py` and
-the legacy `RuleEngine` dispatch (with `BUILTIN_EFFECTS`, `EffectInstance` and the legacy
-`Rule` shape) are **all gone** — a rule that is not a block `program` no longer loads. What
-remains is **one legacy compiler on the weapon path**, a short list of carried deviations,
-some awkwardness worth refining, and the post-rework feature threads.
+**The migration is done.** Spells, weapon attacks and rules are all block `program`s run by
+the one engine (`src/spells/`). Every translation layer is deleted — `EffectPipeline`,
+`fold.py`, `adapter.py`, `BUILTIN_EFFECTS`, `EffectInstance`, `step_schema.py`, and both
+legacy authoring shapes (`Rule.triggers`/`effects` and `SpellAction.pipeline_effects`).
+Content that is not a block program no longer loads. What remains is **no legacy code at
+all**: a short list of carried deviations, some awkwardness worth refining, and the
+post-rework feature threads — of which **rich program linting (§4) is the priority**.
 
 ---
 
-## 1. The last legacy code: `adapter.py` on the weapon path
+## 1. The one structural loose end
 
-`adapter.to_program` / `can_run_on_blocks` is the last legacy-`pipeline_effects` → block
-compiler. It survives because **weapon attacks** are still authored as a flat
-`damage`/`bonus_to_hit` list that `AttackResolver._build_pipeline_effects` compiles at cast
-time, rather than as a native `program`.
+**`RuleEngine.load_rule` installing rules on the block engine is an inverted dependency.**
+`RuleEngine` is now only a loader seam — it reads rule JSON and hands each program to
+`spells.global_rules.install_global_rules` / `spells.entity_effects.install_entity_effect` —
+plus a carrier for the `effect_registry` that `blocks/state.py` and `SpellResolver` read.
+The clean end state is a small native rule loader in `src/spells/` that owns global and
+condition install, with no `RuleEngine` at all, and the registry passed explicitly.
 
-The slice: author weapon attacks as native `program`s, delete `adapter.py`, then rename
-`Action.pipeline_effects` away. Two §3 items fall out with it — `adapter.py`'s vestigial
-`rule_lookup` param, and `can_run_on_blocks` being effectively always-true.
-
-Also lands here, because it is the last thing keeping the legacy engine's *shape* in the
-loader: **`RuleEngine.load_rule` installing rules on the block engine is still an inverted
-dependency** (§3). The clean end state is a small native rule loader that owns global and
-condition install with no `RuleEngine` at all. It shrank a lot with the dispatch deletion —
-`RuleEngine` is now only a loader seam plus the `effect_registry` it carries — but the
-inversion is real until then.
+Small and low-risk, but it is a *rename-and-move*, not a deletion: worth doing when the rich
+linting work (§4) is next in that area, so the two land together rather than churning the
+same files twice.
 
 ---
 
@@ -91,11 +87,6 @@ translator (`fold.py`) is gone, these can be cleaned up as standalone refinement
   spell does this, so it's latent. *Refinement:* make the condition rider holder-agnostic —
   install it on a child invocation whose `caster` **is** the conditioned entity, so the
   default `holder: "caster"` is always correct — and drop the baked `holder` from the files.
-- **`RuleEngine.load_rule` installing rules on the block engine is a transitional bridge.**
-  The loader reaching into the block engine is an inverted dependency; see §1, where it lands.
-- **`adapter.py`'s `rule_lookup` param is vestigial**, and `can_run_on_blocks` is effectively
-  always-true for shipped content (no spell has `pipeline_effects`). Both disappear when
-  weapons author natively and `adapter.py` goes (§1).
 - **`_capture_bindings` distinguishes string bindings (expressions) from non-string
   (already-resolved values).** This lets both native `bindings: {"charmer": "event.caster"}`
   and `apply_effect(instance_fields={"charmer": <Entity>})` work. Fine, but a string value

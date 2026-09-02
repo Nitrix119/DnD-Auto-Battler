@@ -73,8 +73,8 @@ Non-negotiable. Every change should be justifiable against these.
    raise precise errors that name the bad value and the valid options. A rule or spell
    `program` is validated at load by `src/spells/validate.py` — registered block types,
    required args, arity, `context.X` refs, and `event.<field>` refs against the enclosing
-   `trigger`'s declared event; legacy spell `effects` by `src/rules/step_schema.py`. A rule
-   that is not a block `program` does not load at all. _(Why the event check matters: a
+   `trigger`'s declared event, and any `scaling` object. Spells, weapons and rules all go
+   through it; content that is not a block `program` does not load at all. _(Why the event check matters: a
    trigger guard that raises `AttributeError` at fire time is swallowed as "did not fire",
    so a typo is invisible — see §9 2026-09-03.)_
 6. **Small, reversible changes.** Many small, well-tested commits over one large one.
@@ -92,17 +92,19 @@ Non-negotiable. Every change should be justifiable against these.
 
 ## 3. Architecture & modularity rules
 
-- **One resolution path for everything.** A `SpellAction` is authored either natively
-  (`program` in JSON, keyed by `block`) or legacily (`effects`, keyed by `type`). A native
-  `program` is parsed by `block.parse_program` and validated at load by
-  `spells.validate.validate_program`; a legacy `effects` list is translated at cast time by
-  `adapter.to_program`. Both become a **block program** run by the block **evaluator**
-  (`src/spells/evaluator.py`) over a shared ephemeral `context`: earlier blocks write results
+- **One resolution path for everything.** Spells, weapon attacks and rules are all a block
+  **`program`**: a list of blocks keyed by `block`, parsed by `block.parse_program`, validated
+  at load by `spells.validate.validate_program`, and run by the block **evaluator**
+  (`src/spells/evaluator.py`) over a shared ephemeral `context` — earlier blocks write results
   (`context.hit`, `context.damage_dealt`, `context.save_success`), later blocks read them.
-  **Weapon attacks compile into the same blocks** via `AttackResolver._build_pipeline_effects`
-  — never add a second resolution path. Prefer native `program` for new content; the legacy
-  `effects` form retires as the corpus migrates (Phase 3 §5). (The legacy `EffectPipeline` is
-  deleted.)
+  There is **no translation layer**: `EffectPipeline`, `fold.py` and `adapter.py` are all
+  deleted, and no second effect vocabulary exists. A weapon keeps its concise flat authoring
+  form (`bonus_to_hit` + `damage`), from which `AttackResolver._default_program` builds the
+  implied `[attack_roll, damage…]`; it may author a `program` instead when it needs more.
+  Never add a second resolution path.
+- **The authoring reference is generated.** `docs/BLOCK_REFERENCE.md` is rendered from the
+  block `REGISTRY` (`python -m src.spells.reference`) and drift-tested, so it cannot fall
+  behind the code. Adding a block means writing its docstring and contract, then regenerating.
 - **Registry, never `if/elif` on type.** New block type → add a handler under
   `src/spells/blocks/` and register it in the block `REGISTRY` (`src/spells/registry.py`),
   dispatched on the block's type. New spell → drop a JSON file in `examples/spells/`
@@ -301,9 +303,12 @@ leave a brief note here.
   rider's damage to `GENERIC`. The legacy path had hidden this because it ran on a *copy* whose
   `pipeline_effects` was populated.
 - **Rule going forward:** A reactive block reading off `event.action` at fire time must not assume the action
-  was compiled into `pipeline_effects` — a weapon's flat `damage`/`bonus_to_hit` list is the source of truth
+  was compiled into steps — a weapon's flat `damage`/`bonus_to_hit` list is the source of truth
   on the block path. `Action.primary_damage_type` now falls back to `damage[0]`. When a rider reads any
   action field, verify it is populated on the *raw* action the evaluator receives, not just on a compiled copy.
+- _(2026-09-03: `pipeline_effects` is deleted; `primary_damage_type` reads `program` with the same
+  flat-`damage` fallback, so the rule stands unchanged — a weapon's program is still built at resolve time
+  and never assigned to the action.)_
 
 ### 2026-08-29 — Black must be version-pinned; the repo predates the 2024 style
 - **Context:** Running `black src/ …` on files touched during the spell rework produced huge
