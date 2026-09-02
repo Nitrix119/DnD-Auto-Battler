@@ -247,7 +247,13 @@ class TestSpellEffectsWithoutRuleEngine:
         charmed = [c for c in goblin.get_active_conditions()
                    if c.condition_type.value == "charmed"]
         assert len(charmed) == 1          # marker applied
-        assert goblin.lifetimes == []     # but no rider installed without a registry
+
+        # No rider installed without a registry: the charmed mechanics (a charmed
+        # creature cannot attack its charmer) do not fire. The one lifetime present
+        # is the marker's own duration clock, which every condition carries.
+        assert bus.emit(EventType.ATTACK_DECLARED, attacker=goblin,
+                        defender=wizard, action=None).cancelled is False
+        assert goblin.lifetimes == [charmed[0].owning_scope]
 
 
 # ── Rule caching ──────────────────────────────────────────────────────────────

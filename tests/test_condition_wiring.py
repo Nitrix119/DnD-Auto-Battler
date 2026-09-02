@@ -179,6 +179,32 @@ class TestWiringSeams:
         # No rule wired → marker only, no mechanics, no crash.
         assert _declare(bus, blind, other).data.get("disadvantage", False) is False
 
+    def test_marker_only_condition_still_expires(self):
+        """A lifetime scope is the clock even with no reactive rule to install.
+
+        Otherwise a marker-only condition's duration would have no clock at all
+        once the legacy `RuleEngine._tick_durations` is gone.
+        """
+        caster, blind = _ent("Caster"), _ent("Blind")
+        bus, dp, engine = _wire(caster, blind, with_registry=False)
+        _apply_condition(bus, dp, engine, caster=caster, target=blind,
+                         ctype="blinded", duration=2)
+
+        assert [c.condition_type for c in blind.conditions] == [ConditionType.BLINDED]
+        blind.tick_lifetimes()  # end of turn 1: 2 → 1
+        assert blind.conditions != []
+        blind.tick_lifetimes()  # end of turn 2: 1 → 0 → dispose
+        assert blind.conditions == []
+
+    def test_marker_only_condition_without_duration_is_permanent(self):
+        caster, blind = _ent("Caster"), _ent("Blind")
+        bus, dp, engine = _wire(caster, blind, with_registry=False)
+        _apply_condition(bus, dp, engine, caster=caster, target=blind, ctype="blinded")
+
+        for _ in range(5):
+            blind.tick_lifetimes()
+        assert [c.condition_type for c in blind.conditions] == [ConditionType.BLINDED]
+
     def test_charm_binding_cancels_attack_on_the_charmer(self):
         """A `bindings` field carries per-instance closure values (Charmed's charmer),
         so a charm-shaped condition works through `apply_condition` too."""

@@ -101,24 +101,25 @@ def apply_condition(block: Block, inv: Invocation) -> None:
     )
     handle = target.add_condition(condition)
 
-    rule = _condition_rule(inv, ctype)
-    if rule is None:
-        # No reactive rule wired: today's behaviour — the marker alone, owned by any
-        # enclosing lifetime (else instantaneous/permanent).
-        _own(inv, handle)
+    # One clock for every condition, whether or not it has mechanics to install:
+    # an enclosing scope when there is one, else a rounds scope on the target keyed
+    # to ``duration``. A marker-only condition (no reactive rule wired) rides the same
+    # scope, so its duration has a clock — there is no second one to fall back on.
+    if inv.active_scope is not None:
+        scope = inv.active_scope  # e.g. a concentration spell (Hold Person)
     else:
-        if inv.active_scope is not None:
-            scope = inv.active_scope  # e.g. a concentration spell (Hold Person)
-        else:
-            scope = LifetimeScope(
-                kind=LifetimeKind.ROUNDS,
-                source=condition.source or ctype.value,
-                rounds_remaining=duration,  # None → permanent until dispelled
-            )
-            target.lifetimes.append(scope)
-        scope.add(handle)
-        condition.owning_scope = scope
-        condition.rounds_remaining = None  # the scope is the sole duration clock
+        scope = LifetimeScope(
+            kind=LifetimeKind.ROUNDS,
+            source=condition.source or ctype.value,
+            rounds_remaining=duration,  # None → permanent until dispelled
+        )
+        target.lifetimes.append(scope)
+    scope.add(handle)
+    condition.owning_scope = scope
+    condition.rounds_remaining = None  # the scope is the sole duration clock
+
+    rule = _condition_rule(inv, ctype)
+    if rule is not None:
         # `instance_fields` is the legacy-step field name (see the authoring guide);
         # `bindings` is the native block spelling. Accept either — the rider captures
         # them as closure values (Charmed's `charmer`).
