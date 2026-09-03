@@ -14,8 +14,8 @@ When the event fires, the handler builds a **fresh invocation** carrying the
 event's data (``event.<field>`` in expressions), evaluates the optional firing
 guard ``when`` (a distinct key from the evaluator's install-time ``condition``, so
 the guard is checked at *fire* time against the event, not when the trigger is
-installed), binds the current target from the optional ``target`` expression, and
-runs ``then``. Re-entrant events (a rider whose damage triggers another rider)
+installed), binds the current target from the optional ``rebind_target`` expression,
+and runs ``then``. Re-entrant events (a rider whose damage triggers another rider)
 are bounded by a depth guard (design §6.4) so a retaliation loop cannot recurse
 without limit.
 """
@@ -88,7 +88,7 @@ def trigger(block: Block, inv: Invocation) -> None:
     event_type = EventType[str(block.get("event", "")).upper()]
     then = list(block.then)
     when = block.get("when")  # firing guard — NOT `condition` (see module docstring)
-    target_expr = block.get("target")
+    target_expr = block.get("rebind_target")
     # Riders fire in the legacy entity-effect slot (priority -10) by default, i.e.
     # after priority-0 global rules like the per-turn resource refill — so a
     # per-turn grant lands after the reset, not before it. Overridable per block.
@@ -161,11 +161,12 @@ REGISTRY.register(
             Field("when", "expr",
                   description="Guard evaluated at fire time against the event; "
                               "the rider is skipped when falsy."),
-            # Unlike the two-value `target` selector on state blocks, this one is an
-            # expression naming the entity to rebind the target to when it fires.
-            Field("target", "expr",
-                  description="Expression naming the entity to act on when it fires "
-                              "(e.g. 'event.defender')."),
+            # Unlike the two-value `target` selector on state blocks, this is an
+            # expression naming the entity to rebind the current-target slot to when
+            # the rider fires — hence the distinct name (SPELL_SYSTEM_REMAINING §4).
+            Field("rebind_target", "expr",
+                  description="Expression naming the entity the `then` body acts on "
+                              "when the rider fires (e.g. 'event.defender')."),
             Field("holder", "choice", choices=("caster", "defender"),
                   description="Whose rider this is — which entity 'entity' resolves to."),
             Field("priority", "int",

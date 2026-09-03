@@ -5,7 +5,7 @@
       "block": "trigger",
       "event": "DAMAGE_DEALT",
       "priority": 0,
-      "target": "event.defender",
+      "rebind_target": "event.defender",
       "when": "event.defender.has_concentration and event.total > 0",
       "then": [
         {

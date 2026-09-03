@@ -5,7 +5,7 @@
       "block": "trigger",
       "event": "TURN_START",
       "priority": 0,
-      "target": "event.entity",
+      "rebind_target": "event.entity",
       "when": "True",
       "then": [
         { "block": "refill_resources", "target": "current" }

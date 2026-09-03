@@ -10,8 +10,8 @@ in-flight event; these two instead fire **on** an event and mutate an entity:
   the target's resources to its stat-block defaults.
 
 They are ordinary forward blocks acting on the current target; a global rule's
-trigger rebinds that target to the event entity (``target: "event.defender"`` /
-``"event.entity"``). Nothing about them is intrinsically "global"; they
+trigger rebinds that target to the event entity (``rebind_target: "event.defender"``
+/ ``"event.entity"``). Nothing about them is intrinsically "global"; they
 live together here because the two global rules are their only callers today, and can
 move into ``state.py`` if a spell ever reuses them.
 """

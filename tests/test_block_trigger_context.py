@@ -43,7 +43,7 @@ def _install(bus, dp, holder, program):
 # event's defender. On a crit the damage block doubles the dice → "4d1" = 4.
 _ONHIT_DAMAGE = [{
     "block": "trigger", "event": "ATTACK_HIT", "holder": "caster",
-    "target": "event.defender",
+    "rebind_target": "event.defender",
     "then": [{"block": "damage", 
               "damage_type": "FIRE", "formula": "2d1"}],
 }]
@@ -93,7 +93,7 @@ class TestDynamicDamageType:
         )
         rider = [{
             "block": "trigger", "event": "ATTACK_HIT", "holder": "caster",
-            "target": "event.defender",
+            "rebind_target": "event.defender",
             "then": [{"block": "damage", 
                       "damage_type": "event.action.primary_damage_type",
                       "formula": "1d1"}],

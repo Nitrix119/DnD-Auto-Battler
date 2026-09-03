@@ -26,9 +26,9 @@ _NATIVE_POISON = {
     "program": [
         {
             # `damage` has no target selector — the enclosing trigger decides who is
-            # targeted (here the holder, via `target: "event.entity"`).
+            # targeted (here the holder, via `rebind_target: "event.entity"`).
             "block": "trigger", "event": "TURN_START", "holder": "caster",
-            "when": "event.entity == entity", "target": "event.entity",
+            "when": "event.entity == entity", "rebind_target": "event.entity",
             "then": [
                 {"block": "damage", "formula": "1d6", "damage_type": "POISON"},
             ],

@@ -36,7 +36,7 @@
           "block": "trigger",
           "event": "ATTACK_HIT",
           "holder": "defender",
-          "target": "event.attacker",
+          "rebind_target": "event.attacker",
           "when": "event.defender == entity",
           "then": [
             {

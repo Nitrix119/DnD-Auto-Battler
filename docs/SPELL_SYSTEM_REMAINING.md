@@ -109,12 +109,6 @@ Each is its own design.
   | **"One of these is required"** — `healing` needs `amount` **or** `formula`, and silently returns when neither is present | `Field.required` cannot express an either/or; it wants a block-level constraint. |
   | **Unknown *top-level* keys** on spell/rule/creature JSON, outside any block | The same hole one level up. `_note` already lives there, so the `_`-prefix convention carries over. |
 
-- **`target` is overloaded.** On `trigger` it is an *expression* naming an entity to rebind
-  to; on state/healing/global blocks it is a `self`/`current` selector (renamed from
-  `caster`/`defender`, which read wrong inside a global rule — §3). The per-block schema
-  declares both correctly so nothing breaks, but the remaining half — the `trigger` one —
-  should be renamed (`trigger.rebind_target`) to retire the overload entirely: a content
-  migration, not a lint.
 - **`damage`/`attack_roll`/`saving_throw` have no target selector.** They act on the current
   target; retargeting is the enclosing `trigger`'s job. If a spell ever needs self-damage
   that is a deliberate feature (implement `target` on `damage`), not a lint fix.

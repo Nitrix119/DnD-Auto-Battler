@@ -123,6 +123,27 @@ class TestUnknownArgs:
         validate_program(
             [{"block": "cancel", "condition": "context.hit"}], spell_name="Fine")
 
+    def test_trigger_rebind_target_is_accepted(self):
+        # The rebind expression's current name (renamed from `target`, which now means
+        # the self/current selector on effect blocks — SPELL_SYSTEM_REMAINING §4).
+        validate_program(
+            [{"block": "trigger", "event": "ATTACK_HIT",
+              "rebind_target": "event.defender",
+              "then": [{"block": "damage", "damage_type": "FIRE",
+                        "formula": "1d6"}]}],
+            spell_name="Rider")
+
+    def test_old_trigger_target_key_is_now_rejected(self):
+        # The pre-rename spelling is an unknown arg on `trigger` — a stale content file
+        # fails loudly at load rather than silently not rebinding.
+        with pytest.raises(ProgramValidationError, match="target"):
+            validate_program(
+                [{"block": "trigger", "event": "ATTACK_HIT",
+                  "target": "event.defender",
+                  "then": [{"block": "damage", "damage_type": "FIRE",
+                            "formula": "1d6"}]}],
+                spell_name="Stale")
+
     def test_underscore_prefixed_keys_are_allowed_as_commentary(self):
         validate_program(
             [{"block": "damage", "damage_type": "FIRE", "formula": "1d6",

@@ -6,7 +6,7 @@
       "block": "trigger",
       "event": "ATTACK_HIT",
       "holder": "caster",
-      "target": "event.defender",
+      "rebind_target": "event.defender",
       "when": "event.attacker == entity and event.defender.hp < event.defender.max_hp",
       "then": [
         {

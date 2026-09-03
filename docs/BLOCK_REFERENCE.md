@@ -364,7 +364,7 @@ Subscribe this block's ``then`` to an event; scope it to the open lifetime.
 |---|---|---|---|
 | `event` | yes | a `EventType` name | The combat event this rider fires on. |
 | `when` |  | an expression | Guard evaluated at fire time against the event; the rider is skipped when falsy. |
-| `target` |  | an expression | Expression naming the entity to act on when it fires (e.g. 'event.defender'). |
+| `rebind_target` |  | an expression | Expression naming the entity the `then` body acts on when the rider fires (e.g. 'event.defender'). |
 | `holder` |  | `caster` / `defender` | Whose rider this is — which entity 'entity' resolves to. |
 | `priority` |  | an integer | Bus subscription priority; lower runs later. |
 | `bindings` |  | an object of name → expression | Values captured once at install, read later as instance_fields.<name>. |
