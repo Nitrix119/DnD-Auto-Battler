@@ -13,10 +13,8 @@ import os
 from unittest.mock import patch
 
 from src.combat.damage_processor import DamageProcessor
-from src.combat.effect_pipeline import EffectPipeline
 from src.combat.event_bus import EventBus
 from src.combat.events import EventType
-from src.loaders.stat_block_loader import StatBlockLoader
 from src.models import Entity
 from src.models.ability import AbilityScores
 from src.models.action import SpellAction
@@ -27,7 +25,8 @@ from src.models.spell_properties import (
     TargetingType,
 )
 from src.models.stat_block import StatBlock
-from src.rules import RuleEngine, RuleLoader
+from src.rules import RuleLoader
+from src.spells.rules import apply_entity_rule
 from src.utils.saving_throw import roll_saving_throw
 
 CONDITIONS_DIR = os.path.join(
@@ -88,10 +87,12 @@ class TestRollSavingThrowRollMode:
 
 class TestRestrainedSaveWiring:
     def _setup(self, target):
+        # Restrained installs on the block engine as holder-scoped triggers; a
+        # damage_processor is wired so any damage block in the rider can roll.
         bus = EventBus()
-        engine = RuleEngine(bus, entities_getter=lambda: [target])
         rule = RuleLoader.load(RESTRAINED_JSON)
-        engine.apply_effect(target, rule)
+        apply_entity_rule(target, rule, event_bus=bus,
+                          damage_processor=DamageProcessor(bus))
         return bus
 
     def test_dex_save_gets_disadvantage(self):
@@ -116,8 +117,8 @@ class TestRestrainedSaveWiring:
         target = _plain_entity("Restrained")
         other = _plain_entity("Free")
         bus = EventBus()
-        engine = RuleEngine(bus, entities_getter=lambda: [target, other])
-        engine.apply_effect(target, RuleLoader.load(RESTRAINED_JSON))
+        apply_entity_rule(target, RuleLoader.load(RESTRAINED_JSON),
+                          event_bus=bus, damage_processor=DamageProcessor(bus))
         event = bus.emit(
             EventType.SAVING_THROW_DECLARED,
             defender=other, ability="dexterity", dc=15,
@@ -126,10 +127,10 @@ class TestRestrainedSaveWiring:
 
 
 # ---------------------------------------------------------------------------
-# Integration: the pipeline actually rolls the save with disadvantage
+# Integration: the block engine actually rolls the save with disadvantage
 # ---------------------------------------------------------------------------
 
-class TestPipelineSaveRollMode:
+class TestBlockSaveRollMode:
     def _dex_save_spell(self) -> SpellAction:
         return SpellAction(
             name="Test Save Spell",
@@ -139,32 +140,41 @@ class TestPipelineSaveRollMode:
             casting_time=CastingTime(CastingTimeType.ACTION),
             duration=Duration(DurationUnit.INSTANTANEOUS),
             components=SpellComponents(verbal=True, somatic=False),
-            pipeline_effects=[
-                {"type": "saving_throw", "attribute": "dexterity", "dc": "use_caster_dc"},
-                {"type": "damage", "damage_type": "FIRE", "formula": "10",
+            program=[
+                {"block": "saving_throw", "attribute": "dexterity", "dc": "use_caster_dc"},
+                {"block": "damage", "damage_type": "FIRE", "formula": "10",
                  "save_result": {"on_success": "half_damage"}},
             ],
         )
 
-    def test_disadvantage_flag_makes_pipeline_use_disadvantage_roll(self):
+    def _resolve(self, caster, target, bus):
+        from src.spells.evaluator import resolve as resolve_blocks
+        from src.spells.block import parse_program
+
+        spell = self._dex_save_spell()
+        program = parse_program(spell.program)
+        return resolve_blocks(
+            caster, target, spell, program,
+            event_bus=bus, damage_processor=DamageProcessor(bus),
+        )
+
+    def test_disadvantage_flag_makes_save_use_disadvantage_roll(self):
         caster, target = _caster(), _plain_entity()
         bus = EventBus()
         bus.subscribe(
             EventType.SAVING_THROW_DECLARED,
             lambda e: e.data.__setitem__("disadvantage", True),
         )
-        pipeline = EffectPipeline(bus, DamageProcessor(bus))
         # Disadvantage path (min of two) returns 2; normal path would return 20.
         with patch("src.utils.saving_throw.roll_with_disadvantage", return_value=2), \
              patch("src.utils.saving_throw.roll_d20", return_value=20):
-            result = pipeline.run(caster, target, self._dex_save_spell())
+            result = self._resolve(caster, target, bus)
         assert result.save_roll == 2  # disadvantage roll was used, not the normal 20
 
-    def test_without_flag_pipeline_uses_normal_roll(self):
+    def test_without_flag_uses_normal_roll(self):
         caster, target = _caster(), _plain_entity()
         bus = EventBus()
-        pipeline = EffectPipeline(bus, DamageProcessor(bus))
         with patch("src.utils.saving_throw.roll_with_disadvantage", return_value=2), \
              patch("src.utils.saving_throw.roll_d20", return_value=20):
-            result = pipeline.run(caster, target, self._dex_save_spell())
+            result = self._resolve(caster, target, bus)
         assert result.save_roll == 20  # normal single roll

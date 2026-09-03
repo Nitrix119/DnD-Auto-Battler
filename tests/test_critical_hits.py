@@ -4,22 +4,20 @@ Natural 1  → always miss, regardless of attack bonus vs AC.
 Natural 20 → always hit, regardless of AC vs attack total.
             + deal double the base damage *dice* (modifiers are added once).
 
-These tests are written TDD-style and are expected to FAIL until the
-nat-1/nat-20 logic is implemented in AttackResolver and EffectPipeline.
+Both weapon attacks (AttackResolver) and spell attacks (the block evaluator)
+resolve on the block engine; the nat-1/nat-20 crit rules ride the shared bus.
 """
 
 import os
 from unittest.mock import patch
 
-import pytest
-
 from src.models import AbilityScores, StatBlock, Entity, AttackAction, Damage, DamageType
 from src.models.action import SpellAction
+from src.models.spell_properties import TargetingType
 from src.combat.event_bus import EventBus
 from src.combat.damage_processor import DamageProcessor
 from src.combat.attack_resolver import AttackResolver
-from src.combat.effect_pipeline import EffectPipeline
-from src.rules import RuleEngine
+from src.spells.rules import load_rules_from_directory
 
 GLOBAL_RULES_DIR = os.path.join(os.path.dirname(__file__), "..", "rules", "global")
 
@@ -41,17 +39,21 @@ def _make_entity(name: str, ac: int = 10, hp: int = 100) -> Entity:
 def _make_resolver():
     bus = EventBus()
     dp = DamageProcessor(bus)
-    engine = RuleEngine(bus)
-    engine.load_from_directory(GLOBAL_RULES_DIR)
+    load_rules_from_directory(GLOBAL_RULES_DIR, event_bus=bus)
     return AttackResolver(bus, dp), dp
 
 
-def _make_pipeline():
+def _resolve_spell(caster, defender, spell):
+    """Resolve a spell attack on the block engine, with the crit rules on the bus."""
+    from src.spells.evaluator import resolve as resolve_blocks
+    from src.spells.block import parse_program
+
     bus = EventBus()
     dp = DamageProcessor(bus)
-    engine = RuleEngine(bus)
-    engine.load_from_directory(GLOBAL_RULES_DIR)
-    return EffectPipeline(bus, dp, rule_engine=engine), dp
+    load_rules_from_directory(GLOBAL_RULES_DIR, event_bus=bus)  # nat-20/nat-1
+    program = parse_program(spell.program)
+    return resolve_blocks(caster, defender, spell, program,
+                          event_bus=bus, damage_processor=dp)
 
 
 def _sword(bonus_to_hit: int = 0, die_sides: int = 8) -> AttackAction:
@@ -69,13 +71,13 @@ def _attack_spell(die_sides: int = 8) -> SpellAction:
     return SpellAction(
         name="Force Bolt",
         description="A test spell attack",
-        pipeline_effects=[
+        program=[
             {
-                "type": "attack_roll",
+                "block": "attack_roll",
                 "attack_bonus": 0,
             },
             {
-                "type": "damage",
+                "block": "damage",
                 "formula": f"1d{die_sides}",
                 "damage_type": "FORCE",
                 "requires_hit": True,
@@ -98,7 +100,7 @@ class TestNatural1WeaponAttack:
         resolver, _ = _make_resolver()
         sword = _sword(bonus_to_hit=20)
 
-        with patch("src.combat.effect_pipeline.roll_d20", return_value=1):
+        with patch("src.spells.blocks.rolls.roll_d20", return_value=1):
             hit, damage, _log, _detail = resolver.resolve(attacker, defender, sword)
 
         assert not hit, "Natural 1 must always be a miss regardless of attack bonus"
@@ -110,7 +112,7 @@ class TestNatural1WeaponAttack:
         sword = _sword(bonus_to_hit=20)
         initial_hp = defender.hp
 
-        with patch("src.combat.effect_pipeline.roll_d20", return_value=1):
+        with patch("src.spells.blocks.rolls.roll_d20", return_value=1):
             resolver.resolve(attacker, defender, sword)
 
         assert defender.hp == initial_hp, "Natural 1 miss must deal no damage"
@@ -130,7 +132,7 @@ class TestNatural20WeaponAttack:
         resolver, _ = _make_resolver()
         sword = _sword(bonus_to_hit=0)
 
-        with patch("src.combat.effect_pipeline.roll_d20", return_value=20):
+        with patch("src.spells.blocks.rolls.roll_d20", return_value=20):
             hit, damage, _log, _detail = resolver.resolve(attacker, defender, sword)
 
         assert hit, "Natural 20 must always be a hit regardless of AC"
@@ -141,7 +143,7 @@ class TestNatural20WeaponAttack:
         resolver, _ = _make_resolver()
         sword = _sword(bonus_to_hit=0)
 
-        with patch("src.combat.effect_pipeline.roll_d20", return_value=20):
+        with patch("src.spells.blocks.rolls.roll_d20", return_value=20):
             hit, damage, _log, _detail = resolver.resolve(attacker, defender, sword)
 
         assert damage > 0, "Natural 20 hit must deal damage"
@@ -158,7 +160,7 @@ class TestNatural20WeaponAttack:
         resolver, _ = _make_resolver()
         sword = _sword(bonus_to_hit=0, die_sides=8)
 
-        with patch("src.combat.effect_pipeline.roll_d20", return_value=20), \
+        with patch("src.spells.blocks.rolls.roll_d20", return_value=20), \
              patch("src.utils.dice.roll_dice", side_effect=lambda n, _s: n * 4):
             _hit, damage, _log, _detail = resolver.resolve(attacker, defender, sword)
 
@@ -178,40 +180,22 @@ class TestNatural1SpellAttack:
         """Spell with +20 bonus vs AC 5: total 21 normally hits, but nat 1 → miss."""
         caster = _make_entity("Caster")
         defender = _make_entity("Defender", ac=5)
-        pipeline, _ = _make_pipeline()
+        spell = _attack_spell()
+        spell.program[0]["attack_bonus"] = 20
 
-        spell = SpellAction(
-            name="Force Bolt",
-            description="Test spell",
-            pipeline_effects=[
-                {"type": "attack_roll", "attack_bonus": 20},
-                {"type": "damage", "formula": "1d8", "damage_type": "FORCE",
-                 "requires_hit": True},
-            ],
-        )
-
-        with patch("src.combat.effect_pipeline.roll_d20", return_value=1):
-            result = pipeline.run(caster, defender, spell)
+        with patch("src.spells.blocks.rolls.roll_d20", return_value=1):
+            result = _resolve_spell(caster, defender, spell)
 
         assert not result.hit, "Natural 1 spell attack must always miss"
 
     def test_nat_1_spell_deals_no_damage(self):
         caster = _make_entity("Caster")
         defender = _make_entity("Defender", ac=5)
-        pipeline, _ = _make_pipeline()
+        spell = _attack_spell()
+        spell.program[0]["attack_bonus"] = 20
 
-        spell = SpellAction(
-            name="Force Bolt",
-            description="Test spell",
-            pipeline_effects=[
-                {"type": "attack_roll", "attack_bonus": 20},
-                {"type": "damage", "formula": "1d8", "damage_type": "FORCE",
-                 "requires_hit": True},
-            ],
-        )
-
-        with patch("src.combat.effect_pipeline.roll_d20", return_value=1):
-            result = pipeline.run(caster, defender, spell)
+        with patch("src.spells.blocks.rolls.roll_d20", return_value=1):
+            result = _resolve_spell(caster, defender, spell)
 
         assert result.damage_dealt == 0, "Natural 1 spell miss must deal no damage"
 
@@ -227,22 +211,18 @@ class TestNatural20SpellAttack:
         """Spell +0 vs AC 30: total 20 < 30 normally, but nat 20 → hit."""
         caster = _make_entity("Caster")
         defender = _make_entity("Defender", ac=30, hp=200)
-        pipeline, _ = _make_pipeline()
-        spell = _attack_spell()
 
-        with patch("src.combat.effect_pipeline.roll_d20", return_value=20):
-            result = pipeline.run(caster, defender, spell)
+        with patch("src.spells.blocks.rolls.roll_d20", return_value=20):
+            result = _resolve_spell(caster, defender, _attack_spell())
 
         assert result.hit, "Natural 20 spell attack must always hit regardless of AC"
 
     def test_nat_20_spell_deals_damage(self):
         caster = _make_entity("Caster")
         defender = _make_entity("Defender", ac=30, hp=200)
-        pipeline, _ = _make_pipeline()
-        spell = _attack_spell()
 
-        with patch("src.combat.effect_pipeline.roll_d20", return_value=20):
-            result = pipeline.run(caster, defender, spell)
+        with patch("src.spells.blocks.rolls.roll_d20", return_value=20):
+            result = _resolve_spell(caster, defender, _attack_spell())
 
         assert result.damage_dealt > 0, "Natural 20 spell hit must deal damage"
 
@@ -255,12 +235,10 @@ class TestNatural20SpellAttack:
         """
         caster = _make_entity("Caster")
         defender = _make_entity("Defender", ac=1, hp=200)
-        pipeline, _ = _make_pipeline()
-        spell = _attack_spell(die_sides=8)
 
-        with patch("src.combat.effect_pipeline.roll_d20", return_value=20), \
+        with patch("src.spells.blocks.rolls.roll_d20", return_value=20), \
              patch("src.utils.dice.roll_dice", side_effect=lambda n, _s: n * 4):
-            result = pipeline.run(caster, defender, spell)
+            result = _resolve_spell(caster, defender, _attack_spell(die_sides=8))
 
         assert result.damage_dealt == 8, (
             f"Critical spell hit with 1d8 (pinned to 4/die) should deal 8 (2d8), "

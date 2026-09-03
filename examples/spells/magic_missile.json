@@ -7,7 +7,7 @@
     "type": "feet",
     "distance_ft": 120
   },
-  "targeting_type": "single_target",
+  "targeting_type": "multi_target",
   "casting_time": {
     "type": "action",
     "count": 1
@@ -21,12 +21,16 @@
     "material": []
   },
   "higher_level_scaling": "When you cast this spell using a spell slot of 2nd level or higher, the spell creates one more dart for each slot level above 1st.",
-  "effects": [
+  "program": [
     {
-      "type": "damage",
-      "target": "defender",
-      "damage_type": "FORCE",
-      "formula": "3d4+3"
+      "block": "for_each_target",
+      "then": [
+        {
+          "block": "damage",
+          "damage_type": "FORCE",
+          "formula": "1d4+1"
+        }
+      ]
     }
   ],
   "animation": [

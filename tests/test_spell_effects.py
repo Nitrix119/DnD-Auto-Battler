@@ -5,21 +5,18 @@ that saving throws gate their application via ``condition``, and that
 ``instance_fields`` expressions are evaluated correctly at spell-hit time.
 """
 
-import os
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
 
-from src.models import Entity, SpellAction, DamageType
-from src.models.damage import Damage
+from src.models import Entity, SpellAction
 from src.combat import EventBus, EventType
 from src.combat.event_data import TurnEventData
 from src.combat.spell_resolver import SpellResolver
 from src.combat.damage_processor import DamageProcessor
-from src.combat.attack_resolver import AttackResolver
 from src.loaders.stat_block_loader import StatBlockLoader
-from src.rules import EffectRegistry, RuleEngine, RuleLoader
+from src.rules import EffectRegistry
+from src.spells.rules import load_rule_file
 
 EXAMPLES_DIR = Path(__file__).parent.parent / "examples"
 SPELLS_DIR = EXAMPLES_DIR / "spells"
@@ -41,24 +38,25 @@ def load_goblin() -> Entity:
 
 
 def setup_engine_and_resolver(*entities):
-    """Return (bus, rule_engine, spell_resolver) wired together."""
-    entity_list = list(entities)
+    """Return (bus, condition_rules, spell_resolver) wired together."""
     bus = EventBus()
     damage_proc = DamageProcessor(bus)
     registry = EffectRegistry()
     registry.scan_directory("rules/entity_effects")
-    engine = RuleEngine(bus, entities_getter=lambda: entity_list,
-                        damage_processor=damage_proc, effect_registry=registry)
-    resolver = SpellResolver(bus, damage_proc, rule_engine=engine)
-    return bus, engine, resolver
+    resolver = SpellResolver(bus, damage_proc, condition_rules=registry)
+    return bus, registry, resolver
 
 
 def charm_person_spell(save_dc: int = 13) -> SpellAction:
-    """Load Charm Person from the example spell file, overriding the save DC."""
+    """Load Charm Person from the example spell file, overriding the save DC.
+
+    Charm Person is a native ``program`` (Phase 3 §5); its saving-throw block lives
+    in ``program``, so the DC override targets that.
+    """
     spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "charm_person.json"))
-    for step in spell.pipeline_effects:
-        if step.get("type") == "saving_throw":
-            step["dc"] = save_dc
+    for block in spell.program:
+        if block.get("block") == "saving_throw":
+            block["dc"] = save_dc
     return spell
 
 
@@ -66,32 +64,34 @@ def charm_person_spell(save_dc: int = 13) -> SpellAction:
 
 class TestSpellEffectLoading:
 
-    def test_charm_person_loads_effects(self):
-        """charm_person.json should parse its effects list into pipeline_effects."""
+    def test_charm_person_loads_program(self):
+        """charm_person.json parses into a native program: a save then an
+        apply_condition for ``charmed``, gated on a failed save, binding the charmer."""
         spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "charm_person.json"))
-        effect_steps = [s for s in spell.pipeline_effects if s.get("type") == "add_entity_effect"]
-        assert len(effect_steps) == 1
-        step = effect_steps[0]
-        assert step.get("entity_effect_name") == "charmed"
-        assert step.get("condition") == "not context.save_success"
-        assert step.get("instance_fields", {}).get("charmer") == "event.caster"
+        assert spell.program
+        cond = [b for b in spell.program if b.get("block") == "apply_condition"]
+        assert len(cond) == 1
+        block = cond[0]
+        assert block.get("condition_type") == "charmed"
+        assert block.get("condition") == "not context.save_success"
+        assert block.get("bindings", {}).get("charmer") == "event.caster"
 
     def test_charm_person_save_ability(self):
         spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "charm_person.json"))
-        save_steps = [s for s in spell.pipeline_effects if s.get("type") == "saving_throw"]
+        save_steps = [b for b in spell.program if b.get("block") == "saving_throw"]
         assert save_steps[0]["attribute"] == "wisdom"
         assert save_steps[0]["dc"] == "use_caster_dc"
 
     def test_spell_without_effects_has_no_entity_effect_steps(self):
         """Firebolt has no add_entity_effect steps in the pipeline."""
         spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "firebolt.json"))
-        effect_steps = [s for s in spell.pipeline_effects if s.get("type") == "add_entity_effect"]
+        effect_steps = [b for b in spell.program if b.get("block") == "add_entity_effect"]
         assert effect_steps == []
 
     def test_spell_without_save_has_no_saving_throw_step(self):
         """Firebolt has no saving_throw step in the pipeline."""
         spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "firebolt.json"))
-        save_steps = [s for s in spell.pipeline_effects if s.get("type") == "saving_throw"]
+        save_steps = [b for b in spell.program if b.get("block") == "saving_throw"]
         assert save_steps == []
 
 
@@ -103,7 +103,7 @@ class TestSavingThrows:
         """SPELL_HIT event should carry save_success and save_roll when save_dc > 0."""
         wizard = load_wizard()
         goblin = load_goblin()
-        bus, engine, resolver = setup_engine_and_resolver(wizard, goblin)
+        bus, reg, resolver = setup_engine_and_resolver(wizard, goblin)
 
         spell_hit_events = []
         bus.subscribe(EventType.SPELL_HIT, lambda e: spell_hit_events.append(e))
@@ -121,7 +121,7 @@ class TestSavingThrows:
         """save_success should be True when the save roll exceeds the DC."""
         wizard = load_wizard()
         goblin = load_goblin()
-        bus, engine, resolver = setup_engine_and_resolver(wizard, goblin)
+        bus, reg, resolver = setup_engine_and_resolver(wizard, goblin)
 
         spell_hit_events = []
         bus.subscribe(EventType.SPELL_HIT, lambda e: spell_hit_events.append(e))
@@ -141,7 +141,7 @@ class TestSavingThrows:
         """
         wizard = load_wizard()
         goblin = load_goblin()
-        bus, engine, resolver = setup_engine_and_resolver(wizard, goblin)
+        bus, reg, resolver = setup_engine_and_resolver(wizard, goblin)
 
         spell_hit_events = []
         bus.subscribe(EventType.SPELL_HIT, lambda e: spell_hit_events.append(e))
@@ -158,41 +158,43 @@ class TestSavingThrows:
 class TestSpellEffectApplicationOnFailedSave:
 
     def test_charmed_applied_when_save_fails(self):
-        """Charm Person should apply the charmed effect when the defender fails the save."""
+        """Charm Person applies charmed (on the new engine) when the defender fails."""
         wizard = load_wizard()
         goblin = load_goblin()
-        bus, engine, resolver = setup_engine_and_resolver(wizard, goblin)
+        bus, reg, resolver = setup_engine_and_resolver(wizard, goblin)
 
         spell = charm_person_spell(save_dc=30)  # DC 30 — goblin always fails
 
         with patch("src.utils.saving_throw.roll_d20", return_value=1):
             resolver.resolve(wizard, [goblin], spell)
 
-        # The goblin should now have the charmed entity effect applied
-        assert "attack_declared" in goblin.active_effects
-        instances = goblin.active_effects["attack_declared"]
-        assert len(instances) == 1
-        assert instances[0].name == "charmed"
-        assert instances[0].instance_fields.get("charmer") is wizard
+        # A lifetime on the goblin holds the charmed
+        # rider, and the captured charmer (the wizard) blocks the goblin's attack
+        # on the wizard (the instance_fields closure took effect).
+        assert len(goblin.lifetimes) == 1
+        action = next(a for a in goblin.stat_block.actions if a.name == "Scimitar")
+        event = bus.emit(EventType.ATTACK_DECLARED,
+                         attacker=goblin, defender=wizard, action=action)
+        assert event.cancelled is True
 
     def test_charmed_not_applied_when_save_succeeds(self):
         """Charm Person should NOT apply the charmed effect when the defender succeeds."""
         wizard = load_wizard()
         goblin = load_goblin()
-        bus, engine, resolver = setup_engine_and_resolver(wizard, goblin)
+        bus, reg, resolver = setup_engine_and_resolver(wizard, goblin)
 
         spell = charm_person_spell(save_dc=1)  # DC 1 — goblin always succeeds
 
         with patch("src.utils.saving_throw.roll_d20", return_value=20):
             resolver.resolve(wizard, [goblin], spell)
 
-        assert goblin.active_effects.get("attack_declared", []) == []
+        assert goblin.lifetimes == []  # no charmed rider installed
 
     def test_charmed_attack_is_blocked_after_spell(self):
         """After a successful Charm Person cast, the charmed goblin cannot attack the wizard."""
         wizard = load_wizard()
         goblin = load_goblin()
-        bus, engine, resolver = setup_engine_and_resolver(wizard, goblin)
+        bus, reg, resolver = setup_engine_and_resolver(wizard, goblin)
 
         spell = charm_person_spell(save_dc=30)  # goblin always fails
 
@@ -210,7 +212,7 @@ class TestSpellEffectApplicationOnFailedSave:
         wizard = load_wizard()
         goblin = load_goblin()
         bystander = load_goblin()
-        bus, engine, resolver = setup_engine_and_resolver(wizard, goblin, bystander)
+        bus, reg, resolver = setup_engine_and_resolver(wizard, goblin, bystander)
 
         spell = charm_person_spell(save_dc=30)
 
@@ -223,26 +225,33 @@ class TestSpellEffectApplicationOnFailedSave:
         assert event.cancelled is False
 
 
-# ── No rule_engine — effects silently skipped ─────────────────────────────────
+# ── No condition catalogue — mechanics silently skipped ──────────────────────
 
-class TestSpellEffectsWithoutRuleEngine:
+class TestSpellEffectsWithoutConditionRules:
 
-    def test_spell_effects_silently_skipped_without_rule_engine(self):
-        """If no rule_engine is set, spell effects do nothing and no error is raised."""
+    def test_native_condition_degrades_without_condition_rules(self):
+        """Without a rule engine (no effect registry), a native ``apply_condition``
+        still adds the condition *marker* but installs no reactive rider — a graceful
+        degrade, not a crash. (Loud-fail for unexpressable native content is at load,
+        via ``validate_program``; see tests/test_validate_program.py.)"""
         wizard = load_wizard()
         goblin = load_goblin()
         bus = EventBus()
-        damage_proc = DamageProcessor(bus)
-        resolver = SpellResolver(bus, damage_proc, rule_engine=None)
+        resolver = SpellResolver(bus, DamageProcessor(bus), condition_rules=None)
 
-        spell = charm_person_spell(save_dc=30)
+        spell = charm_person_spell(save_dc=30)  # save auto-fails → charm applies
+        resolver.resolve(wizard, [goblin], spell)
 
-        with patch("src.utils.saving_throw.roll_d20", return_value=1):
-            results = resolver.resolve(wizard, [goblin], spell)
+        charmed = [c for c in goblin.get_active_conditions()
+                   if c.condition_type.value == "charmed"]
+        assert len(charmed) == 1          # marker applied
 
-        # Resolves without error; no active effects on goblin
-        assert results[0][0] is True  # hit (auto-hit for save spell)
-        assert goblin.active_effects == {}
+        # No rider installed without a registry: the charmed mechanics (a charmed
+        # creature cannot attack its charmer) do not fire. The one lifetime present
+        # is the marker's own duration clock, which every condition carries.
+        assert bus.emit(EventType.ATTACK_DECLARED, attacker=goblin,
+                        defender=wizard, action=None).cancelled is False
+        assert goblin.lifetimes == [charmed[0].owning_scope]
 
 
 # ── Rule caching ──────────────────────────────────────────────────────────────
@@ -250,11 +259,12 @@ class TestSpellEffectsWithoutRuleEngine:
 class TestRuleCaching:
 
     def test_registry_returns_same_rule_object(self):
-        """The same Rule object should be reused across multiple spell resolutions."""
+        """The charmed Rule template is cached (not re-parsed per cast), while each
+        cast installs its own independent rider."""
         wizard = load_wizard()
         goblin_a = load_goblin()
         goblin_b = load_goblin()
-        bus, engine, resolver = setup_engine_and_resolver(wizard, goblin_a, goblin_b)
+        bus, reg, resolver = setup_engine_and_resolver(wizard, goblin_a, goblin_b)
 
         spell = charm_person_spell(save_dc=30)
 
@@ -262,33 +272,29 @@ class TestRuleCaching:
             resolver.resolve(wizard, [goblin_a], spell)
             resolver.resolve(wizard, [goblin_b], spell)
 
-        # Both goblins should share the same Rule template object
-        instance_a = goblin_a.active_effects["attack_declared"][0]
-        instance_b = goblin_b.active_effects["attack_declared"][0]
-        assert instance_a.rule is instance_b.rule
-        # But they should be different EffectInstances
-        assert instance_a is not instance_b
+        # The rule template is the same cached object across lookups (not re-parsed).
+        assert reg.get("charmed") is reg.get("charmed")
+        # But each cast installed its own independent rider (a lifetime per goblin).
+        assert len(goblin_a.lifetimes) == 1
+        assert len(goblin_b.lifetimes) == 1
+        assert goblin_a.lifetimes[0] is not goblin_b.lifetimes[0]
 
 
 # ── CombatSystem integration ──────────────────────────────────────────────────
 
 class TestCombatSystemIntegration:
 
-    def test_rule_engine_wired_via_combat_system(self):
-        """Setting combat.rule_engine should wire the rule_engine to SpellResolver."""
+    def test_condition_rules_wired_via_combat_system(self):
+        """Setting combat.condition_rules must reach the SpellResolver."""
         from src.combat import CombatSystem
 
-        wizard = load_wizard()
-        goblin = load_goblin()
-
-        bus = EventBus()
-        engine = RuleEngine(bus, entities_getter=lambda: [wizard, goblin])
+        registry = EffectRegistry()
 
         cs = CombatSystem()
-        cs.event_bus = bus
-        cs.rule_engine = engine
+        cs.event_bus = EventBus()
+        cs.condition_rules = registry
 
-        assert cs._spell_resolver.rule_engine is engine
+        assert cs._spell_resolver.condition_rules is registry
 
     def test_charm_person_via_combat_system_resolve_spell(self):
         """Calling CombatSystem.resolve_spell with Charm Person should apply charmed."""
@@ -300,12 +306,9 @@ class TestCombatSystemIntegration:
         bus = EventBus()
         registry = EffectRegistry()
         registry.scan_directory("rules/entity_effects")
-        engine = RuleEngine(bus, entities_getter=lambda: [wizard, goblin],
-                            effect_registry=registry)
-
         cs = CombatSystem()
         cs.event_bus = bus
-        cs.rule_engine = engine
+        cs.condition_rules = registry
         cs.add_combatant(wizard, initiative_modifier=100)
         cs.add_combatant(goblin, initiative_modifier=0)
 
@@ -314,10 +317,13 @@ class TestCombatSystemIntegration:
         with patch("src.utils.saving_throw.roll_d20", return_value=1):
             cs.resolve_spell(wizard, [goblin], spell)
 
-        assert "attack_declared" in goblin.active_effects
-        instance = goblin.active_effects["attack_declared"][0]
-        assert instance.name == "charmed"
-        assert instance.instance_fields.get("charmer") is wizard
+        # The goblin holds a charmed lifetime and cannot
+        # attack the wizard (its captured charmer).
+        assert len(goblin.lifetimes) == 1
+        action = next(a for a in goblin.stat_block.actions if a.name == "Scimitar")
+        event = bus.emit(EventType.ATTACK_DECLARED,
+                         attacker=goblin, defender=wizard, action=action)
+        assert event.cancelled is True
 
 
 # ── Longstrider spell integration ────────────────────────────────────────────
@@ -336,7 +342,7 @@ class TestShieldOfFaithEffect:
         """Casting Shield of Faith on an entity raises its AC by 2."""
         cleric = load_cleric()
         goblin = load_goblin()
-        bus, engine, resolver = setup_engine_and_resolver(cleric, goblin)
+        bus, reg, resolver = setup_engine_and_resolver(cleric, goblin)
 
         spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "shield_of_faith.json"))
         base_ac = cleric.ac
@@ -349,7 +355,7 @@ class TestShieldOfFaithEffect:
         """A StatModifier with the correct fields is added to the target."""
         cleric = load_cleric()
         goblin = load_goblin()
-        bus, engine, resolver = setup_engine_and_resolver(cleric, goblin)
+        bus, reg, resolver = setup_engine_and_resolver(cleric, goblin)
 
         spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "shield_of_faith.json"))
         resolver.resolve(cleric, [cleric], spell)
@@ -365,7 +371,7 @@ class TestShieldOfFaithEffect:
         """get_stat_breakdown returns the base AC line followed by the spell modifier."""
         cleric = load_cleric()
         goblin = load_goblin()
-        bus, engine, resolver = setup_engine_and_resolver(cleric, goblin)
+        bus, reg, resolver = setup_engine_and_resolver(cleric, goblin)
 
         spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "shield_of_faith.json"))
         base_ac = cleric.stat_block.armor_class
@@ -380,7 +386,7 @@ class TestShieldOfFaithEffect:
         """After casting, the caster's concentrating_on and concentration_target are set."""
         cleric = load_cleric()
         goblin = load_goblin()
-        bus, engine, resolver = setup_engine_and_resolver(cleric, goblin)
+        bus, reg, resolver = setup_engine_and_resolver(cleric, goblin)
 
         spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "shield_of_faith.json"))
         resolver.resolve(cleric, [cleric], spell)
@@ -392,7 +398,7 @@ class TestShieldOfFaithEffect:
         """Removing the shield_of_faith effect strips the modifier and restores base AC."""
         cleric = load_cleric()
         goblin = load_goblin()
-        bus, engine, resolver = setup_engine_and_resolver(cleric, goblin)
+        bus, reg, resolver = setup_engine_and_resolver(cleric, goblin)
 
         spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "shield_of_faith.json"))
         base_ac = cleric.ac
@@ -414,10 +420,10 @@ class TestShieldOfFaithEffect:
         """
         cleric = load_cleric()
         goblin = load_goblin()
-        bus, engine, resolver = setup_engine_and_resolver(cleric, goblin)
+        bus, reg, resolver = setup_engine_and_resolver(cleric, goblin)
 
         # Load concentration rule so the engine enforces it
-        engine.load_from_file("rules/global/concentration.json")
+        load_rule_file("rules/global/concentration.json", event_bus=bus, damage_processor=resolver._damage_processor)
 
         spell = StatBlockLoader.load_spell_from_json(str(SPELLS_DIR / "shield_of_faith.json"))
         base_ac = cleric.ac
@@ -441,40 +447,47 @@ def longstrider_spell() -> SpellAction:
 
 class TestLongstriderSpellEffects:
 
-    def test_longstrider_loads_effects(self):
-        """longstrider.json should parse its effects list into pipeline_effects."""
+    def test_longstrider_loads_program(self):
+        """longstrider.json parses into a native program: a rounds lifetime whose
+        TURN_START rider grants movement (its effect is inline, not a second file)."""
         spell = longstrider_spell()
-        effect_steps = [s for s in spell.pipeline_effects if s.get("type") == "add_entity_effect"]
-        assert len(effect_steps) == 1
-        assert effect_steps[0]["entity_effect_name"] == "longstrider"
+        assert spell.program
+        life = spell.program[0]
+        assert life["block"] == "lifetime" and life.get("kind") == "rounds"
+        assert life["then"][0]["block"] == "trigger"
 
     def test_longstrider_no_save(self):
-        """Longstrider has no saving throw step in the pipeline."""
+        """Longstrider has no saving throw block in the program."""
         spell = longstrider_spell()
-        save_steps = [s for s in spell.pipeline_effects if s.get("type") == "saving_throw"]
-        assert save_steps == []
+
+        def walk(blocks):
+            for b in blocks:
+                yield b.get("block")
+                yield from walk(b.get("then", []))
+
+        assert "saving_throw" not in set(walk(spell.program))
 
     def test_longstrider_applies_effect_on_cast(self):
-        """Casting Longstrider should apply the longstrider movement effect."""
+        """Casting Longstrider installs the movement effect on the target.
+
+        The effect is a lifetime + TURN_START rider on the target. Assert the
+        observable install: a duration lifetime now sits on the goblin.
+        """
         wizard = load_wizard()
         goblin = load_goblin()
-        bus, engine, resolver = setup_engine_and_resolver(wizard, goblin)
+        bus, reg, resolver = setup_engine_and_resolver(wizard, goblin)
 
         spell = longstrider_spell()
         resolver.resolve(wizard, [goblin], spell)
 
-        # The goblin should have the longstrider effect on turn_start
-        assert "turn_start" in goblin.active_effects
-        instances = goblin.active_effects["turn_start"]
-        assert len(instances) == 1
-        assert instances[0].name == "longstrider"
+        assert len(goblin.lifetimes) == 1
 
     def test_longstrider_grants_movement_on_turn(self):
         """After casting, the affected entity gets +10 movement on TURN_START."""
         wizard = load_wizard()
         goblin = load_goblin()
-        bus, engine, resolver = setup_engine_and_resolver(wizard, goblin)
-        engine.load_from_file("rules/global/action_economy_refill.json")
+        bus, reg, resolver = setup_engine_and_resolver(wizard, goblin)
+        load_rule_file("rules/global/action_economy_refill.json", event_bus=bus, damage_processor=resolver._damage_processor)
 
         spell = longstrider_spell()
         resolver.resolve(wizard, [goblin], spell)
@@ -492,15 +505,15 @@ class TestLongstriderSpellEffects:
         wizard = load_wizard()
         goblin_a = load_goblin()
         goblin_b = load_goblin()
-        bus, engine, resolver = setup_engine_and_resolver(wizard, goblin_a, goblin_b)
-        engine.load_from_file("rules/global/action_economy_refill.json")
+        bus, reg, resolver = setup_engine_and_resolver(wizard, goblin_a, goblin_b)
+        load_rule_file("rules/global/action_economy_refill.json", event_bus=bus, damage_processor=resolver._damage_processor)
 
         spell = longstrider_spell()
         resolver.resolve(wizard, [goblin_a, goblin_b], spell)
 
-        # Both goblins should have the effect
-        assert "turn_start" in goblin_a.active_effects
-        assert "turn_start" in goblin_b.active_effects
+        # Both goblins should have the effect installed (a duration lifetime each).
+        assert len(goblin_a.lifetimes) == 1
+        assert len(goblin_b.lifetimes) == 1
 
         bus.emit(EventType.TURN_START, TurnEventData(
             entity=goblin_a, round_num=2, turn_num=1,

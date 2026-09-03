@@ -1,7 +1,5 @@
 {
   "name": "exhaustion",
-  "triggers": ["TURN_START"],
-  "condition": "event.entity == entity",
-  "effects": [],
-  "_note": "TODO: No implementable effects in the current system — exhaustion requires tiered level tracking (1-6). Level 1: disadvantage on ability checks (pending ability check system). Level 2: speed halved (pending movement system). Level 3: disadvantage on attack rolls and saving throws (pending save system; attack roll disadvantage could be added once level tracking exists). Level 4: max HP halved (pending max HP modification). Level 5: speed reduced to 0 (pending movement system). Level 6: death. Each long rest reduces level by 1 (pending rest system)."
+  "program": [],
+  "_note": "Marker-only: no implementable effects in the current system — exhaustion requires tiered level tracking (1-6). Level 1: disadvantage on ability checks (pending ability check system). Level 2: speed halved (pending movement system). Level 3: disadvantage on attack rolls and saving throws (pending save system; attack roll disadvantage could be added once level tracking exists). Level 4: max HP halved (pending max HP modification). Level 5: speed reduced to 0 (pending movement system). Level 6: death. Each long rest reduces level by 1 (pending rest system)."
 }

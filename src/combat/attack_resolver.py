@@ -1,37 +1,50 @@
-"""Attack roll resolution via EffectPipeline."""
+"""Attack resolution on the block engine (Phase 3 — one path for weapons and spells).
 
-import copy
+A weapon attack *is* a block program: ``[attack_roll, damage…]``, the same blocks an
+attack-roll spell uses, so it resolves on the one engine. A weapon is authored in the
+concise flat form (``bonus_to_hit`` + a ``damage`` list) that creature JSON has always
+used, and :func:`_default_program` builds its program from that; a weapon that needs
+more than the default may author a ``program`` directly, exactly as a spell does.
+Reactive riders (Colossus Slayer's on-hit bonus die) ride the shared EventBus as block
+triggers.
+"""
+
 from typing import Optional, Tuple, List, Dict, Any
 
 from src.models.entity import Entity
 from src.models.action import AttackAction
 from .event_bus import EventBus
 from .damage_processor import DamageProcessor
-from .effect_pipeline import EffectPipeline
 
 
-def _build_pipeline_effects(action: AttackAction) -> List[Dict[str, Any]]:
-    """Convert a weapon attack's flat damage/bonus_to_hit into pipeline_effects steps."""
-    steps: List[Dict[str, Any]] = [
-        {"type": "attack_roll", "attack_bonus": action.bonus_to_hit}
+def _default_program(action: AttackAction) -> List[Dict[str, Any]]:
+    """The block program implied by a weapon's flat ``bonus_to_hit`` + ``damage``.
+
+    One ``attack_roll`` followed by a ``damage`` block per damage entry, each gated on
+    the hit. This is a convenience constructor in the engine's own vocabulary — the
+    blocks it emits are the ones a spell author would write by hand — not a
+    translation from a second effect vocabulary.
+    """
+    blocks: List[Dict[str, Any]] = [
+        {"block": "attack_roll", "attack_bonus": action.bonus_to_hit}
     ]
     for d in action.damage:
-        steps.append({
-            "type": "damage",
+        blocks.append({
+            "block": "damage",
             "formula": d.formula or str(d.amount),
             "damage_type": d.damage_type.name,
             "requires_hit": True,
         })
-    return steps
+    return blocks
 
 
 class AttackResolver:
-    """Resolves melee/ranged attack actions via EffectPipeline."""
+    """Resolves melee/ranged attack actions on the block engine."""
 
-    def __init__(self, event_bus: EventBus, damage_processor: DamageProcessor, rule_engine=None) -> None:
+    def __init__(self, event_bus: EventBus, damage_processor: DamageProcessor, condition_rules=None) -> None:
         self._event_bus = event_bus
         self._damage_processor = damage_processor
-        self.rule_engine = rule_engine
+        self.condition_rules = condition_rules
 
     def resolve(
         self,
@@ -39,22 +52,39 @@ class AttackResolver:
         defender: Entity,
         action: AttackAction,
     ) -> Tuple[bool, int, str, Optional[dict]]:
-        """Resolve an attack roll and damage via EffectPipeline.
+        """Resolve an attack roll and damage.
 
         Returns:
             Tuple of (hit, total_damage, log_message, roll_detail).
             log_message is empty string if the attack was cancelled.
             roll_detail is None when the attack was cancelled.
         """
-        action_copy = copy.copy(action)
-        action_copy.pipeline_effects = _build_pipeline_effects(action)
-
-        pipeline = EffectPipeline(self._event_bus, self._damage_processor, self.rule_engine)
-        result = pipeline.run(attacker, defender, action_copy)
+        result = self._resolve_via_blocks(attacker, defender, action)
 
         if result.attack_cancelled:
             return False, 0, "", None
+        return self._format(attacker, defender, action, result)
 
+    def _resolve_via_blocks(self, attacker, defender, action):
+        """The block-engine path — the same ``[attack_roll, damage…]`` as a spell.
+
+        Imported lazily to avoid a ``combat → spells → combat`` import cycle (as in
+        ``SpellResolver._resolve_via_blocks``).
+        """
+        from src.spells.evaluator import resolve as resolve_blocks
+        from src.spells.block import parse_program
+
+        program = parse_program(action.program or _default_program(action))
+        return resolve_blocks(
+            attacker, defender, action, program,
+            event_bus=self._event_bus,
+            damage_processor=self._damage_processor,
+            condition_rules=self.condition_rules,
+        )
+
+    def _format(self, attacker, defender, action, result):
+        """Build the (hit, damage, log_msg, roll_detail) tuple from an
+        ``InvocationResult`` (the block engine's result type)."""
         roll_mode = ""
         if result.had_advantage and not result.had_disadvantage:
             roll_mode = " (advantage)"

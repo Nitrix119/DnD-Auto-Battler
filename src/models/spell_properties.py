@@ -48,6 +48,7 @@ class SpellRange:
 class TargetingType(Enum):
     """How a spell selects its targets."""
     SINGLE_TARGET = "single_target"
+    MULTI_TARGET = "multi_target"  # split projectiles: caller assigns each to a target
     AOE = "aoe"
     SPECIAL = "special"
 

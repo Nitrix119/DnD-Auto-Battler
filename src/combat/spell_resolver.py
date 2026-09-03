@@ -1,16 +1,14 @@
 """Spell resolution."""
 
 import logging
-from typing import Dict, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
 from src.models.entity import Entity
 from src.models.action import SpellAction
-from src.utils.dice import roll_formula
 from .event_bus import EventBus
 from .event_data import SpellCastData
 from .events import EventType
 from .damage_processor import DamageProcessor
-from .effect_pipeline import EffectPipeline
 
 logger = logging.getLogger(__name__)
 
@@ -22,11 +20,11 @@ class SpellResolver:
         self,
         event_bus: EventBus,
         damage_processor: DamageProcessor,
-        rule_engine=None,
+        condition_rules=None,
     ) -> None:
         self._event_bus = event_bus
         self._damage_processor = damage_processor
-        self.rule_engine = rule_engine
+        self.condition_rules = condition_rules
 
     def resolve(
         self,
@@ -35,6 +33,7 @@ class SpellResolver:
         action: SpellAction,
         *,
         origin=None,
+        slot_level: Optional[int] = None,
     ) -> List[Tuple[bool, int, str, Optional[dict]]]:
         """Resolve a spell action against one or more targets.
 
@@ -60,44 +59,67 @@ class SpellResolver:
         """
         self._event_bus.emit(
             EventType.SPELL_CAST,
-            SpellCastData(caster=caster, defenders=defenders, action=action, origin=origin),
+            SpellCastData(
+                caster=caster, defenders=defenders, action=action, origin=origin
+            ),
         )
 
-        seed_damages = self._preroll_pipeline_damage(action)
-        results: List[Tuple[bool, int, str, Optional[dict]]] = []
-        for defender in defenders:
-            results.append(
-                self._run_pipeline_spell(caster, defender, action, seed_damages)
+        if slot_level is None:
+            slot_level = action.spell_level
+
+        # One resolution path: the block engine. A spell's ``program`` is validated at
+        # load (``src.spells.validate.validate_program``) and runs directly. A spell
+        # with no program has nothing to resolve — an authoring error we raise on
+        # rather than silently doing nothing.
+        if not action.program:
+            raise ValueError(
+                f"Spell {action.name!r} has no block program to resolve."
             )
-        return results
+        return self._resolve_via_blocks(caster, defenders, action, slot_level)
 
-    def _preroll_pipeline_damage(self, action: SpellAction) -> Dict[int, int]:
-        """Pre-roll damage for any ``roll_once: true`` steps before the target loop.
+    def _resolve_via_blocks(
+        self,
+        caster: Entity,
+        defenders: List[Entity],
+        action: SpellAction,
+        slot_level: Optional[int],
+    ) -> List[Tuple[bool, int, str, Optional[dict], int, Optional[Entity]]]:
+        """Resolve via the block evaluator (one invocation per defender).
 
-        This ensures all targets of an AoE spell receive the same damage total,
-        matching D&D 5e rules (e.g. Fireball rolls 8d6 once for every creature
-        in the blast).
+        The spell's ``program`` runs directly (``parse_program``). Imported lazily to
+        avoid an import cycle (combat → spells → combat).
 
-        Returns:
-            Dict mapping step index → pre-rolled amount.
+        Fan-out (including AoE ``roll_once`` sharing) lives in the program: the
+        evaluator is called once with the whole defender set and returns one
+        result per defender, in order.
         """
-        seed: Dict[int, int] = {}
-        for i, step in enumerate(action.pipeline_effects):
-            if step.get("type") == "damage" and step.get("roll_once"):
-                seed[i] = roll_formula(step["formula"])
-        return seed
+        from src.spells.evaluator import resolve_program
+        from src.spells.block import parse_program
 
-    def _run_pipeline_spell(
+        program = parse_program(action.program)
+        results = resolve_program(
+            caster,
+            defenders,
+            action,
+            program,
+            event_bus=self._event_bus,
+            damage_processor=self._damage_processor,
+            condition_rules=self.condition_rules,
+            slot_level=slot_level,
+        )
+        return [
+            self._format_result(caster, defender, action, result)
+            for defender, result in zip(defenders, results)
+        ]
+
+    def _format_result(
         self,
         caster: Entity,
         defender: Entity,
         action: SpellAction,
-        seed_damages: Dict[int, int],
+        result,
     ) -> Tuple[bool, int, str, Optional[dict], int, Optional[Entity]]:
-        """Execute the effect pipeline for one caster/defender pair and format the result."""
-        pipeline = EffectPipeline(self._event_bus, self._damage_processor, self.rule_engine)
-        result = pipeline.run(caster, defender, action, seed_damages=seed_damages)
-
+        """Format an engine result (legacy or block) into the per-defender tuple."""
         damage_dealt = result.damage_dealt
         hit = result.hit
         healing_total = result.healing_total

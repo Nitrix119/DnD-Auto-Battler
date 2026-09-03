@@ -20,16 +20,14 @@
     "somatic": true,
     "material": []
   },
-  "effects": [
+  "program": [
     {
-      "type": "saving_throw",
+      "block": "saving_throw",
       "attribute": "constitution",
-      "dc": "use_caster_dc",
-      "target": "defender"
+      "dc": "use_caster_dc"
     },
     {
-      "type": "damage",
-      "target": "defender",
+      "block": "damage",
       "damage_type": "POISON",
       "formula": "1d12",
       "save_result": {"on_success": "no_damage"}

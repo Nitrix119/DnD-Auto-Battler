@@ -4,6 +4,88 @@ This document describes how to define weapon attacks and spells as JSON for the 
 Both live in a creature's stat block under the `"actions"` array, or as standalone spell files under
 `examples/spells/`.
 
+> **Two authoring forms (migration in progress).** A spell is authored either as a **native block
+> `program`** (the target form — keyed by `block`) or a **legacy `effects` pipeline** (keyed by `type`).
+> They are mutually exclusive per spell; the loader accepts either. New spells should be authored as a
+> native `program` — see [Native Block Programs](#native-block-programs). The legacy `effects` form
+> (documented in [The Effects Pipeline](#the-effects-pipeline)) is retiring as the corpus migrates
+> (Phase 3 §5).
+
+---
+
+## Native Block Programs
+
+A native spell replaces the `effects` array with a **`program`**: an ordered list of **blocks**, each an
+object with a `"block"` type key and type-specific fields. A block may nest a sub-program under `"then"`
+(iterators, lifetimes, and triggers use this). Unlike the legacy `effects` form, a spell's *entire*
+identity — including its persistent, concentration-bound, and reactive parts — lives in this one field,
+with **no separate entity-effect file**.
+
+The block vocabulary is the same catalogue the engine runs (`src/spells/blocks/`); the block types share
+their names with the legacy step types (`attack_roll`, `saving_throw`, `damage`, `healing`,
+`apply_condition`, `add_modifier`, `grant_temporary_hp`), plus the composition blocks
+(`for_each_target`, `lifetime`, `trigger`, `grant_action`, `add_resource`, and the event-modifiers).
+Every native `program` is validated at load by `src.spells.validate.validate_program`, which rejects an
+unknown block, a missing required arg, a target-arity error, or a `context.X` reference to a key nothing
+writes — a named error at load rather than a silent no-op at cast.
+
+**Renaming from legacy:** `effects` → `program`, and within each entry `"type"` → `"block"`. AoE and
+multi-target spells author their fan-out **explicitly** with a top-level `for_each_target` block (the
+legacy form injected this implicitly).
+
+### Single-target (Fire Bolt)
+
+```json
+"program": [
+  { "block": "attack_roll", "attack_bonus": "use_caster_bonus", "target": "defender" },
+  { "block": "damage", "target": "defender", "damage_type": "FIRE", "formula": "1d10", "requires_hit": true }
+]
+```
+
+### Area of effect — explicit fan-out + shared roll (Fireball)
+
+The `for_each_target` block iterates the target set; `roll_once` inside it rolls the damage once and
+applies that shared total to every target (save-for-half applied per target).
+
+```json
+"program": [
+  { "block": "for_each_target", "then": [
+    { "block": "saving_throw", "attribute": "dexterity", "dc": "use_caster_dc" },
+    { "block": "damage", "damage_type": "FIRE", "formula": "8d6", "roll_once": true,
+      "save_result": { "on_success": "half_damage" } }
+  ]}
+]
+```
+
+### Persistent + concentration + reactive rider, all inline (Vampiric Touch)
+
+The immediate attack/damage/heal are flat blocks; the granted repeatable action and the concentration-
+bound heal rider live inside a `lifetime` block (`kind: "concentration"`). Ending concentration disposes
+the scope, which revokes the granted action and unsubscribes the rider — no second file.
+
+```json
+"program": [
+  { "block": "attack_roll", "attack_bonus": "use_caster_bonus", "target": "defender" },
+  { "block": "damage", "target": "defender", "damage_type": "NECROTIC", "formula": "3d6", "requires_hit": true },
+  { "block": "healing", "target": "caster", "amount": "context.damage_dealt // 2",
+    "condition": "context.damage_dealt > 0" },
+  { "block": "lifetime", "kind": "concentration", "source": "vampiric_touch", "duration_rounds": 10, "then": [
+    { "block": "grant_action", "target": "caster", "name": "Vampiric Touch",
+      "description": "Melee spell attack granted by Vampiric Touch concentration.",
+      "bonus_to_hit": "event.caster.spell_attack_bonus", "range_ft": 5,
+      "damage": [ { "type": "NECROTIC", "formula": "3d6" } ] },
+    { "block": "trigger", "event": "DAMAGE_DEALT", "holder": "caster",
+      "when": "event.source == entity and event.action_name == 'Vampiric Touch'", "then": [
+      { "block": "healing", "target": "caster", "formula": "0", "bonus": "event.total // 2" }
+    ]}
+  ]}
+]
+```
+
+The per-block fields (`damage_type`, `formula`, `save_result`, `requires_hit`, `condition`, targeting,
+expressions) are identical to their legacy counterparts below — read [The Effects Pipeline](#the-effects-pipeline)
+for field semantics, substituting `"block"` for `"type"`.
+
 ---
 
 ## Table of Contents
@@ -15,7 +97,8 @@ Both live in a creature's stat block under the `"actions"` array, or as standalo
    - [Casting Time](#casting-time)
    - [Duration](#duration)
    - [Components](#components)
-3. [The Effects Pipeline](#the-effects-pipeline)
+3. [Native Block Programs](#native-block-programs) — the target authoring form
+4. [The Effects Pipeline](#the-effects-pipeline) — legacy form, retiring
    - [attack_roll](#attack_roll)
    - [saving_throw](#saving_throw)
    - [damage](#damage)
@@ -147,12 +230,20 @@ Controls how far the spell can reach.
 
 | Field | Required | Type | Description |
 |---|---|---|---|
-| `targeting_type` | ❌ | string | `"single_target"` (default), `"aoe"`, or `"special"` |
+| `targeting_type` | ❌ | string | `"single_target"` (default), `"multi_target"`, `"aoe"`, or `"special"` |
 | `aoe` | ✅ if AOE | object | Geometry of the AoE area |
 | `aoe.shape` | ✅ | string | `"sphere"`, `"cone"`, `"line"`, `"cylinder"`, `"cube"`, `"special"` |
 | `aoe.size_ft` | ✅ | int | Radius (sphere/cylinder), half-length of side (cube), or length (cone/line). Must be > 0 |
 | `aoe.height_ft` | ❌ | int | Cylinder height in feet; must be > 0 if provided |
 | `aoe.width_ft` | ❌ | int | Line width in feet; must be > 0 if provided (defaults to 5 ft at runtime) |
+
+**`multi_target`** models split projectiles — Magic Missile's darts, Scorching Ray's rays,
+Eldritch Blast's beams. The caller supplies one target per projectile (the `defenders`/`target_ids`
+list, repeats allowed to stack projectiles on one creature), and the effect pipeline runs
+**independently per projectile** — each gets its own attack roll and its own damage roll (do **not**
+use `roll_once`). Model the spell as the per-projectile effect (e.g. one `damage` step of `1d4+1`,
+or an `attack_roll` + `requires_hit` `damage`); the number of projectiles comes from the supplied
+target list. _(Projectile-count scaling on upcast is not yet modelled — see `higher_level_scaling`.)_
 
 For AoE spells, the caster must provide a target point at cast time; the engine auto-selects all
 living combatants whose token overlaps the area, then runs the full effect pipeline once per
@@ -213,6 +304,14 @@ The casting time also determines the action economy cost:
 ---
 
 ## The Effects Pipeline
+
+> **Authoritative field reference:** [STEP_REFERENCE.md](STEP_REFERENCE.md) is generated from the
+> loader's schema (`src/rules/step_schema.py`) and is the source of truth for each step type's fields,
+> value domains, and the context keys it reads/writes. A drift test keeps it in sync with the code, and
+> the loader validates every spell against that schema on load — an unknown step type, a typo'd field,
+> a bad enum, or a `context.X` reference to a key nothing writes is a named error at load time. The
+> sections below add prose and worked examples; when they disagree with the generated reference, the
+> reference wins.
 
 The `"effects"` array is a sequential list of steps. Each step has a `"type"` that determines what
 it does. Steps share an ephemeral **context** — a dictionary of values written by earlier steps and
@@ -321,6 +420,22 @@ a preceding saving throw result.
 > `save_result` only applies when `context.save_roll` is not `None` (i.e. a saving throw was
 > actually rolled earlier in the pipeline). Auto-hit spells without a `saving_throw` step are
 > unaffected.
+
+**Upcasting (`scaling`).** A damage step scales with the slot the spell is cast at via an optional
+`scaling` object — the dice grow, the formula stays a dice string (no expressions):
+
+```json
+{
+  "type": "damage", "damage_type": "FIRE", "formula": "8d6", "roll_once": true,
+  "save_result": { "on_success": "half_damage" },
+  "scaling": { "per_slot_above": 3, "add_dice": "1d6" }
+}
+```
+
+`per_slot_above` is the threshold slot level (usually the spell's base level); `add_dice` is added
+once per slot level above it. A Fireball cast with a 5th-level slot rolls `8d6+2d6`. The cast-time
+slot is also exposed as `context.slot_level` for conditions/expressions. Casting at a slot **below**
+the spell's base level is rejected, and the slot actually spent is the one cast at.
 
 ---
 
@@ -467,7 +582,13 @@ Grants temporary hit points directly via the pipeline (without needing an entity
 
 ### `apply_condition`
 
-Applies a status condition via the rule engine's `ApplyCondition` handler.
+Applies a status condition **and installs its mechanics**. On the block engine this adds the
+`Condition` marker *and* installs the condition's reactive rule from the library
+(`rules/entity_effects/conditions/<condition_type>.json`, e.g. `blinded` → the creature attacks at
+disadvantage and is attacked at advantage), so the condition actually functions. Both are owned by one
+lifetime scope, so the mechanics end exactly when the condition does — on `duration` expiry, on the loss
+of an enclosing concentration spell, or on dispel. If no matching reactive rule is found the marker is
+still applied (it just has no mechanical effect).
 
 ```json
 {
@@ -485,9 +606,11 @@ Applies a status condition via the rule engine's `ApplyCondition` handler.
 | `target` | ❌ | `"defender"` or `"caster"` | `"defender"` | Who receives the condition |
 | `duration` | ❌ | object | — | Duration of the condition; same structure as the spell-level [Duration](#duration) object |
 | `source` | ❌ | string | — | Human-readable source label |
-| `instance_fields` | ❌ | object | `{}` | Per-instance data for the condition; values are expressions |
+| `instance_fields` | ❌ | object | `{}` | Per-instance closure values for the condition's rider; values are expressions evaluated at cast time (e.g. Charmed's `{ "charmer": "event.caster" }`) |
 
-Requires a `RuleEngine` with an `ApplyCondition` handler registered. Silently skips if unavailable.
+The condition's mechanics come from its reactive rule in `rules/entity_effects/conditions/`, installed
+automatically. Requires the resolver to be wired with a rule engine + effect registry (the web app is);
+without one, only the inert marker is applied.
 
 ---
 

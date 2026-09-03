@@ -7,7 +7,10 @@ the code is the source of truth for **what** currently exists.
 For the deeper design intent behind the spell/combat engine, read
 [docs/SPELL_SYSTEM_VISION.md](docs/SPELL_SYSTEM_VISION.md). For the current health
 of the codebase and the open repair roadmap, read
-[docs/CODEBASE_REVIEW.md](docs/CODEBASE_REVIEW.md).
+[docs/CODEBASE_REVIEW.md](docs/CODEBASE_REVIEW.md). For **what's genuinely left in the
+spell/combat rework** — remaining deletions, carried deviations to not lose, and known
+awkwardness worth refining — read
+[docs/SPELL_SYSTEM_REMAINING.md](docs/SPELL_SYSTEM_REMAINING.md).
 
 ---
 
@@ -40,17 +43,6 @@ The ambition (see [the vision doc](docs/SPELL_SYSTEM_VISION.md)): a **massively
 flexible, generic engine** that can express the vast, messy diversity of D&D combat
 through composable, data-defined effects rather than per-spell special-casing.
 
-**The runtime, as distinct concerns:**
-
-1. **Model** — immutable creature templates (`StatBlock`) + mutable per-battle state
-   (`Entity`).
-2. **Resolve** — one `EffectPipeline` of typed steps executes both spells and weapon
-   attacks over a shared context.
-3. **React** — cross-cutting behaviour (resistances, conditions, concentration, crits)
-   rides a typed `EventBus`, decoupled from resolution.
-4. **Drive** — `CombatSystem` orchestrates turns; the web layer streams state to the
-   client. _(There is no autonomous AI turn loop yet — combat is client-driven.)_
-
 **Domain boundaries / principles:**
 
 - **Data-driven first.** A new spell should be a JSON file; a new *mechanic* a small,
@@ -78,27 +70,59 @@ Non-negotiable. Every change should be justifiable against these.
    Enumerate the unhappy paths — malformed JSON, missing fields, dead targets,
    concentration loss, both-advantage-and-disadvantage — and decide each deliberately.
 5. **Fail loudly, early, and specifically.** Validate at boundaries (the JSON loaders);
-   raise precise errors that name the bad value and the valid options. Never silently
-   swallow bad data _(the one place we knowingly do — rule-expression `AttributeError` —
-   is a documented debt, E6)_.
+   raise precise errors that name the bad value and the valid options. Every spell, weapon
+   and rule `program` goes through `src/spells/validate.py`, which rejects: an unregistered
+   block, an **undeclared arg** (with a did-you-mean), a value of the wrong kind or outside
+   its domain, an arity error, a `context.X` key nothing writes, an `event.<field>` the
+   enclosing `trigger`'s event does not carry, an expression that will not parse or leaves
+   the sandbox, and a `then` on a block that never runs one. Content that is not a block
+   `program` does not load at all. _(Why this matters more than it looks: a failure at run
+   time is usually **invisible** — an unknown arg is ignored, and a trigger guard that
+   raises is swallowed as "did not fire". See §9 2026-09-03.)_
+   - **A block's args are declared, not implied.** Adding an arg to a handler means adding
+     a `Field` to its `BlockContract` — `tests/test_block_schema_drift.py` reads the
+     handlers' real `block.get` calls and fails if the two disagree.
 6. **Small, reversible changes.** Many small, well-tested commits over one large one.
    Keep `main` clean; do non-trivial work on a branch.
+7. **Debt and convolution are first-class.** In an engine whose whole value is modular
+   flexibility to absorb new mechanics, technical debt and tangle are not side concerns —
+   they are the thing that kills that flexibility. Treat a change's effect on them as a
+   design factor on par with correctness. Prefer the option that *removes* debt/convolution;
+   when a change adds either, that is a deliberate, justified trade, not an accident. Name
+   it explicitly (see [§6](#6-agent-working-agreement)). Watch especially for **inverted
+   dependencies** (new code depending on legacy), **duplicated vocabularies/engines**, and
+   **silent coupling** — the recurring smells this rework exists to remove.
 
 ---
 
 ## 3. Architecture & modularity rules
 
-- **One pipeline for everything.** A `SpellAction` carries `pipeline_effects`: an
-  ordered list of typed steps (`attack_roll`, `saving_throw`, `damage`, `healing`,
-  `add_entity_effect`, `apply_condition`, `add_modifier`, `grant_temporary_hp`) run by
-  `EffectPipeline.run` over a shared ephemeral `context`. Earlier steps write results
-  (`context.hit`, `context.damage_dealt`, `context.save_success`); later steps read
-  them. **Weapon attacks are compiled into the same steps** by
-  `AttackResolver._build_pipeline_effects` — never add a second attack path.
-- **Registry, never `if/elif` on type.** New step type → add a handler in
-  `effect_pipeline.py` and dispatch on `step["type"]`. New rule effect → add a function
-  in `effects.py` and register it in `BUILTIN_EFFECTS`. New spell → drop a JSON file in
-  `examples/spells/` (auto-scanned at startup). Do **not** branch on a spell's name.
+- **One resolution path for everything.** Spells, weapon attacks and rules are all a block
+  **`program`**: a list of blocks keyed by `block`, parsed by `block.parse_program`, validated
+  at load by `spells.validate.validate_program`, and run by the block **evaluator**
+  (`src/spells/evaluator.py`) over a shared ephemeral `context` — earlier blocks write results
+  (`context.hit`, `context.damage_dealt`, `context.save_success`), later blocks read them.
+  There is **no translation layer**: `EffectPipeline`, `fold.py` and `adapter.py` are all
+  deleted, and no second effect vocabulary exists. A weapon keeps its concise flat authoring
+  form (`bonus_to_hit` + `damage`), from which `AttackResolver._default_program` builds the
+  implied `[attack_roll, damage…]`; it may author a `program` instead when it needs more.
+  Never add a second resolution path.
+- **The authoring reference is generated.** `docs/BLOCK_REFERENCE.md` is rendered from the
+  block `REGISTRY` (`python -m src.spells.reference`) and drift-tested, so it cannot fall
+  behind the code. Adding a block means writing its docstring and contract, then regenerating.
+- **`src/rules` is data; `src/spells` is the engine.** `src/rules` defines a rule (`Rule`),
+  loads it (`RuleLoader`), catalogues it (`EffectRegistry`) and evaluates expressions.
+  *Installing* a rule is `src/spells/rules.py`. Never let the data layer reach into the
+  engine — that inversion is what `RuleEngine` was, and it is deleted.
+- **Registry, never `if/elif` on type.** New block type → add a handler under
+  `src/spells/blocks/` and register it in the block `REGISTRY` (`src/spells/registry.py`),
+  dispatched on the block's type. New spell → drop a JSON file in `examples/spells/`
+  (auto-scanned at startup). Do **not** branch on a spell's name. The block `REGISTRY` is the
+  **only** effect vocabulary — the legacy `BUILTIN_EFFECTS` `action`-verb registry is deleted.
+- **Rules are block programs too.** A rule (`rules/global/*`, `rules/entity_effects/**`) is a
+  `program` of `trigger` blocks; `src/spells/rules.py` loads and installs them.
+  There is no second rule vocabulary and no legacy `triggers`/`effects` shape — such a file
+  now fails at load, naming itself.
 - **Cross-cutting behaviour rides the EventBus.** Resolvers emit typed events
   (`ATTACK_DECLARED`, `ATTACK_ROLLED`, `SAVING_THROW_DECLARED`, `DAMAGE_INCOMING`,
   `DAMAGE_DEALT`, `SPELL_HIT`, …). Rules and entity effects subscribe and may modify or
@@ -123,13 +147,6 @@ Non-negotiable. Every change should be justifiable against these.
 
 TDD is the default workflow, not an afterthought. The suite is a genuine strength
 (550+ tests) — keep it that way.
-
-**Red → Green → Refactor:**
-
-1. **Red.** Write the smallest test that expresses the next behaviour. Run it; watch it
-   fail (proves the test is real).
-2. **Green.** Write the minimum code to pass. Resist gold-plating.
-3. **Refactor.** Clean code *and* tests while green; re-run.
 
 **Testing rules:**
 
@@ -170,25 +187,29 @@ TDD is the default workflow, not an afterthought. The suite is a genuine strengt
    existing patterns.
 2. **Plan non-trivial work.** State the approach before large or cross-cutting changes;
    prefer the smallest change that solves the problem.
-3. **Work test-first** per [§4](#4-test-driven-development-tdd).
-4. **Keep the tree green.** Run the formatter, linter, and full suite before declaring a
+3. **Account for debt and convolution — explicitly** ([§2.7](#2-core-principles)). When
+   planning a non-trivial change, include a short **debt & convolution note**: name where it
+   *removes* or *adds* technical debt and tangle, and why (e.g. "removes an inverted
+   dependency: the block engine no longer imports from the legacy module"; "collapses two
+   resolution paths into one"). Quantify when you can (lines/files/paths/errors deleted). This
+   is a first-class part of the plan and the commit message, not an afterthought — it is how
+   this modular engine keeps its flexibility. If a change *adds* debt, say so and justify it as
+   a deliberate trade, and record follow-up in [CODEBASE_REVIEW.md](docs/CODEBASE_REVIEW.md).
+4. **Work test-first** per [§4](#4-test-driven-development-tdd).
+5. **Keep the tree green.** Run the formatter, linter, and full suite before declaring a
    task done. If tests fail or a step was skipped, say so with the output.
-5. **Don't expand scope silently.** Note adjacent problems (in
+6. **Don't expand scope silently.** Note adjacent problems (in
    [CODEBASE_REVIEW.md](docs/CODEBASE_REVIEW.md)); don't fold unrelated fixes in.
-6. **Update docs with code.** Behaviour/command/structure changes update this file, the
+7. **Update docs with code.** Behaviour/command/structure changes update this file, the
    README, and the relevant guide in the same change.
-7. **Capture lessons.** When a non-obvious mistake is found and fixed, append to
+8. **Capture lessons.** When a non-obvious mistake is found and fixed, append to
    [§9](#9-lessons-learned-append-only).
-8. **Branch, don't touch `main`.** Do work on a feature branch; commit/push only when
+9. **Branch, don't touch `main`.** Do work on a feature branch; commit/push only when
    asked; write commit messages that explain the _why_.
 
 ---
 
 ## 7. Stack & commands
-
-**Stack: Python engine + browser JS client.** The game logic is pure Python under
-`src/` (zero core dependencies). JavaScript exists only in `web/static/js/` as a
-reactive rendering/input client — no build step, served as raw ES modules.
 
 | Task | Command |
 |---|---|
@@ -200,9 +221,6 @@ reactive rendering/input client — no build step, served as raw ES modules.
 | Lint | `flake8 src/ web/` |
 | Type-check | `mypy src/` |
 
-- **Runtime:** Python ≥ 3.9. **Test framework:** `pytest`. Dev tooling
-  (`black`/`flake8`/`mypy`) is the `[dev]` extra; web (`fastapi`/`uvicorn`/`jinja2`) the
-  `[web]` extra.
 - **RNG:** one shared `random.Random` in `src/utils/dice.py`; call `dice.seed_rng(seed)`
   for reproducible battles. `dice.py` is the only module that touches `random`.
 
@@ -210,31 +228,9 @@ reactive rendering/input client — no build step, served as raw ES modules.
 
 ## 8. Project structure
 
-An agent should know where a new file belongs without guessing.
-
-```
-src/                         # THE ENGINE (pure Python, no web deps)
-  models/       # data structures: StatBlock (immutable), Entity (mutable state),
-                #   Action/AttackAction/SpellAction, Damage/DamageType, Condition, SpellSlots
-  combat/       # simulation:
-    effect_pipeline.py  # EffectPipeline — the generic step engine (the heart)
-    combat_system.py    # CombatSystem — orchestrator/facade; SpellTargetResult
-    attack_resolver.py  # compiles weapon attacks into pipeline steps
-    spell_resolver.py   # runs a spell's pipeline per target
-    damage_processor.py # applies typed damage; emits DAMAGE_INCOMING/DEALT
-    turn_manager.py initiative.py event_bus.py events.py event_data.py spell_registry.py
-  rules/        # data-driven rules: rule_engine.py, effects.py (BUILTIN_EFFECTS),
-                #   expressions.py (sandbox), rule.py, rule_loader.py
-  loaders/      # StatBlockLoader — JSON <-> model, with boundary validation
-  spatial/      # 3D geometry, AoE volumes, range checks
-  utils/        # dice.py (seedable RNG), saving_throw.py
-web/            # FastAPI app.py + routers/ (combat.py: HTTP + /ws/combat) + static/js/
-examples/       # creatures/**, spells/*.json (auto-scanned), + three *_GUIDE.md guides
-rules/          # JSON rule content: global/ (crits, concentration, damage mods),
-                #   entity_effects/ (named buffs/debuffs + conditions/)
-tests/          # pytest; mirrors the engine. Ignore build/lib/ (stale untracked copy).
-docs/           # CODEBASE_REVIEW.md, SPELL_SYSTEM_VISION.md
-```
+An agent should know where a new file belongs without guessing — read the tree
+(`src/` is the engine, `web/` the FastAPI app, `examples/` and `rules/` the JSON
+content). Note `tests/` mirrors the engine; ignore `build/lib/` (stale untracked copy).
 
 **Content invariants:**
 
@@ -260,6 +256,98 @@ leave a brief note here.
 - **What went wrong:** the mistake or surprise.
 - **Rule going forward:** the concrete, testable rule.
 ```
+
+### 2026-09-03 — A hand-written schema needs a machine-checked link to the code it describes
+- **Context:** Building the per-field block schema (`BlockContract.fields`) that lets the loader
+  reject an unknown or malformed arg. The declarations are written by hand, next to each handler.
+- **What went wrong (in waiting):** nothing yet — but a hand-maintained schema *always* rots, and
+  here it rots dangerously in both directions. Add `block.get("x")` without declaring it and the
+  validator rejects the arg you just added; declare a field nothing reads and the generated
+  reference documents a lie. Neither shows up in ordinary tests.
+- **Rule going forward:** when a declaration describes code, add a test that reads the code and
+  compares. `tests/test_block_schema_drift.py` AST-parses the handlers for literal
+  `block.get("...")` keys and checks both directions against the declared fields; a companion
+  test fails if anyone introduces a *dynamic* key, since that would silently make the guard
+  incomplete. Same pattern as `EXPRESSION_ROOTS` (checked against a real `eval_context`) and
+  `CONTEXT_KEYS` (derived from `seed_context`). **Declare, then verify against reality** — a
+  declaration nobody checks is a comment.
+
+### 2026-09-03 — Deleting a validator with its legacy shape silently dropped a live check
+- **Context:** Removing the legacy `RuleEngine` dispatch and the `triggers`/`effects` rule shape
+  (SPELL_SYSTEM_REMAINING §1). `RuleLoader._validate_event_field_refs` — the load-time `event.<field>`
+  typo check (E6) — validated that shape, so it went with it.
+- **What went wrong:** I reasoned it protected nothing, because a native rule carries no top-level
+  `condition` or `effects`. Wrong: a native rule's event references live *inside* its `trigger` blocks
+  (`when`, `bindings`, nested block args). And at fire time `triggers._passes` catches `AttributeError`
+  and returns `False` — so a typo is indistinguishable from "the guard was false". The deletion would
+  have shipped a silent regression of exactly the bug E6 exists to prevent. Porting the check onto the
+  block program found a live instance immediately: `petrified`'s DAMAGE_INCOMING trigger guarded on
+  `event.attacker`, which that event does not carry, so its damage halving had **never fired**.
+- **Rule going forward:** When deleting a validator along with the shape it validated, first ask what
+  the *successor* shape can express that the check covered — a guarantee must be re-homed, not assumed
+  redundant. And treat "the new form has no top-level X" as a claim to verify against the new form's
+  nesting, not a conclusion. Corollary: a guard that swallows an exception to mean "didn't match" can
+  never report a typo at run time, so its inputs must be validated at load.
+
+### 2026-09-02 — A load-time validator needed the block catalogue, which nothing had imported
+- **Context:** Building `spells.validate.validate_program`, the loader-boundary validator for native block
+  `program`s (Phase 3 §5a). It checks each block against the process-global block `REGISTRY`.
+- **What went wrong:** The full test suite passed, but a *loader-first* process (load a native spell before
+  anything imports the evaluator/adapter) raised "unknown block type … registered: (none)". The block
+  catalogue only populates when `src.spells.blocks` is imported (each block module self-registers on import);
+  the evaluator and adapter do this via `from . import blocks`, but `validate.py` did not — so in the suite it
+  worked only because some *other* import had already registered the catalogue. A registry-dependent module
+  must not assume someone else populated the registry.
+- **Rule going forward:** Any module that reads the block `REGISTRY` must itself import the catalogue
+  (`from . import blocks as _blocks  # noqa: F401`) so it is self-sufficient regardless of import order. Smoke-
+  test new loader/validation paths in a **fresh, minimal process** (a one-off script), not only via the full
+  suite whose broad imports mask missing self-registration.
+
+### 2026-08-31 — A condition's marker and its mechanics were joined only by a name string
+- **Context:** Wiring conditions to apply in production (Phase 3 §3). A condition has two parts: a
+  `Condition` marker (inert data on `entity.conditions`) and a reactive rule
+  (`rules/entity_effects/conditions/<name>.json`) that makes it *do* something.
+- **What went wrong:** `apply_condition` added only the marker; nothing installed the reactive rule. The
+  two shared nothing but a name string, so every applied condition except charm was mechanically dead in
+  production — yet it looked complete (marker model + full rule library + passing tests), because the tests
+  installed the *rule* directly via `apply_effect` and never exercised `apply_condition`. Charm worked only
+  because it bypassed `apply_condition` entirely (via `add_entity_effect` → the rule).
+- **Rule going forward:** When one representation of a thing (a marker/flag/record) is meant to trigger
+  behaviour defined elsewhere (a rule/handler), verify the code path that creates it also installs the
+  behaviour — a shared *name* is not a wire. Test the real entry point (`apply_condition`), not the
+  behaviour-half in isolation. (Same seam-auditing lesson as 2026-08-08; this is a fresh instance.)
+
+### 2026-08-31 — On the block path a weapon's `pipeline_effects` is empty at fire time
+- **Context:** Migrating Colossus Slayer to a native `ATTACK_HIT` trigger. The rider deals the *weapon's
+  own* damage type via `event.action.primary_damage_type`, which reads `Action.pipeline_effects`.
+- **What went wrong:** `AttackResolver._resolve_via_blocks` builds the `[attack_roll, damage…]` steps on the
+  fly and passes the **raw** `AttackAction` to the evaluator — it never assigns them to
+  `action.pipeline_effects` (deliberately, to avoid mutating the shared template). So at fire time the
+  action's `pipeline_effects` is `[]` and `primary_damage_type` returned `None`, silently degrading the
+  rider's damage to `GENERIC`. The legacy path had hidden this because it ran on a *copy* whose
+  `pipeline_effects` was populated.
+- **Rule going forward:** A reactive block reading off `event.action` at fire time must not assume the action
+  was compiled into steps — a weapon's flat `damage`/`bonus_to_hit` list is the source of truth
+  on the block path. `Action.primary_damage_type` now falls back to `damage[0]`. When a rider reads any
+  action field, verify it is populated on the *raw* action the evaluator receives, not just on a compiled copy.
+- _(2026-09-03: `pipeline_effects` is deleted; `primary_damage_type` reads `program` with the same
+  flat-`damage` fallback, so the rule stands unchanged — a weapon's program is still built at resolve time
+  and never assigned to the action.)_
+
+### 2026-08-29 — Black must be version-pinned; the repo predates the 2024 style
+- **Context:** Running `black src/ …` on files touched during the spell rework produced huge
+  whole-file reformats (even on files with no functional change), inflating every diff.
+- **What went wrong:** `pyproject.toml` only floored `black>=23.0`, so a fresh env resolved to
+  Black 26.x. The repo is formatted to Black's **2023 stable style**; Black 24.0 changed the
+  stable style (e.g. a blank line after a class docstring, import re-explosion), so any 24.0+
+  Black rewraps the *entire tree* — nothing to do with the edit. `black --check` wants to
+  reformat files never touched; the drift is version-driven, not line-length-driven (churns at
+  any `--line-length`).
+- **Rule going forward:** Black is now pinned `==23.12.1` in `pyproject.toml` — do **not** bump it
+  without a deliberate, standalone "reformat the whole repo" commit. If your environment has a
+  newer Black, **do not run it on modified files**; hand-match the surrounding style instead, and
+  keep the commit to the functional change. (E501 is not enforced here — the tree has ~460 lines
+  >79 chars; match neighbours, not flake8's default width.)
 
 ### 2026-08-08 — A structure-only test passed while the feature crashed
 - **Context:** Reviewing the spell pipeline; the `grant_temporary_hp` step was documented

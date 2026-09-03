@@ -43,7 +43,11 @@ class Action:
     damage: List[Damage] = field(default_factory=list)
     cost: ActionCost = field(default_factory=lambda: ACTION_COST)
     source_effect: str = ""  # non-empty → revoked when that entity effect is removed
-    pipeline_effects: List[Dict[str, Any]] = field(default_factory=list)
+    # The block program this action resolves as, keyed by ``block``. A spell always
+    # carries one. A weapon usually leaves it empty and is compiled from its flat
+    # ``bonus_to_hit``/``damage`` by ``AttackResolver._default_program``; authoring one
+    # here overrides that.
+    program: List[Dict[str, Any]] = field(default_factory=list)
     legendary_action_cost: int = 0  # > 0 → usable only as a legendary action
 
     def __hash__(self) -> int:
@@ -52,14 +56,24 @@ class Action:
 
     @property
     def primary_damage_type(self) -> Optional[DamageType]:
-        """Return the DamageType of the first damage step in pipeline_effects, or None."""
-        for step in self.pipeline_effects:
-            if step.get("type") == "damage":
-                type_str = step.get("damage_type", "")
+        """Return the DamageType of this action's first damage, or None.
+
+        Prefers the first ``damage`` block in ``program`` (a spell, or a weapon that
+        authored one). Falls back to the first entry in the flat ``damage`` list — a
+        weapon's program is built at resolve time and never assigned to the action, so
+        the flat list is the source of truth there. An on-hit rider reading
+        ``event.action.primary_damage_type`` therefore resolves the weapon's type
+        either way (§9 2026-08-31).
+        """
+        for block in self.program:
+            if block.get("block") == "damage":
+                type_str = block.get("damage_type", "")
                 try:
                     return DamageType[type_str.upper()]
                 except KeyError:
                     return None
+        if self.damage:
+            return self.damage[0].damage_type
         return None
 
     def roll_damage(self) -> List[Damage]:
@@ -112,11 +126,10 @@ class SpellAction(Action):
         components: Verbal, somatic, and/or material requirements
         higher_level_scaling: Placeholder description of upcast scaling (structured
                               rules will be added in a future task)
-        pipeline_effects: Sequential effect steps processed by EffectPipeline.
-            Each entry is a dict with a ``type`` key (e.g. ``"attack_roll"``,
-            ``"saving_throw"``, ``"damage"``, ``"healing"``, ``"add_entity_effect"``)
-            and type-specific fields. Steps run in order; each may write keys into
-            an ephemeral ``context`` dict readable by subsequent steps.
+        program: The block program the spell resolves as (authored as ``program`` in
+            JSON, keyed by ``block``), validated at load by
+            ``src.spells.validate.validate_program``. A spell with no program cannot
+            resolve and is rejected at cast.
     """
 
     action_type: ActionType = ActionType.SPELL
@@ -131,7 +144,7 @@ class SpellAction(Action):
     can_target_self: bool = False
     cannot_cause_self_damage: bool = False
     animation: List[Any] = field(default_factory=list)
-    pipeline_effects: List[Dict[str, Any]] = field(default_factory=list)
+    program: List[Dict[str, Any]] = field(default_factory=list)
 
     _CASTING_TIME_COST_MAP = {
         CastingTimeType.ACTION: ACTION_COST,

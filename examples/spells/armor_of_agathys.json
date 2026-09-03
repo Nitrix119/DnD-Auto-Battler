@@ -21,16 +21,43 @@
     "somatic": true,
     "material": []
   },
-  "effects": [
+  "program": [
     {
-      "type": "add_entity_effect",
-      "entity_effect_name": "armor_of_agathys",
-      "target": "defender",
-      "on_apply": [
+      "block": "lifetime",
+      "kind": "rounds",
+      "source": "armor_of_agathys",
+      "then": [
         {
-          "action": "GrantTemporaryHP",
-          "target": "event.defender",
+          "block": "grant_temporary_hp",
+          "target": "current",
           "amount": 5
+        },
+        {
+          "block": "trigger",
+          "event": "ATTACK_HIT",
+          "holder": "defender",
+          "rebind_target": "event.attacker",
+          "when": "event.defender == entity",
+          "then": [
+            {
+              "block": "damage",
+              "damage_type": "COLD",
+              "formula": "5",
+              "condition": "entity.temporary_hp > 0"
+            }
+          ]
+        },
+        {
+          "block": "trigger",
+          "event": "DAMAGE_DEALT",
+          "holder": "defender",
+          "when": "event.defender == entity",
+          "then": [
+            {
+              "block": "end_lifetime",
+              "condition": "entity.temporary_hp <= 0"
+            }
+          ]
         }
       ]
     }

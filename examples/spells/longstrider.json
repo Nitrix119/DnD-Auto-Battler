@@ -22,11 +22,27 @@
     "somatic": true,
     "material": ["a pinch of dirt"]
   },
-  "effects": [
+  "program": [
     {
-      "type": "add_entity_effect",
-      "entity_effect_name": "longstrider",
-      "target": "defender"
+      "block": "lifetime",
+      "kind": "rounds",
+      "source": "longstrider",
+      "then": [
+        {
+          "block": "trigger",
+          "event": "TURN_START",
+          "holder": "defender",
+          "when": "event.entity == entity",
+          "then": [
+            {
+              "block": "add_resource",
+              "target": "current",
+              "resource": "movement",
+              "amount": 10
+            }
+          ]
+        }
+      ]
     }
   ],
   "animation": [

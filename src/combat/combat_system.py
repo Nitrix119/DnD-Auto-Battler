@@ -98,10 +98,10 @@ class CombatSystem:
         self._damage_processor = DamageProcessor(bus)
         self._attack_resolver = AttackResolver(bus, self._damage_processor)
         self._spell_resolver = SpellResolver(bus, self._damage_processor)
-        # Preserve any previously set rule_engine across bus re-assignments
-        if hasattr(self, "_rule_engine") and self._rule_engine is not None:
-            self._spell_resolver.rule_engine = self._rule_engine
-            self._attack_resolver.rule_engine = self._rule_engine
+        # Preserve any previously set condition_rules across bus re-assignments
+        if hasattr(self, "_condition_rules") and self._condition_rules is not None:
+            self._spell_resolver.condition_rules = self._condition_rules
+            self._attack_resolver.condition_rules = self._condition_rules
 
     @property
     def spell_registry(self):
@@ -139,15 +139,15 @@ class CombatSystem:
         return self._spell_registry.get(spell_name)
 
     @property
-    def rule_engine(self):
+    def condition_rules(self):
         """The rule engine used for spell effect application."""
-        return getattr(self, "_rule_engine", None)
+        return getattr(self, "_condition_rules", None)
 
-    @rule_engine.setter
-    def rule_engine(self, engine) -> None:
-        self._rule_engine = engine
-        self._spell_resolver.rule_engine = engine
-        self._attack_resolver.rule_engine = engine
+    @condition_rules.setter
+    def condition_rules(self, engine) -> None:
+        self._condition_rules = engine
+        self._spell_resolver.condition_rules = engine
+        self._attack_resolver.condition_rules = engine
 
     @property
     def round(self) -> int:
@@ -191,6 +191,10 @@ class CombatSystem:
             if entity is not None and entity.legendary_actions is not None:
                 entity.legendary_actions.refill()
         self.event_bus.subscribe(_ET.TURN_START, _on_turn_start)
+        # Drive the block-engine lifetime clock (durations / concentration) on TURN_END,
+        # independent of the legacy rule engine (§4).
+        from .lifetime_clock import install_lifetime_clock
+        install_lifetime_clock(self.event_bus)
 
         self._log_action(self.initiative_tracker.get_current_entity(),
                         "Combat started!")
@@ -238,6 +242,7 @@ class CombatSystem:
         action: SpellAction,
         *,
         target: Optional[Point3D] = None,
+        slot_level: Optional[int] = None,
     ) -> List["SpellTargetResult"]:
         """Resolve a spell action against one or more targets.
 
@@ -257,6 +262,10 @@ class CombatSystem:
                 given; required for single-target spells.
             action: The spell action being resolved.
             target: Point the caster aimed at.  Required for AOE spells.
+            slot_level: Slot level to cast at (upcasting). Defaults to the
+                spell's base level; must not be below it. The slot of this level
+                is the one spent, and damage steps with a ``scaling`` modifier
+                scale off it.
 
         Returns:
             List of :class:`SpellTargetResult` — one per resolved defender,
@@ -274,12 +283,20 @@ class CombatSystem:
                 f"{caster.name} cannot afford {action.name}: "
                 f"have {caster.resources}, need {action.cost}"
             )
+        # Determine the slot level to cast at (upcasting). Defaults to the
+        # spell's base level; a slot below the base level is invalid.
+        cast_level = action.spell_level if slot_level is None else slot_level
+        if action.spell_level and cast_level < action.spell_level:
+            raise ValueError(
+                f"Cannot cast {action.name} (level {action.spell_level}) "
+                f"with a level-{cast_level} slot"
+            )
         # Validate spell slots before targeting so an out-of-range error cannot
         # mask a "no slots remaining" condition, and vice versa.
-        if action.spell_level and action.spell_level > 0 and caster.spell_slots is not None:
-            if not caster.spell_slots.can_afford(action.spell_level):
+        if cast_level and cast_level > 0 and caster.spell_slots is not None:
+            if not caster.spell_slots.can_afford(cast_level):
                 raise ValueError(
-                    f"{caster.name} has no level-{action.spell_level} spell slots remaining"
+                    f"{caster.name} has no level-{cast_level} spell slots remaining"
                 )
 
         # Validate targeting and range BEFORE spending resources so that an
@@ -296,16 +313,21 @@ class CombatSystem:
             if action.cannot_cause_self_damage:
                 defenders = [d for d in defenders if d is not caster]
         else:
-            # Single-target (or SPECIAL): range-check each defender if target given
+            # Single-target, multi-target (split projectiles — each entry in
+            # `defenders` is one projectile's chosen target, repeats allowed), or
+            # SPECIAL: range-check each defender if a point is given, then resolve
+            # every defender independently via the per-target fan-out.
             if target is not None:
                 for defender in defenders:
                     check_single_target_range(caster, defender, action)
 
         caster.spend_resources(action.cost)
-        if action.spell_level and action.spell_level > 0 and caster.spell_slots is not None:
-            caster.spell_slots.spend(action.spell_level)
+        if cast_level and cast_level > 0 and caster.spell_slots is not None:
+            caster.spell_slots.spend(cast_level)
 
-        results = self._spell_resolver.resolve(caster, defenders, action, origin=origin)
+        results = self._spell_resolver.resolve(
+            caster, defenders, action, origin=origin, slot_level=cast_level
+        )
         for _, _, log_msg, _, _, _ in results:
             if log_msg:
                 self._log_action(caster, log_msg)

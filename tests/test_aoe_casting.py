@@ -62,9 +62,9 @@ def _fireball(
         casting_time=CastingTime(CastingTimeType.ACTION),
         duration=Duration(DurationUnit.INSTANTANEOUS),
         components=SpellComponents(verbal=True, somatic=True),
-        pipeline_effects=[
-            {"type": "saving_throw", "attribute": "dexterity", "dc": save_dc},
-            {"type": "damage", "damage_type": "FIRE", "formula": "8d6",
+        program=[
+            {"block": "saving_throw", "attribute": "dexterity", "dc": save_dc},
+            {"block": "damage", "damage_type": "FIRE", "formula": "8d6",
              "roll_once": True, "save_result": {"on_success": "half_damage"}},
         ],
     )
@@ -81,9 +81,9 @@ def _cone_spell(range_type: RangeType = RangeType.SELF, length_ft: int = 15) -> 
         casting_time=CastingTime(CastingTimeType.ACTION),
         duration=Duration(DurationUnit.INSTANTANEOUS),
         components=SpellComponents(verbal=True, somatic=True),
-        pipeline_effects=[
-            {"type": "saving_throw", "attribute": "dexterity", "dc": 13},
-            {"type": "damage", "damage_type": "FIRE", "formula": "3d6",
+        program=[
+            {"block": "saving_throw", "attribute": "dexterity", "dc": 13},
+            {"block": "damage", "damage_type": "FIRE", "formula": "3d6",
              "roll_once": True, "save_result": {"on_success": "half_damage"}},
         ],
     )
@@ -100,9 +100,9 @@ def _line_spell(range_type: RangeType = RangeType.SELF, length_ft: int = 60) -> 
         casting_time=CastingTime(CastingTimeType.ACTION),
         duration=Duration(DurationUnit.INSTANTANEOUS),
         components=SpellComponents(verbal=True, somatic=True),
-        pipeline_effects=[
-            {"type": "saving_throw", "attribute": "dexterity", "dc": 15},
-            {"type": "damage", "damage_type": "LIGHTNING", "formula": "8d6",
+        program=[
+            {"block": "saving_throw", "attribute": "dexterity", "dc": 15},
+            {"block": "damage", "damage_type": "LIGHTNING", "formula": "8d6",
              "roll_once": True, "save_result": {"on_success": "half_damage"}},
         ],
     )
@@ -118,9 +118,9 @@ def _touch_spell() -> SpellAction:
         casting_time=CastingTime(CastingTimeType.ACTION),
         duration=Duration(DurationUnit.INSTANTANEOUS),
         components=SpellComponents(verbal=True, somatic=True),
-        pipeline_effects=[
-            {"type": "attack_roll", "attack_bonus": "use_caster_bonus", "target": "defender"},
-            {"type": "damage", "target": "defender", "damage_type": "NECROTIC", "formula": "3d10",
+        program=[
+            {"block": "attack_roll", "attack_bonus": "use_caster_bonus"},
+            {"block": "damage", "damage_type": "NECROTIC", "formula": "3d10",
              "requires_hit": True},
         ],
     )
@@ -136,9 +136,9 @@ def _ranged_spell(range_ft: int = 120) -> SpellAction:
         casting_time=CastingTime(CastingTimeType.ACTION),
         duration=Duration(DurationUnit.INSTANTANEOUS),
         components=SpellComponents(verbal=True, somatic=True),
-        pipeline_effects=[
-            {"type": "attack_roll", "attack_bonus": "use_caster_bonus", "target": "defender"},
-            {"type": "damage", "target": "defender", "damage_type": "FIRE", "formula": "1d10",
+        program=[
+            {"block": "attack_roll", "attack_bonus": "use_caster_bonus"},
+            {"block": "damage", "damage_type": "FIRE", "formula": "1d10",
              "requires_hit": True},
         ],
     )
@@ -154,8 +154,8 @@ def _sight_spell() -> SpellAction:
         casting_time=CastingTime(CastingTimeType.ACTION),
         duration=Duration(DurationUnit.INSTANTANEOUS),
         components=SpellComponents(verbal=True, somatic=True),
-        pipeline_effects=[
-            {"type": "saving_throw", "attribute": "wisdom", "dc": 15, "target": "defender"},
+        program=[
+            {"block": "saving_throw", "attribute": "wisdom", "dc": 15},
         ],
     )
 

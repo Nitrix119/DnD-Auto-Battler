@@ -49,15 +49,15 @@ orchestrates and delegates to: `TurnManager` (round/turn lifecycle, condition-ba
 results (`context.hit`, `context.damage_dealt`, `context.save_success`) that later steps read
 via **sandboxed Python expressions** (`src/rules/expressions.py` — AST whitelist,
 `__builtins__={}`, no dunder access). Weapon attacks are translated into pipeline steps by
-`AttackResolver._build_pipeline_effects`. This unification is the design's best feature.
+`AttackResolver._default_program`. This unification is the design's best feature.
 
-**Rules & effects are data-driven too.** `src/rules/rule_engine.py` `RuleEngine` loads global
+**Rules & effects are data-driven too.** `src/spells/rules.py` loads global
 rules (`rules/global/`: crits, concentration, damage modifiers) and named entity effects
-(`rules/entity_effects/`: haste, charmed, 17 conditions, …) as JSON, dispatched through a
-`BUILTIN_EFFECTS` handler registry (`src/rules/effects.py`). Cross-cutting behavior (resistance
-multipliers, concentration saves, crit rules, conditions) subscribes to bus events rather than
-being hardcoded into resolution. Effects support an `"on"` event-type gate and a `"when"`
-expression guard so one rule can serve multiple triggers.
+(`rules/entity_effects/`: colossus slayer, the condition library) as JSON. Each is a block
+`program` of `trigger` blocks that the engine installs on the block engine — it is a loader
+seam, not a dispatcher. Cross-cutting behavior (resistance multipliers, concentration saves,
+crit rules, conditions) subscribes to bus events rather than being hardcoded into resolution.
+A trigger supports a `when` expression guard so one rule can serve multiple events.
 
 **Web layer.** `web/app.py` builds process-global spell/effect registries at startup by scanning
 `examples/spells/` and `rules/entity_effects/`. `web/routers/combat.py` exposes creature/spell
@@ -86,8 +86,9 @@ LLM-driven action selection is a README "Future Goal."
 
 **Real weaknesses are wiring/coverage, not structure:** silent under-implementation of declared
 spell riders (e.g. Chill Touch's no-heal, Ray of Frost's slow are absent from the JSON); two
-parallel effect vocabularies bridged by synthetic stub events (`_handle_apply_condition` /
-`_handle_add_modifier` reach into `rule_engine._effect_registry`); and no structured upcasting.
+parallel effect vocabularies bridged by synthetic stub events; and no structured upcasting.
+_(The two vocabularies and the stub-event bridge are gone as of 2026-09-03; one block
+catalogue remains.)_
 
 ## 4. Significant missing features
 
@@ -135,11 +136,19 @@ parallel effect vocabularies bridged by synthetic stub events (`_handle_apply_co
 - **E5. Loader regex vs. dice parser mismatch — fixed.** `_FORMULA_RE` now full-matches
   multi-term formulas (`2d6+1d8+5`, `1d20-2`) that `dice.py` can roll, while still rejecting
   garbage; covered by `tests/test_loader_validation.py`.
-- **E6. RuleEngine swallows `AttributeError` — open (deliberately deferred).** In condition eval
-  it DEBUG-logs and skips, so a genuine typo in a rule expression is silently ignored. Cleanly
-  distinguishing "wrong event type" (expected) from "typo" (bug) needs a per-event field schema
-  to validate expressions against at load time — better done alongside the spell/creature schema
-  linter than as a spot fix.
+- **E6. RuleEngine swallowed `AttributeError` in condition eval — resolved.** It DEBUG-logged and
+  skipped, so a genuine typo in a rule expression was silently ignored, indistinguishable from a
+  field legitimately absent on a wrong event type. **Fixed:** a per-event field schema
+  (`EVENT_DATA_CLASSES` / `event_fields` in `src/combat/event_data.py`) now backs a load-time check
+  that rejected any `event.<field>` reference no trigger carried, so typos failed loudly at load.
+  _(Re-homed 2026-09-03: when the legacy `triggers`/`effects` shape was deleted, the check moved
+  onto the block program — `spells.validate._check_event_refs` now checks every `event.<field>`
+  under a `trigger` against that trigger's declared event, reusing the same `event_fields` schema.
+  Necessary, not cosmetic: at fire time `triggers._passes` swallows the AttributeError and returns
+  False, so a typo reads as "did not fire". It found a live instance on its first run —
+  `petrified`'s DAMAGE_INCOMING trigger guarded on `event.attacker`, so its damage halving had
+  never fired.)_ Nested entity-attribute typos like `event.defender.typo` are still swallowed at
+  runtime — that needs an Entity attribute schema and was always outside E6's scope.
 
 **MEDIUM:**
 - **E7. Return-shape drift vs. docstrings — fixed.** `resolve_attack`/`parse_dice_formula`
@@ -170,11 +179,12 @@ parallel effect vocabularies bridged by synthetic stub events (`_handle_apply_co
 
 - **P0 — done:** E1 resistance loader · E2 `grant_temporary_hp` · E3 save advantage/disadvantage.
 - **P1 — done:** E4 friendly loader validation (enum lookups + `json.load`) · E8 logging fix ·
-  E7 reconcile return shapes / update docstrings · E9 delete dead code (reconnection removed).
-  _Not yet done: a full spell/creature schema linter (deferred to feed the "new spell" skill)._
+  E7 reconcile return shapes / update docstrings · E9 delete dead code (reconnection removed) ·
+  spell schema + linter — originally `src/rules/step_schema.py` for the legacy `effects` shape,
+  now `src/spells/validate.py` for the block `program` that replaced it (design stage 1).
 - **P2 — mostly done:** E11 seedable RNG · E5 multi-term formula validation · E10 dropped
-  `for_each_defender` · E12 CELL_FEET sync comments. _Still open: E6 (needs a field schema, folded
-  into the linter work) and the per-session spell registry. E13 (license) resolved:
+  `for_each_defender` · E12 CELL_FEET sync comments · **E6 resolved** (per-event field schema +
+  load-time rule validation). _Still open: the per-session spell registry. E13 (license) resolved:
   PolyForm Noncommercial._
 - **Then net-new features:** structured upcasting → reactions/OA → multiattack → death saves →
   the AI/auto-battle loop.
@@ -183,8 +193,8 @@ parallel effect vocabularies bridged by synthetic stub events (`_handle_apply_co
 
 - **Engine core:** `src/combat/effect_pipeline.py` · `combat_system.py` · `attack_resolver.py` ·
   `spell_resolver.py` · `damage_processor.py` · `turn_manager.py` · `initiative.py`.
-- **Rules:** `src/rules/rule_engine.py` · `effects.py` · `expressions.py` · `rule.py` ·
-  `rule_loader.py`.
+- **Rules:** `src/rules/expressions.py` · `rule.py` · `rule_loader.py` ·
+  `effect_registry.py` (data); `src/spells/rules.py` (install).
 - **Data/loading:** `src/loaders/stat_block_loader.py` · `src/models/entity.py` ·
   `stat_block.py` · `action.py` · `spell_properties.py`.
 - **Web:** `web/routers/combat.py` · `web/app.py` · `web/static/js/*`.

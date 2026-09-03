@@ -21,10 +21,10 @@
     "material": []
   },
   "higher_level_scaling": "When you cast this spell using a spell slot of 2nd level or higher, the healing increases by 1d8 for each slot level above 1st.",
-  "effects": [
+  "program": [
     {
-      "type": "healing",
-      "target": "defender",
+      "block": "healing",
+      "target": "current",
       "formula": "1d8",
       "bonus": "event.caster.spellcasting_modifier"
     }

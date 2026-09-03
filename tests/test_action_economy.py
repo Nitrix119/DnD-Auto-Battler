@@ -11,7 +11,7 @@ from src.combat import CombatSystem, CombatState
 from src.combat.event_bus import EventBus
 from src.combat.events import EventType
 from src.combat.event_data import TurnEventData
-from src.rules.rule_engine import RuleEngine
+from src.spells.rules import load_rule_file
 
 
 # ---------------------------------------------------------------------------
@@ -249,9 +249,9 @@ class TestCombatSystemResourceEnforcement:
         spell = SpellAction(
             name="Fire Bolt",
             description="Cantrip",
-            pipeline_effects=[
-                {"type": "attack_roll", "attack_bonus": "use_caster_bonus", "target": "defender"},
-                {"type": "damage", "target": "defender", "damage_type": "FIRE", "formula": "1d10", "requires_hit": True},
+            program=[
+                {"block": "attack_roll", "attack_bonus": "use_caster_bonus"},
+                {"block": "damage", "damage_type": "FIRE", "formula": "1d10", "requires_hit": True},
             ],
         )
         combat.resolve_spell(fighter, [goblin], spell)
@@ -262,8 +262,8 @@ class TestCombatSystemResourceEnforcement:
         spell = SpellAction(
             name="Fire Bolt",
             description="Cantrip",
-            pipeline_effects=[
-                {"type": "attack_roll", "attack_bonus": "use_caster_bonus", "target": "defender"},
+            program=[
+                {"block": "attack_roll", "attack_bonus": "use_caster_bonus"},
             ],
         )
         fighter.spend_resources(ACTION_COST)
@@ -293,8 +293,7 @@ class TestRefillRule:
     def test_refill_on_turn_start(self):
         """Resources are refilled when TURN_START fires with the refill rule loaded."""
         bus = EventBus()
-        engine = RuleEngine(bus)
-        engine.load_from_file("rules/global/action_economy_refill.json")
+        load_rule_file("rules/global/action_economy_refill.json", event_bus=bus)
 
         entity = Entity(_make_stat_block())
         entity.spend_resources(ACTION_COST)

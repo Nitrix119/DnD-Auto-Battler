@@ -12,6 +12,7 @@ from .damage import Damage
 from .stat_modifier import StatModifier
 from .spell_slots import SpellSlots
 from .legendary_actions import LegendaryActions
+from .lifetime import LifetimeScope, RevokeHandle
 
 
 @dataclass
@@ -33,7 +34,14 @@ class Entity:
     team: Optional[str] = None  # faction/team identifier; None = hostile to everyone
     concentrating_on: Optional[str] = None
     concentration_target: Optional["Entity"] = None
-    active_effects: dict = field(default_factory=dict)  # {trigger_str: [Rule, ...]}
+    # Concentration as a first-class lifetime (§4.2): the scope owns the revoke
+    # handles for everything the concentrated spell granted. Coexists with the
+    # legacy string fields above — new-engine spells use the scope, legacy spells
+    # the strings; begin_concentration disposes whichever is present.
+    concentration_scope: Optional[LifetimeScope] = None
+    # Non-concentration lifetime scopes held by this entity (durations). No clock
+    # ticks them down yet; they carry their revoke handles for future teardown.
+    lifetimes: List[LifetimeScope] = field(default_factory=list)
     stat_modifiers: List[StatModifier] = field(default_factory=list)
     granted_actions: List[Action] = field(default_factory=list)  # Temporary actions from effects
     resources: Optional[ActionResources] = None
@@ -95,14 +103,27 @@ class Entity:
         self.current_hp = min(self.stat_block.hit_points_max, self.current_hp + amount)
         return self.current_hp
 
-    def add_temporary_hp(self, amount: int) -> None:
-        """Grant temporary hit points.
+    def add_temporary_hp(self, amount: int) -> RevokeHandle:
+        """Grant temporary hit points; return a handle that revokes this grant.
 
-        Per D&D rules, temp HP don't stack — the entity keeps whichever
-        value is higher (current temp HP or the new amount).
+        Per D&D rules, temp HP don't stack — the entity keeps whichever value is
+        higher (current temp HP or the new amount). The returned handle removes
+        this grant's contribution when disposed (best-effort: it restores the
+        pre-grant value, since a spell's temp HP ends with the spell). Used by a
+        lifetime scope; direct callers may ignore the return.
         """
+        prior = self.temporary_hp
         if amount > 0:
             self.temporary_hp = max(self.temporary_hp, amount)
+
+        def _revoke() -> None:
+            # Only strip what may still be ours: if temp HP hasn't dropped below
+            # the pre-grant value, restore it; if damage ate into it, leave it —
+            # there is nothing of this grant left to remove.
+            if self.temporary_hp > prior:
+                self.temporary_hp = prior
+
+        return RevokeHandle(_revoke, label="temp_hp")
 
     def clear_temporary_hp(self) -> None:
         """Remove all temporary hit points."""
@@ -119,13 +140,35 @@ class Entity:
     # Condition management
     # ------------------------------------------------------------------
 
-    def add_condition(self, condition: Condition) -> None:
-        """Add a condition to the entity."""
+    def add_condition(self, condition: Condition) -> RevokeHandle:
+        """Add a condition; return a handle that removes *this* condition object.
+
+        Removal is by object identity, so a lifetime scope revokes exactly the
+        condition it granted even if an identical one was applied elsewhere.
+        """
         self.conditions.append(condition)
 
+        def _revoke() -> None:
+            self.conditions = [c for c in self.conditions if c is not condition]
+
+        return RevokeHandle(_revoke, label="condition")
+
     def remove_condition(self, condition_index: int) -> None:
-        """Remove a condition by index."""
-        if 0 <= condition_index < len(self.conditions):
+        """Remove a condition by index.
+
+        A condition applied on the block engine owns a lifetime scope (its marker +
+        the installed reactive rider); disposing that scope removes the marker via
+        its own revoke handle *and* unsubscribes the rider, so the mechanics don't
+        leak on dispel. A legacy marker (no scope) is popped directly.
+        """
+        if not 0 <= condition_index < len(self.conditions):
+            return
+        condition = self.conditions[condition_index]
+        scope = getattr(condition, "owning_scope", None)
+        if scope is not None:
+            self.lifetimes = [s for s in self.lifetimes if s is not scope]
+            scope.dispose()  # revokes the marker handle + the rider (idempotent)
+        else:
             self.conditions.pop(condition_index)
 
     def get_active_conditions(self) -> List[Condition]:
@@ -140,34 +183,48 @@ class Entity:
     # Effect management (for rule engine)
     # ------------------------------------------------------------------
 
-    def add_effect(self, trigger: str, effect) -> None:
-        """Add an effect to the trigger bucket."""
-        self.active_effects.setdefault(trigger, []).append(effect)
-
     def remove_effect(self, name: str) -> None:
-        """Remove all effects matching this name across all trigger buckets.
+        """Remove all effects matching this name.
 
-        Also removes any :class:`StatModifier` entries, granted actions, and
-        :class:`Condition` objects tagged with this effect name so that all
-        bonuses and status effects are cleaned up automatically.
+        A block-installed rider is owned by a :class:`LifetimeScope` on ``lifetimes``
+        keyed to the effect name — disposing it unsubscribes the rider and revokes its
+        grants by identity. Any :class:`StatModifier`, granted action, and
+        :class:`Condition` carrying this name is stripped too.
         """
-        for bucket in self.active_effects.values():
-            bucket[:] = [e for e in bucket if e.name != name]
+        scopes = [s for s in self.lifetimes if s.source == name]
+        if scopes:
+            for scope in scopes:
+                scope.dispose()
+            self.lifetimes = [s for s in self.lifetimes if s.source != name]
         self.stat_modifiers = [m for m in self.stat_modifiers if m.effect_name != name]
         self.granted_actions = [a for a in self.granted_actions if a.source_effect != name]
         self.conditions = [c for c in self.conditions if c.effect_name != name]
 
-    def grant_action(self, action: Action) -> None:
-        """Attach a temporary action granted by an entity effect."""
+    def grant_action(self, action: Action) -> RevokeHandle:
+        """Attach a temporary action; return a handle that removes *this* action.
+
+        Removal is by object identity, so a lifetime scope revokes exactly the
+        action it granted.
+        """
         self.granted_actions.append(action)
 
-    def get_effects_for_trigger(self, trigger: str) -> list:
-        """Get all effects for a given trigger string."""
-        return self.active_effects.get(trigger, [])
+        def _revoke() -> None:
+            self.granted_actions = [a for a in self.granted_actions if a is not action]
 
-    def add_stat_modifier(self, mod: StatModifier) -> None:
-        """Attach a stat modifier to this entity."""
+        return RevokeHandle(_revoke, label="granted_action")
+
+    def add_stat_modifier(self, mod: StatModifier) -> RevokeHandle:
+        """Attach a stat modifier; return a handle that removes *this* modifier.
+
+        Removal is by object identity, so two modifiers sharing a source/name
+        revoke independently (the string-tag cleanup could over-remove both).
+        """
         self.stat_modifiers.append(mod)
+
+        def _revoke() -> None:
+            self.stat_modifiers = [m for m in self.stat_modifiers if m is not mod]
+
+        return RevokeHandle(_revoke, label="modifier")
 
     def get_stat_modifiers(self, stat: str) -> List[StatModifier]:
         """Return all modifiers for a given stat key."""
@@ -227,7 +284,70 @@ class Entity:
 
     @property
     def has_concentration(self) -> bool:
-        return self.concentrating_on is not None
+        return self.concentrating_on is not None or self.concentration_scope is not None
+
+    # ------------------------------------------------------------------
+    # Concentration as a first-class lifetime (§4.2)
+    # ------------------------------------------------------------------
+
+    def begin_concentration(
+        self, scope: LifetimeScope, *, target: Optional["Entity"] = None
+    ) -> None:
+        """Start concentrating on *scope*, dropping any prior concentration first.
+
+        Disposes the previous concentration atomically — a new-engine ``scope`` or
+        a legacy string-tagged effect — so its entire granted subtree is gone
+        before the new one takes hold (design §6.3). The new spell's grants are
+        expected to have registered their revoke handles into *scope* already.
+
+        The legacy ``concentrating_on`` / ``concentration_target`` fields are
+        mirrored (from the scope's ``source`` and *target*) so consumers that read
+        them see consistent state during the transition; the scope stays
+        authoritative for teardown.
+        """
+        self._dispose_current_concentration()
+        self.concentration_scope = scope
+        self.concentrating_on = scope.source or None
+        self.concentration_target = target
+
+    def end_concentration(self) -> None:
+        """Drop concentration and revoke everything the concentrated spell granted.
+
+        Disposes the owned scope (identity-based teardown) and cleans up any
+        legacy string-tagged grant, then clears all concentration state. The
+        single entry point the break rule (and death) should call.
+        """
+        self._dispose_current_concentration()
+
+    def tick_lifetimes(self) -> None:
+        """Count down this entity's timed lifetime scopes; dispose the expired.
+
+        Called on the entity's ``TURN_END`` (the duration clock). A concentration
+        scope that runs out ends concentration; a duration scope that runs out (or
+        has already self-disposed) is dropped. Scopes with no timer are untouched.
+        """
+        if self.concentration_scope is not None and self.concentration_scope.tick():
+            self.end_concentration()
+        surviving: List[LifetimeScope] = []
+        for scope in self.lifetimes:
+            if scope.tick():
+                scope.dispose()
+            elif not scope.disposed:
+                surviving.append(scope)
+        self.lifetimes = surviving
+
+    def _dispose_current_concentration(self) -> None:
+        if self.concentration_scope is not None:
+            # The scope is authoritative — identity teardown of all it granted.
+            # (The string fields are only display mirrors here, so no string-tag
+            # cleanup; just clear them below.)
+            self.concentration_scope.dispose()
+            self.concentration_scope = None
+        elif self.concentrating_on and self.concentration_target is not None:
+            # Pure legacy string-tag concentration (no scope).
+            self.concentration_target.remove_effect(self.concentrating_on)
+        self.concentrating_on = None
+        self.concentration_target = None
 
     @property
     def name(self) -> str:

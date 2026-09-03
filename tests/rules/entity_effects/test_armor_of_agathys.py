@@ -17,7 +17,6 @@ from src.combat.damage_processor import DamageProcessor
 from src.combat.attack_resolver import AttackResolver
 from src.combat.spell_resolver import SpellResolver
 from src.loaders.stat_block_loader import StatBlockLoader
-from src.rules.rule_engine import RuleEngine
 from src.rules.effect_registry import EffectRegistry
 from pathlib import Path
 
@@ -58,21 +57,14 @@ def _make_attacker(name="Goblin"):
 
 
 def _setup(*entities):
-    """Wire up EventBus, RuleEngine, DamageProcessor, and resolvers."""
-    entity_list = list(entities)
+    """Wire up EventBus, DamageProcessor, the condition catalogue, and resolvers."""
     bus = EventBus()
     damage_proc = DamageProcessor(bus)
     registry = EffectRegistry()
     registry.scan_directory("rules/entity_effects")
-    engine = RuleEngine(
-        bus,
-        entities_getter=lambda: entity_list,
-        damage_processor=damage_proc,
-        effect_registry=registry,
-    )
     attack_res = AttackResolver(bus, damage_proc)
-    spell_res = SpellResolver(bus, damage_proc, rule_engine=engine)
-    return bus, engine, damage_proc, attack_res, spell_res
+    spell_res = SpellResolver(bus, damage_proc, condition_rules=registry)
+    return bus, registry, damage_proc, attack_res, spell_res
 
 
 def _load_spell():
@@ -83,21 +75,28 @@ def _load_spell():
 
 class TestArmorOfAgathysLoading:
 
-    def test_loads_spell_effects(self):
+    def test_loads_native_program(self):
+        """Armor of Agathys is a native program: a lifetime granting temp HP with a
+        retaliation trigger (its effect is inline, not a separate entity-effect file)."""
         spell = _load_spell()
-        effect_steps = [s for s in spell.pipeline_effects if s.get("type") == "add_entity_effect"]
-        assert len(effect_steps) == 1
-        step = effect_steps[0]
-        assert step["entity_effect_name"] == "armor_of_agathys"
-        assert len(step["on_apply"]) == 1
-        assert step["on_apply"][0]["action"] == "GrantTemporaryHP"
+        assert spell.program
+        life = spell.program[0]
+        assert life["block"] == "lifetime"
+        inner = [b["block"] for b in life["then"]]
+        assert inner[0] == "grant_temporary_hp"
+        assert "trigger" in inner  # the on-hit cold retaliation rider
 
     def test_no_save_no_attack_roll(self):
         spell = _load_spell()
-        save_steps = [s for s in spell.pipeline_effects if s.get("type") == "saving_throw"]
-        attack_steps = [s for s in spell.pipeline_effects if s.get("type") == "attack_roll"]
-        assert len(save_steps) == 0
-        assert len(attack_steps) == 0
+
+        def walk(blocks):
+            for b in blocks:
+                yield b.get("block", b.get("type"))
+                yield from walk(b.get("then", []))
+
+        types = set(walk(spell.program))
+        assert "saving_throw" not in types
+        assert "attack_roll" not in types
 
     def test_spell_level_1_no_concentration(self):
         spell = _load_spell()
@@ -153,7 +152,7 @@ class TestArmorOfAgathysRetaliation:
 
         attacker_hp_before = attacker.hp
         action = attacker.stat_block.actions[0]
-        with patch("src.combat.effect_pipeline.roll_d20", return_value=20):
+        with patch("src.spells.blocks.rolls.roll_d20", return_value=20):
             ar.resolve(attacker, caster, action)
 
         assert attacker.hp == attacker_hp_before - 5
@@ -169,7 +168,7 @@ class TestArmorOfAgathysRetaliation:
 
         attacker_hp_before = attacker.hp
         action = attacker.stat_block.actions[0]
-        with patch("src.combat.effect_pipeline.roll_d20", return_value=20):
+        with patch("src.spells.blocks.rolls.roll_d20", return_value=20):
             ar.resolve(attacker, caster, action)
 
         assert attacker.hp == attacker_hp_before
@@ -184,7 +183,7 @@ class TestArmorOfAgathysRetaliation:
 
         attacker_hp_before = attacker.hp
         action = attacker.stat_block.actions[0]
-        with patch("src.combat.effect_pipeline.roll_d20", return_value=1):
+        with patch("src.spells.blocks.rolls.roll_d20", return_value=1):
             ar.resolve(attacker, caster, action)
 
         assert attacker.hp == attacker_hp_before
@@ -209,7 +208,7 @@ class TestArmorOfAgathysRetaliation:
         attacker.take_damage = spy_take_damage
 
         action = attacker.stat_block.actions[0]
-        with patch("src.combat.effect_pipeline.roll_d20", return_value=20):
+        with patch("src.spells.blocks.rolls.roll_d20", return_value=20):
             ar.resolve(attacker, caster, action)
 
         # The cold retaliation damage was dealt while caster still had temp HP
@@ -229,25 +228,21 @@ class TestArmorOfAgathysSelfTermination:
 
         spell_res.resolve(caster, [caster], _load_spell())
 
-        # Verify effect is present
-        assert any(inst.name == "armor_of_agathys"
-                   for inst in caster.active_effects.get("attack_hit", []))
+        # Verify the effect is present: a lifetime scope on the warded entity.
+        assert len(caster.lifetimes) == 1 and not caster.lifetimes[0].disposed
 
         # Attack with enough damage to deplete temp HP.
         # Patch roll_formula at both import sites: action.roll_damage() and
         # effects.deal_damage() use their own imported copies.
         action = attacker.stat_block.actions[0]
         mock_roll = lambda f: 5 if f == "5" else 10
-        with patch("src.combat.effect_pipeline.roll_d20", return_value=20), \
-             patch("src.models.action.roll_formula", side_effect=mock_roll), \
-             patch("src.combat.effect_pipeline.roll_formula", side_effect=mock_roll), \
-             patch("src.rules.effects.roll_formula", side_effect=mock_roll):
+        with patch("src.spells.blocks.rolls.roll_d20", return_value=20), \
+             patch("src.spells.blocks.damage.roll_formula", side_effect=mock_roll):
             ar.resolve(attacker, caster, action)
 
         assert caster.temporary_hp == 0
-        # Effect should be gone from all trigger buckets
-        for bucket in caster.active_effects.values():
-            assert not any(inst.name == "armor_of_agathys" for inst in bucket)
+        # The effect self-terminated: its lifetime scope was disposed.
+        assert caster.lifetimes[0].disposed
 
     def test_effect_removed_when_temp_hp_depleted_by_non_attack(self):
         """Non-attack damage that depletes temp HP should also remove the effect."""
@@ -260,8 +255,7 @@ class TestArmorOfAgathysSelfTermination:
         dp.apply_damage(caster, [Damage(DamageType.FIRE, 10)])
 
         assert caster.temporary_hp == 0
-        for bucket in caster.active_effects.values():
-            assert not any(inst.name == "armor_of_agathys" for inst in bucket)
+        assert caster.lifetimes[0].disposed  # self-terminated
 
     def test_effect_persists_while_temp_hp_remain(self):
         """The effect stays if temp HP are only partially consumed."""
@@ -273,8 +267,7 @@ class TestArmorOfAgathysSelfTermination:
         dp.apply_damage(caster, [Damage(DamageType.BLUDGEONING, 3)])
 
         assert caster.temporary_hp == 2
-        assert any(inst.name == "armor_of_agathys"
-                   for inst in caster.active_effects.get("attack_hit", []))
+        assert len(caster.lifetimes) == 1 and not caster.lifetimes[0].disposed
 
     def test_full_combat_flow(self):
         """End-to-end: goblin hits warded caster, takes cold damage, temp HP deplete."""
@@ -290,10 +283,8 @@ class TestArmorOfAgathysSelfTermination:
 
         # Force hit, scimitar deals 8 damage (> 5 temp HP)
         mock_roll = lambda f: 5 if f == "5" else 8
-        with patch("src.combat.effect_pipeline.roll_d20", return_value=20), \
-             patch("src.models.action.roll_formula", side_effect=mock_roll), \
-             patch("src.combat.effect_pipeline.roll_formula", side_effect=mock_roll), \
-             patch("src.rules.effects.roll_formula", side_effect=mock_roll):
+        with patch("src.spells.blocks.rolls.roll_d20", return_value=20), \
+             patch("src.spells.blocks.damage.roll_formula", side_effect=mock_roll):
             ar.resolve(attacker, caster, action)
 
         # Attacker took 5 cold retaliation
@@ -303,12 +294,11 @@ class TestArmorOfAgathysSelfTermination:
         assert caster.temporary_hp == 0
         assert caster.hp == 50 - 3
 
-        # Effect auto-removed
-        for bucket in caster.active_effects.values():
-            assert not any(inst.name == "armor_of_agathys" for inst in bucket)
+        # Effect auto-removed: its lifetime scope has been disposed.
+        assert all(s.disposed for s in caster.lifetimes)
 
         # Second attack: no retaliation since effect is gone
         attacker_hp_now = attacker.hp
-        with patch("src.combat.effect_pipeline.roll_d20", return_value=20):
+        with patch("src.spells.blocks.rolls.roll_d20", return_value=20):
             ar.resolve(attacker, caster, action)
         assert attacker.hp == attacker_hp_now

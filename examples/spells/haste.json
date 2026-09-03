@@ -23,12 +23,28 @@
     "somatic": true,
     "material": ["a shaving of licorice root"]
   },
-  "effects": [
+  "program": [
     {
-      "type": "add_entity_effect",
-      "entity_effect_name": "haste",
-      "target": "defender",
-      "concentration": true
+      "block": "lifetime",
+      "kind": "concentration",
+      "source": "haste",
+      "duration_rounds": 10,
+      "then": [
+        {
+          "block": "trigger",
+          "event": "TURN_START",
+          "holder": "defender",
+          "when": "event.entity == entity",
+          "then": [
+            {
+              "block": "add_resource",
+              "target": "current",
+              "resource": "actions",
+              "amount": 1
+            }
+          ]
+        }
+      ]
     }
   ],
   "animation": [

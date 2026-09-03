@@ -1,11 +1,15 @@
 {
   "name": "action_economy_refill",
-  "triggers": ["TURN_START"],
-  "condition": "True",
-  "effects": [
+  "program": [
     {
-      "action": "RefillResources",
-      "target": "event.entity"
+      "block": "trigger",
+      "event": "TURN_START",
+      "priority": 0,
+      "rebind_target": "event.entity",
+      "when": "True",
+      "then": [
+        { "block": "refill_resources", "target": "current" }
+      ]
     }
   ]
 }

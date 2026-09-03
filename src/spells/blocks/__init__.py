@@ -1,0 +1,15 @@
+"""Built-in block handlers. Importing this package registers them all.
+
+Each module registers its block types into the default ``REGISTRY`` at import,
+so ``import src.spells`` (which imports this package) makes the catalogue ready.
+"""
+
+from . import rolls  # noqa: F401
+from . import damage  # noqa: F401
+from . import healing  # noqa: F401
+from . import state  # noqa: F401
+from . import iterators  # noqa: F401
+from . import lifetime  # noqa: F401
+from . import triggers  # noqa: F401
+from . import event_mod  # noqa: F401
+from . import global_effects  # noqa: F401

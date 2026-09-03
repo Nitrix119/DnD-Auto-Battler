@@ -14,7 +14,7 @@ from src.combat.events import EventType
 from src.loaders.stat_block_loader import StatBlockLoader
 from src.models.action import AttackAction, SpellAction
 from src.models.entity import Entity
-from src.rules.rule_engine import RuleEngine
+from src.spells.rules import load_rules_from_directory
 from src.spatial.geometry import Point3D
 
 _RULES_DIR = Path(__file__).parent.parent.parent / "rules"
@@ -247,16 +247,16 @@ async def handle_start_combat(
     # Attach global spell registry
     combat.spell_registry = ws.app.state.spell_registry
 
-    # Create per-session rule engine (needs the session's event bus)
-    effect_registry = ws.app.state.effect_registry
-    rule_engine = RuleEngine(
-        combat.event_bus,
-        entities_getter=lambda: combat.combatants,
+    # Install the global rules on this session's bus. Every rule is a block program,
+    # so loading it *is* installing it on the block engine — the one resolution path.
+    load_rules_from_directory(
+        str(_GLOBAL_RULES_DIR),
+        event_bus=combat.event_bus,
         damage_processor=combat._damage_processor,
-        effect_registry=effect_registry,
     )
-    rule_engine.load_from_directory(_GLOBAL_RULES_DIR)
-    combat.rule_engine = rule_engine
+    # The condition-rule catalogue, read by the `apply_condition` block to find a
+    # condition's reactive mechanics by name.
+    combat.condition_rules = ws.app.state.effect_registry
 
     combat.start_combat()
 
@@ -361,6 +361,7 @@ async def handle_cast_spell(
     log_before = len(combat.log)
     results = combat.resolve_spell(
         caster, defenders, spell_action, target=target_point,
+        slot_level=msg.get("slot_level"),
     )
     new_logs = combat.get_combat_log()[log_before:]
 

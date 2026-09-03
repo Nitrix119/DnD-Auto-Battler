@@ -1,11 +1,14 @@
 {
   "name": "damage_immunity_rule",
-  "triggers": ["DAMAGE_INCOMING"],
-  "condition": "event.damage_list[0].damage_type in event.defender.stat_block.damage_immunities",
-  "effects": [
+  "program": [
     {
-      "action": "ModifyDamage",
-      "multiplier": 0
+      "block": "trigger",
+      "event": "DAMAGE_INCOMING",
+      "priority": 0,
+      "when": "event.damage_list[0].damage_type in event.defender.stat_block.damage_immunities",
+      "then": [
+        { "block": "modify_damage", "multiplier": 0 }
+      ]
     }
   ]
 }

@@ -3,7 +3,7 @@
 import json
 import re
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, List, Optional
 
 # Full-match validator for damage formulas. Accepts one or more terms, each a
 # dice term (NdM) or flat modifier (N), joined by + / -, e.g. "3d8+6",
@@ -267,11 +267,20 @@ class StatBlockLoader:
             cost_kwargs["cost"] = cost
 
         if action_type == "attack":
+            # A weapon is normally authored in the flat form above; AttackResolver
+            # builds the implied ``[attack_roll, damage…]`` program from it. One that
+            # needs more may author a ``program`` directly, validated here exactly as
+            # a spell's is.
+            weapon_program = action_data.get("program") or []
+            if weapon_program:
+                from src.spells.validate import validate_program
+                validate_program(weapon_program, spell_name=name)
             return AttackAction(
                 name=name,
                 description=description,
                 bonus_to_hit=action_data.get("bonus_to_hit", 0),
                 damage=damage,
+                program=weapon_program,
                 recharge=recharge,
                 range_ft=float(action_data.get("range_ft", 5.0)),
                 legendary_action_cost=legendary_action_cost,
@@ -318,11 +327,27 @@ class StatBlockLoader:
                 else SpellComponents(verbal=True, somatic=True)
             )
 
+            # A spell is a block ``program`` (keyed by ``block``), validated at this
+            # boundary so an unknown block, a missing required arg, an arity error, a
+            # context.X reference to a key nothing writes, or an event.<field> a
+            # trigger cannot carry becomes a named error here instead of a silent
+            # run-time no-op. Imported lazily to avoid a module-load import cycle
+            # (loaders -> rules -> combat -> spell_registry -> loaders).
+            program = action_data.get("program")
+            if program is None:
+                legacy = " It uses the retired 'effects' form." if "effects" in action_data else ""
+                raise ValueError(
+                    f"Spell {name!r} has no 'program'. A spell must be authored as a "
+                    f"block program (a list of blocks keyed by 'block').{legacy}"
+                )
+            from src.spells.validate import validate_program
+            validate_program(program, spell_name=name)
+
             return SpellAction(
                 name=name,
                 description=description,
                 spell_level=action_data.get("spell_level", 0),
-                pipeline_effects=action_data.get("effects", []),
+                program=program,
                 recharge=recharge,
                 spell_range=spell_range,
                 targeting_type=targeting_type,
@@ -388,6 +413,8 @@ class StatBlockLoader:
         if isinstance(action, AttackAction):
             base["bonus_to_hit"] = action.bonus_to_hit
             base["range_ft"] = action.range_ft
+            if action.program:
+                base["program"] = action.program
             if action.damage:
                 base["damage"] = [
                     {
@@ -402,8 +429,8 @@ class StatBlockLoader:
 
         elif isinstance(action, SpellAction):
             base["spell_level"] = action.spell_level
-            if action.pipeline_effects:
-                base["effects"] = action.pipeline_effects
+            if action.program:
+                base["program"] = action.program
 
             # spell_range
             sr = action.spell_range

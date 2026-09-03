@@ -10,8 +10,10 @@ import os
 
 from src.models import Entity
 from src.combat import EventBus, EventType
+from src.combat.damage_processor import DamageProcessor
 from src.loaders import StatBlockLoader
-from src.rules import RuleEngine, RuleLoader
+from src.rules import RuleLoader
+from src.spells.rules import apply_entity_rule
 
 EXAMPLES_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "examples")
 CONDITIONS_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "rules", "entity_effects", "conditions")
@@ -30,17 +32,16 @@ def load_goblin() -> Entity:
 
 
 def setup_engine(*entities):
-    """Create a RuleEngine with entity effect support."""
-    entity_list = list(entities)
+    """An event bus and damage processor for the installed riders."""
     bus = EventBus()
-    engine = RuleEngine(bus, entities_getter=lambda: entity_list)
-    return bus, engine
+    return bus, DamageProcessor(bus)
 
 
-def apply_charmed(engine, target, charmer):
+def apply_charmed(bus, dp, target, charmer):
     """Load and apply the charmed entity effect, binding the charmer."""
     rule = RuleLoader.load(os.path.join(CONDITIONS_DIR, "charmed.json"))
-    engine.apply_effect(target, rule, instance_fields={"charmer": charmer})
+    apply_entity_rule(target, rule, event_bus=bus, damage_processor=dp,
+                      instance_fields={"charmer": charmer})
     return rule
 
 
@@ -56,8 +57,8 @@ class TestCharmedCannotAttackCharmer:
         """A charmed entity's attack targeting the charmer should be cancelled."""
         fighter = load_fighter()
         goblin = load_goblin()
-        bus, engine = setup_engine(fighter, goblin)
-        apply_charmed(engine, goblin, charmer=fighter)
+        bus, dp = setup_engine(fighter, goblin)
+        apply_charmed(bus, dp, goblin, charmer=fighter)
 
         action = get_action(goblin, "Scimitar")
         event = bus.emit(EventType.ATTACK_DECLARED,
@@ -70,8 +71,8 @@ class TestCharmedCannotAttackCharmer:
         fighter = load_fighter()
         goblin = load_goblin()
         bystander = load_fighter()
-        bus, engine = setup_engine(fighter, goblin, bystander)
-        apply_charmed(engine, goblin, charmer=fighter)
+        bus, dp = setup_engine(fighter, goblin, bystander)
+        apply_charmed(bus, dp, goblin, charmer=fighter)
 
         action = get_action(goblin, "Scimitar")
         event = bus.emit(EventType.ATTACK_DECLARED,
@@ -83,9 +84,9 @@ class TestCharmedCannotAttackCharmer:
         """An entity that is not charmed should be able to attack anyone freely."""
         fighter = load_fighter()
         goblin = load_goblin()
-        bus, engine = setup_engine(fighter, goblin)
+        bus, dp = setup_engine(fighter, goblin)
         # goblin is charmed, but fighter is not — fighter should attack freely
-        apply_charmed(engine, goblin, charmer=fighter)
+        apply_charmed(bus, dp, goblin, charmer=fighter)
 
         action = get_action(fighter, "Longsword")
         event = bus.emit(EventType.ATTACK_DECLARED,
@@ -104,11 +105,11 @@ class TestCharmedInstanceIndependence:
         fighter = load_fighter()
         goblin = load_goblin()
         bystander = load_goblin()
-        bus, engine = setup_engine(wizard, fighter, goblin, bystander)
+        bus, dp = setup_engine(wizard, fighter, goblin, bystander)
 
         # goblin is charmed by wizard; bystander is charmed by fighter
-        apply_charmed(engine, goblin, charmer=wizard)
-        apply_charmed(engine, bystander, charmer=fighter)
+        apply_charmed(bus, dp, goblin, charmer=wizard)
+        apply_charmed(bus, dp, bystander, charmer=fighter)
 
         action_goblin = get_action(goblin, "Scimitar")
         action_bystander = get_action(bystander, "Scimitar")
@@ -134,27 +135,34 @@ class TestCharmedInstanceIndependence:
         assert event4.cancelled is False
 
     def test_same_rule_applied_twice_independent_duration(self):
-        """Two applications of the charmed rule to different entities have
-        independent duration counters — ticking one does not affect the other."""
+        """Two applications of the charmed rule to different entities have independent
+        duration counters — ticking one does not affect the other.
+
+        Each application owns its own ``LifetimeScope`` on the entity, ticked by the
+        per-turn lifetime clock on that entity's TURN_END."""
+        from src.combat.lifetime_clock import install_lifetime_clock
+
         fighter = load_fighter()
         goblin = load_goblin()
         charmer = load_fighter()
-        bus, engine = setup_engine(fighter, goblin, charmer)
+        bus, dp = setup_engine(fighter, goblin, charmer)
+        install_lifetime_clock(bus)
 
         rule = RuleLoader.load(os.path.join(CONDITIONS_DIR, "charmed.json"))
         rule.duration_rounds = 2
 
-        engine.apply_effect(fighter, rule, instance_fields={"charmer": charmer})
-        engine.apply_effect(goblin, rule, instance_fields={"charmer": charmer})
+        for holder in (fighter, goblin):
+            apply_entity_rule(holder, rule, event_bus=bus, damage_processor=dp,
+                              instance_fields={"charmer": charmer})
 
-        # Both entities should have their own EffectInstance with duration 2
-        fighter_instance = fighter.active_effects["attack_declared"][0]
-        goblin_instance = goblin.active_effects["attack_declared"][0]
-        assert fighter_instance is not goblin_instance
-        assert fighter_instance.duration_remaining == 2
-        assert goblin_instance.duration_remaining == 2
+        # Each entity has its own charmed lifetime scope with duration 2.
+        fighter_scope = next(s for s in fighter.lifetimes if s.source == "charmed")
+        goblin_scope = next(s for s in goblin.lifetimes if s.source == "charmed")
+        assert fighter_scope is not goblin_scope
+        assert fighter_scope.rounds_remaining == 2
+        assert goblin_scope.rounds_remaining == 2
 
-        # Tick fighter's turn — only fighter's instance should decrement
+        # Tick fighter's turn — only fighter's scope decrements.
         bus.emit(EventType.TURN_END, entity=fighter)
-        assert fighter_instance.duration_remaining == 1
-        assert goblin_instance.duration_remaining == 2
+        assert fighter_scope.rounds_remaining == 1
+        assert goblin_scope.rounds_remaining == 2

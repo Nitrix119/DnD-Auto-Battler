@@ -9,7 +9,7 @@ from src.models import (
 
 class TestAbilityScores:
     """Test ability score calculations."""
-    
+
     def test_ability_modifiers(self):
         """Test modifier calculation."""
         abilities = AbilityScores(15, 14, 13, 12, 11, 10)
@@ -19,7 +19,7 @@ class TestAbilityScores:
         assert abilities.get_modifier("intelligence") == 1
         assert abilities.get_modifier("wisdom") == 0
         assert abilities.get_modifier("charisma") == 0
-    
+
     def test_invalid_ability_score(self):
         """Test validation of ability scores."""
         with pytest.raises(ValueError):
@@ -35,7 +35,7 @@ class TestAbilityScores:
 
 class TestStatBlock:
     """Test stat block functionality."""
-    
+
     @pytest.fixture
     def basic_stat_block(self):
         """Create a basic stat block for testing."""
@@ -100,7 +100,7 @@ class TestStatBlock:
 
 class TestEntity:
     """Test entity functionality."""
-    
+
     @pytest.fixture
     def basic_entity(self):
         """Create a basic entity for testing."""
@@ -112,18 +112,18 @@ class TestEntity:
             armor_class=15,
         )
         return Entity(stat_block)
-    
+
     def test_entity_identity(self, basic_entity):
         """Test entity uniqueness."""
         entity2 = Entity(basic_entity.stat_block)
         assert basic_entity != entity2
         assert basic_entity.entity_id != entity2.entity_id
-    
+
     def test_entity_damage(self, basic_entity):
         """Test entity damage."""
         basic_entity.take_damage(Damage(DamageType.BLUDGEONING, 3))
         assert basic_entity.hp == 4
-    
+
     def test_entity_conditions(self, basic_entity):
         """Test adding conditions."""
         condition = Condition(ConditionType.POISONED)
@@ -219,7 +219,7 @@ class TestTemporaryHP:
 
 class TestAttackAction:
     """Test attack actions."""
-    
+
     def test_attack_creation(self):
         """Test creating an attack."""
         attack = AttackAction(

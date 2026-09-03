@@ -1,9 +1,14 @@
 {
   "name": "incapacitated",
-  "triggers": ["ATTACK_DECLARED"],
-  "condition": "event.attacker == entity",
-  "effects": [
-    { "action": "Cancel" }
+  "program": [
+    {
+      "block": "trigger",
+      "event": "ATTACK_DECLARED",
+      "when": "event.attacker == entity",
+      "then": [
+        { "block": "cancel" }
+      ]
+    }
   ],
   "_note": "TODO: SPELL_CAST cancellation (pending spell cast cancellation support). Reactions cannot be taken (pending reaction system)."
 }

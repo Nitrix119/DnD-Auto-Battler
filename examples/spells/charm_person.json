@@ -22,19 +22,18 @@
     "somatic": true,
     "material": []
   },
-  "effects": [
+  "program": [
     {
-      "type": "saving_throw",
+      "block": "saving_throw",
       "attribute": "wisdom",
-      "dc": "use_caster_dc",
-      "target": "defender"
+      "dc": "use_caster_dc"
     },
     {
-      "type": "add_entity_effect",
-      "entity_effect_name": "charmed",
-      "target": "defender",
+      "block": "apply_condition",
+      "condition_type": "charmed",
+      "target": "current",
       "condition": "not context.save_success",
-      "instance_fields": {
+      "bindings": {
         "charmer": "event.caster"
       }
     }

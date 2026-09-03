@@ -1,7 +1,6 @@
 import json
-from typing import Any, Dict, List
+from typing import Any, Dict
 
-from src.combat.events import EventType
 from .rule import Rule
 
 
@@ -16,55 +15,63 @@ class RuleLoader:
             path: Path to the JSON rule file.
 
         Returns:
-            A Rule instance ready to be registered with RuleEngine.
+            A Rule instance ready for ``src.spells.rules`` to install.
 
         Raises:
             FileNotFoundError: If the file does not exist.
-            KeyError: If required fields (name, triggers/trigger, effects) are missing.
-            ValueError: If a trigger string is not a valid EventType.
+            ValueError: If the rule is not a native block ``program``.
         """
         with open(path, "r", encoding="utf-8") as f:
             data: Dict[str, Any] = json.load(f)
 
-        return RuleLoader.from_dict(data)
-
-    @staticmethod
-    def _parse_trigger(trigger_str: str) -> EventType:
-        """Convert a trigger string to an EventType enum value."""
         try:
-            return EventType[trigger_str.upper()]
-        except KeyError:
-            valid = [e.name for e in EventType]
-            raise ValueError(
-                f"Unknown trigger '{trigger_str}'. Valid values: {valid}"
-            )
+            return RuleLoader.from_dict(data)
+        except ValueError as exc:
+            raise ValueError(f"{path}: {exc}") from None
 
     @staticmethod
     def from_dict(data: Dict[str, Any]) -> Rule:
         """Build a Rule from a plain dict (e.g. already-parsed JSON).
 
-        Accepts either ``"trigger"`` (single string) or ``"triggers"`` (list of
-        strings).  Both are normalized to a list of :class:`EventType` values.
+        A rule authors its reactive behaviour as a block ``program`` keyed by
+        ``block``; its events live inside its ``trigger`` blocks. The program is
+        validated here, at the loader boundary, so a malformed rule fails loudly on
+        load rather than silently doing nothing at install.
 
         Args:
-            data: Dict with keys: name, trigger/triggers, effects, and optionally
-                condition and enabled.
+            data: Dict with keys: name, program, and optionally duration_rounds
+                and source.
 
         Returns:
             A Rule instance.
-        """
-        triggers: List[EventType]
-        if "triggers" in data:
-            triggers = [RuleLoader._parse_trigger(t) for t in data["triggers"]]
-        else:
-            raise KeyError("Rule must have a 'triggers' field")
 
-        return Rule(
+        Raises:
+            ValueError: If ``program`` is missing — including when the retired
+                ``triggers``/``effects`` shape is used instead.
+        """
+        name = data.get("name", "<unnamed>")
+        if "program" not in data:
+            legacy = sorted(k for k in ("triggers", "trigger", "effects") if k in data)
+            hint = (
+                f" It uses the retired {'/'.join(legacy)} form; rewrite it as a "
+                f"program of trigger blocks."
+                if legacy else ""
+            )
+            raise ValueError(
+                f"Rule {name!r} has no 'program'. A rule must be authored as a "
+                f"native block program (a list of blocks keyed by 'block').{hint}"
+            )
+
+        rule = Rule(
             name=data["name"],
-            triggers=triggers,
-            effects=data["effects"],
-            condition=data.get("condition"),
-            enabled=data.get("enabled", True),
+            program=data["program"],
             duration_rounds=data.get("duration_rounds"),
             source=data.get("source", ""),
         )
+        # Lazy import: the block validator pulls in the block catalogue (which
+        # reaches into src.combat), so import at call time to dodge a load-time
+        # rules -> spells -> combat cycle — the same dodge validate.py uses.
+        from src.spells.validate import validate_program
+
+        validate_program(data["program"], spell_name=data["name"])
+        return rule

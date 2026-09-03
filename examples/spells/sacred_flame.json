@@ -20,16 +20,14 @@
     "somatic": true,
     "material": []
   },
-  "effects": [
+  "program": [
     {
-      "type": "saving_throw",
+      "block": "saving_throw",
       "attribute": "dexterity",
-      "dc": "use_caster_dc",
-      "target": "defender"
+      "dc": "use_caster_dc"
     },
     {
-      "type": "damage",
-      "target": "defender",
+      "block": "damage",
       "damage_type": "RADIANT",
       "formula": "1d8",
       "save_result": {"on_success": "no_damage"}

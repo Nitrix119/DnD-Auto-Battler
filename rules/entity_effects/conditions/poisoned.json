@@ -1,9 +1,14 @@
 {
   "name": "poisoned",
-  "triggers": ["ATTACK_DECLARED"],
-  "condition": "event.attacker == entity",
-  "effects": [
-    { "action": "GrantDisadvantage" }
+  "program": [
+    {
+      "block": "trigger",
+      "event": "ATTACK_DECLARED",
+      "when": "event.attacker == entity",
+      "then": [
+        { "block": "grant_disadvantage" }
+      ]
+    }
   ],
   "_note": "TODO: Disadvantage on ability checks (pending ability check system). For damage-over-time poison effects (e.g. spider bite), use spider_bite_poison.json or a similar custom rule."
 }

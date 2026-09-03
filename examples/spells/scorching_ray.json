@@ -1,0 +1,45 @@
+{
+  "name": "Scorching Ray",
+  "description": "You create three rays of fire and hurl them at targets within range. You can hurl them at one target or several. Make a ranged spell attack for each ray. On a hit, the target takes 2d6 fire damage.",
+  "type": "spell",
+  "spell_level": 2,
+  "spell_range": {
+    "type": "feet",
+    "distance_ft": 120
+  },
+  "targeting_type": "multi_target",
+  "casting_time": {
+    "type": "action",
+    "count": 1
+  },
+  "duration": {
+    "unit": "instantaneous"
+  },
+  "components": {
+    "verbal": true,
+    "somatic": true,
+    "material": []
+  },
+  "higher_level_scaling": "When you cast this spell using a spell slot of 3rd level or higher, you create one additional ray for each slot level above 2nd.",
+  "program": [
+    {
+      "block": "for_each_target",
+      "then": [
+        {
+          "block": "attack_roll",
+          "attack_bonus": "use_caster_bonus"
+        },
+        {
+          "block": "damage",
+          "damage_type": "FIRE",
+          "formula": "2d6",
+          "requires_hit": true
+        }
+      ]
+    }
+  ],
+  "animation": [
+    [{"type": "projectile", "color": "#FF6622", "from": "caster", "to": "target", "speed": 12, "size": 3, "trail": true}],
+    [{"type": "flash", "color": "#FF8844", "at": "target", "duration": 0.25, "size": 1.2}]
+  ]
+}
