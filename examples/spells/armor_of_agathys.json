@@ -29,7 +29,7 @@
       "then": [
         {
           "block": "grant_temporary_hp",
-          "target": "defender",
+          "target": "current",
           "amount": 5
         },
         {

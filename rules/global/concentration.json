@@ -10,7 +10,7 @@
       "then": [
         {
           "block": "force_concentration_check",
-          "target": "defender",
+          "target": "current",
           "dc": "max(10, event.total // 2)"
         }
       ]

@@ -43,7 +43,7 @@ _CROSS_READS = {
     # `condition` — read by runner._condition_passes for *every* block, not by any
     # handler. Declared once in UNIVERSAL_FIELDS.
     "condition",
-    # `target` — read via the shared `_target` helper in state.py / global_effects.py
+    # `target` — read via the shared `select_target` helper in blocks/targeting.py
     # rather than in each handler body.
     "target",
     # `roll_once` / `formula` / `scaling` — re-read off child `damage` blocks by

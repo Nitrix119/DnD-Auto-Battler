@@ -36,7 +36,7 @@
           "then": [
             {
               "block": "add_resource",
-              "target": "defender",
+              "target": "current",
               "resource": "movement",
               "amount": 10
             }

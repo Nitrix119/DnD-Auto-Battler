@@ -31,7 +31,7 @@
       "then": [
         {
           "block": "add_modifier",
-          "target": "defender",
+          "target": "current",
           "stat": "ac",
           "value": 2,
           "source": "Shield of Faith",

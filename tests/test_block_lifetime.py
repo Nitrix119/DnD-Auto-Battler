@@ -64,7 +64,7 @@ _SHIELD_OF_FAITH = [
         "then": [
             {
                 "block": "add_modifier",
-                "target": "defender",
+                "target": "current",
                 "stat": "ac",
                 "value": 2,
                 "source": "Shield of Faith",
@@ -122,7 +122,7 @@ def test_grant_outside_a_lifetime_is_permanent():
         [
             {
                 "block": "add_modifier",
-                "target": "defender",
+                "target": "current",
                 "stat": "ac",
                 "value": 2,
                 "source": "Permanent",
@@ -167,7 +167,7 @@ def test_duration_lifetime_expires_via_the_real_turn_end_clock():
     program = [{
         "block": "lifetime", "kind": "rounds", "duration_rounds": 2,
         "source": "Barkskin",
-        "then": [{"block": "add_modifier", "target": "defender",
+        "then": [{"block": "add_modifier", "target": "current",
                   "stat": "ac", "value": 2, "source": "Barkskin"}],
     }]
     action = SpellAction(name="Barkskin", description="", spell_level=2)

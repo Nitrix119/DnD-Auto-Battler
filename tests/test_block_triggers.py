@@ -53,7 +53,7 @@ _HEAL_RIDER = {
     "event": "DAMAGE_DEALT",
     "when": "event.source == entity",
     "then": [
-        {"block": "healing", "target": "caster", "amount": "event.total // 2"},
+        {"block": "healing", "target": "self", "amount": "event.total // 2"},
     ],
 }
 

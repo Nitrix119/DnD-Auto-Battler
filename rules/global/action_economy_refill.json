@@ -8,7 +8,7 @@
       "target": "event.entity",
       "when": "True",
       "then": [
-        { "block": "refill_resources", "target": "defender" }
+        { "block": "refill_resources", "target": "current" }
       ]
     }
   ]

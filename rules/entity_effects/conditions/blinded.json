@@ -4,7 +4,6 @@
     {
       "block": "trigger",
       "event": "ATTACK_DECLARED",
-      "holder": "defender",
       "when": "event.attacker == entity or event.defender == entity",
       "then": [
         { "block": "grant_disadvantage", "condition": "event.attacker == entity" },

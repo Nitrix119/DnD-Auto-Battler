@@ -63,28 +63,15 @@ noted condition.
 Not bugs; places where mirroring the retired machinery left a rough edge. Now that the
 translator (`fold.py`) is gone, these can be cleaned up as standalone refinements.
 
-- **The `target: "caster" | "defender"` two-value selector is mis-named for non-combat
-  blocks.** `_target(block, inv)` returns `inv.caster` for `"caster"` and `inv.target` for
-  *anything else*; `"defender"` just means "the current target slot". For a `TURN_START`
-  global (resource refill) or `DAMAGE_DEALT` global (concentration), the trigger rebinds
-  `inv.target` via `target: "event.entity"` / `"event.defender"` and the effect block then
-  says `target: "defender"` to read it. It works but reads as if there were an attacker and a
-  defender when there isn't. *Refinement:* let a forward/state block target an event
-  expression directly (e.g. `target: "event.entity"`) and drop the rebind dance, or rename
-  the selector to something intent-revealing (`self`/`current`). (Faithful copy of the old
-  `fold._EVENT_REBIND`.)
-- **A condition's `holder` is baked to `"defender"` in the rule file.** Every
-  `rules/entity_effects/conditions/*` trigger hard-codes `holder: "defender"` because the
-  shipped spells apply conditions to a target. A spell that applied a condition to *itself*
-  (`apply_condition` with `target: "caster"`) would then resolve the holder wrong. No shipped
-  spell does this, so it's latent. *Refinement:* make the condition rider holder-agnostic —
-  install it on a child invocation whose `caster` **is** the conditioned entity, so the
-  default `holder: "caster"` is always correct — and drop the baked `holder` from the files.
 - **`_capture_bindings` distinguishes string bindings (expressions) from non-string
   (already-resolved values).** This lets both native `bindings: {"charmer": "event.caster"}`
-  and `apply_entity_rule(instance_fields={"charmer": <Entity>})` work. Fine, but a string value
-  that was *meant* literally would be evaluated as an expression — no caller does this today.
-  (`src/spells/blocks/triggers.py`.)
+  and `apply_entity_rule(instance_fields={"charmer": <Entity>})` work. Not awkwardness to
+  remove — it is **load-bearing**: `apply_condition` pre-resolves a spell's bindings against
+  the cast invocation and passes the resolved values through this same non-string branch, so
+  the condition rider can install on a child whose caster is the conditioned entity (the
+  holder-agnostic fix) without the `charmer` binding re-resolving to the wrong entity.
+  A string value that was *meant* literally would still be evaluated as an expression — no
+  caller does this today. (`src/spells/blocks/triggers.py`.)
 - **Marker-only conditions are `program: []`.** `deafened` / `exhaustion` / `grappled` have
   no implementable mechanics yet, so their native form is an empty program (the marker still
   applies). Correct and honest; just note it's intentional, not a stub to "fill in" blindly —
@@ -123,9 +110,11 @@ Each is its own design.
   | **Unknown *top-level* keys** on spell/rule/creature JSON, outside any block | The same hole one level up. `_note` already lives there, so the `_`-prefix convention carries over. |
 
 - **`target` is overloaded.** On `trigger` it is an *expression* naming an entity to rebind
-  to; on state/healing/global blocks it is a `caster`/`defender` selector. The per-block
-  schema declares both correctly so nothing breaks, but one of them should be renamed
-  (`trigger.rebind_target`) — a content migration, not a lint.
+  to; on state/healing/global blocks it is a `self`/`current` selector (renamed from
+  `caster`/`defender`, which read wrong inside a global rule — §3). The per-block schema
+  declares both correctly so nothing breaks, but the remaining half — the `trigger` one —
+  should be renamed (`trigger.rebind_target`) to retire the overload entirely: a content
+  migration, not a lint.
 - **`damage`/`attack_roll`/`saving_throw` have no target selector.** They act on the current
   target; retargeting is the enclosing `trigger`'s job. If a spell ever needs self-damage
   that is a deliberate feature (implement `target` on `damage`), not a lint fix.

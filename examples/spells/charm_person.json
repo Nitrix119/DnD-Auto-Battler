@@ -31,7 +31,7 @@
     {
       "block": "apply_condition",
       "condition_type": "charmed",
-      "target": "defender",
+      "target": "current",
       "condition": "not context.save_success",
       "bindings": {
         "charmer": "event.caster"

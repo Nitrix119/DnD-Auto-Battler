@@ -43,7 +43,7 @@ def test_context_ref_to_a_written_key_passes():
     program = [
         {"block": "damage", "damage_type": "NECROTIC",
          "formula": "3d6"},
-        {"block": "healing", "target": "caster", "amount": "context.damage_dealt // 2",
+        {"block": "healing", "target": "self", "amount": "context.damage_dealt // 2",
          "condition": "context.damage_dealt > 0"},
     ]
     validate_program(program, spell_name="Drain")  # does not raise
@@ -66,7 +66,7 @@ def test_missing_required_arg_raises():
 def test_bad_context_ref_raises():
     with pytest.raises(ProgramValidationError, match=r"context\.dammage_dealt"):
         validate_program(
-            [{"block": "healing", "target": "caster",
+            [{"block": "healing", "target": "self",
               "formula": "context.dammage_dealt"}],  # typo
             spell_name="Bad")
 

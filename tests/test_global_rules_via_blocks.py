@@ -160,7 +160,7 @@ class TestForwardGlobalRules:
         caster = _entity(hp=hp, con=con)
         program = parse_program([{
             "block": "lifetime", "kind": "concentration", "source": "Shield of Faith",
-            "then": [{"block": "add_modifier", "target": "caster", "stat": "ac",
+            "then": [{"block": "add_modifier", "target": "self", "stat": "ac",
                       "value": 2, "source": "Shield of Faith"}],
         }])
         resolve_blocks(caster, caster,

@@ -1,6 +1,6 @@
 """The healing block — the superset of the legacy ``healing`` step and ``HealTarget``.
 
-Heals the current target (or the caster with ``target: "caster"``) by either an
+Heals the current target (or the caster with ``target: "self"``) by either an
 ``amount`` expression or a ``formula`` + optional ``bonus``. Mirrors the legacy
 pipeline's healing step; ``HealTarget``'s formula+bonus case is this block with
 ``amount`` omitted.
@@ -17,11 +17,12 @@ from ..contract import BlockContract, Field, TargetArity
 from ..context import Invocation, eval_context
 from ..block import Block
 from ..registry import REGISTRY
+from .targeting import TARGET_FIELD, select_target
 
 
 def healing(block: Block, inv: Invocation) -> None:
     """Heal a target by an ``amount`` expression, or a ``formula`` + ``bonus``."""
-    target = inv.caster if block.get("target") == "caster" else inv.target
+    target = select_target(block, inv)
     ec = eval_context(inv)
 
     amount_expr = block.get("amount")
@@ -61,8 +62,7 @@ REGISTRY.register(
         # silently when neither is present — but that is an either/or constraint
         # `Field.required` cannot express. See SPELL_SYSTEM_REMAINING §4.
         fields=(
-            Field("target", "choice", choices=("caster", "defender"),
-                  description="'caster' heals the caster; otherwise the current target."),
+            TARGET_FIELD,
             Field("amount", "expr",
                   description="Expression for a computed amount; takes precedence "
                               "over formula."),
@@ -73,7 +73,7 @@ REGISTRY.register(
         ),
         reads=("damage_dealt",),
         writes=("healing_amount",),
-        # SINGLE by default; a `target: "caster"` instance acts on the caster and
+        # SINGLE by default; a `target: "self"` instance acts on the caster and
         # is exempt from the set-cardinality check (handled when arity is enforced).
         target_arity=TargetArity.SINGLE,
     ),

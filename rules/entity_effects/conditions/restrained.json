@@ -4,7 +4,6 @@
     {
       "block": "trigger",
       "event": "ATTACK_DECLARED",
-      "holder": "defender",
       "then": [
         { "block": "grant_disadvantage", "condition": "event.attacker == entity" },
         { "block": "grant_advantage", "condition": "event.defender == entity" }
@@ -13,11 +12,10 @@
     {
       "block": "trigger",
       "event": "SAVING_THROW_DECLARED",
-      "holder": "defender",
       "then": [
         { "block": "grant_disadvantage", "condition": "event.defender == entity and event.ability == 'dexterity'" }
       ]
     }
   ],
-  "_note": "Native block program (Phase 3 §5d). TODO: Speed becomes 0 and cannot benefit from any bonus to speed (pending movement system). Attack disadvantage (self), attack advantage (attackers), and disadvantage on DEX saving throws are implemented; holder is baked to 'defender' (the shipped application) — revisit if a spell ever applies restrained to itself."
+  "_note": "Native block program (Phase 3 §5d). TODO: Speed becomes 0 and cannot benefit from any bonus to speed (pending movement system). Attack disadvantage (self), attack advantage (attackers), and disadvantage on DEX saving throws are implemented. The rider is holder-agnostic: it is installed on the conditioned entity, so it works whether restrained is applied to a target or to the caster itself."
 }

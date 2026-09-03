@@ -5,7 +5,7 @@ Regression coverage for a bug where the step called a non-existent
 `grant_temporary_hp` step crashed with AttributeError at runtime.  The existing
 armor_of_agathys test only asserted JSON structure and never executed this
 branch, so it did not catch the crash. Runs the block engine (the only engine),
-covering a literal amount, an expression amount, and defender vs caster targeting.
+covering a literal amount, an expression amount, and current vs self targeting.
 """
 
 from src.combat.damage_processor import DamageProcessor
@@ -31,7 +31,7 @@ def _entity(name: str) -> Entity:
     ))
 
 
-def _temp_hp_spell(amount, target="caster") -> SpellAction:
+def _temp_hp_spell(amount, target="self") -> SpellAction:
     return SpellAction(
         name="Test Temp HP",
         description="",
@@ -72,6 +72,6 @@ def test_grant_temporary_hp_accepts_expression_amount():
 
 def test_grant_temporary_hp_can_target_defender():
     caster, defender = _entity("Caster"), _entity("Defender")
-    _run(_temp_hp_spell(7, target="defender"), caster, defender)
+    _run(_temp_hp_spell(7, target="current"), caster, defender)
     assert defender.temporary_hp == 7
     assert caster.temporary_hp == 0

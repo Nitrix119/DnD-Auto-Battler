@@ -35,7 +35,7 @@
     },
     {
       "block": "healing",
-      "target": "caster",
+      "target": "self",
       "amount": "context.damage_dealt // 2",
       "condition": "context.damage_dealt > 0"
     },
@@ -47,7 +47,7 @@
       "then": [
         {
           "block": "grant_action",
-          "target": "caster",
+          "target": "self",
           "name": "Vampiric Touch",
           "description": "Melee spell attack granted by Vampiric Touch concentration.",
           "bonus_to_hit": "event.caster.spell_attack_bonus",
@@ -67,7 +67,7 @@
           "then": [
             {
               "block": "healing",
-              "target": "caster",
+              "target": "self",
               "formula": "0",
               "bonus": "event.total // 2"
             }

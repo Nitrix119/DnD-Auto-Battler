@@ -25,10 +25,7 @@ from ..contract import BlockContract, Field, TargetArity
 from ..context import Invocation, eval_context
 from ..block import Block
 from ..registry import REGISTRY
-
-
-def _target(block: Block, inv: Invocation):
-    return inv.caster if block.get("target") == "caster" else inv.target
+from .targeting import TARGET_FIELD as _TARGET, select_target as _target
 
 
 def force_concentration_check(block: Block, inv: Invocation) -> None:
@@ -51,9 +48,6 @@ def refill_resources(block: Block, inv: Invocation) -> None:
     """Reset the target's action resources to its stat-block defaults."""
     _target(block, inv).refill_resources()
 
-
-_TARGET = Field("target", "choice", choices=("caster", "defender"),
-                description="'caster' acts on the caster; otherwise the current target.")
 
 REGISTRY.register(
     "force_concentration_check", force_concentration_check,

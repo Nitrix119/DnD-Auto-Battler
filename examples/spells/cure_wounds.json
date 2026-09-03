@@ -24,7 +24,7 @@
   "program": [
     {
       "block": "healing",
-      "target": "defender",
+      "target": "current",
       "formula": "1d8",
       "bonus": "event.caster.spellcasting_modifier"
     }

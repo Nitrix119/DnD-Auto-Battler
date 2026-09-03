@@ -4,7 +4,6 @@
     {
       "block": "trigger",
       "event": "ATTACK_DECLARED",
-      "holder": "defender",
       "when": "event.attacker == entity",
       "then": [
         { "block": "cancel", "condition": "event.defender == instance_fields.charmer" }

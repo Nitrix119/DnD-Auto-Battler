@@ -24,21 +24,15 @@ from ..context import Invocation, eval_context
 from ..block import Block, parse_program
 from ..registry import REGISTRY
 from ..runner import run_program
+from .targeting import TARGET_FIELD as _TARGET, select_target as _target
+from .triggers import _capture_bindings
 
-# `target` here is a two-value selector, not an expression — unlike `trigger.target`.
-# (The naming overlap is a recorded design smell: SPELL_SYSTEM_REMAINING §4.)
-_TARGET = Field("target", "choice", choices=("caster", "defender"),
-                description="'caster' acts on the caster; otherwise the current target.")
 _SOURCE = Field("source", "str", description="Label for what applied this (a spell name).")
 _EFFECT_NAME = Field("effect_name", "str",
                      description="Effect name, used to remove this by name later.")
 _BINDINGS = Field("bindings", "map_expr",
                   description="Per-application values captured once at install and "
                               "read later as instance_fields.<name>.")
-
-
-def _target(block: Block, inv: Invocation):
-    return inv.caster if block.get("target") == "caster" else inv.target
 
 
 def _own(inv: Invocation, handle) -> None:
@@ -68,22 +62,28 @@ def _condition_rule(inv: Invocation, ctype: ConditionType):
         return None
 
 
-def _install_condition_rider(inv, rule, bindings, scope) -> None:
-    """Subscribe a condition's reactive rule as holder-scoped triggers into *scope*.
+def _install_condition_rider(inv, rule, conditioned, bindings, scope) -> None:
+    """Subscribe a condition's reactive rule as triggers held by *conditioned*, into *scope*.
 
-    Runs the rule's native ``program`` (its trigger blocks, with ``holder`` baked in)
-    on a child invocation whose ``active_scope`` is *scope*, so each trigger registers
-    its own unsubscribe as a handle the scope owns — disposing the scope (on expiry,
-    concentration loss, or dispel) then tears the mechanics down with the condition.
-    The child keeps this cast's caster/target, so the rider's ``entity``/``caster``
-    resolves to the conditioned entity and any ``bindings`` (e.g. Charmed's ``charmer``)
-    evaluate against the caster's context.
+    Runs the rule's native ``program`` (its trigger blocks) on a child invocation whose
+    **caster and target are the conditioned entity**, so each rider's default
+    ``holder: "caster"`` binds ``entity``/``event.caster`` to that entity — the same
+    convention :func:`src.spells.entity_effects.install_entity_effect` uses, and the
+    reason the condition rule files need no baked ``holder``. Works regardless of whether
+    the spell conditioned its target or itself. The child's ``active_scope`` is *scope*,
+    so each trigger registers its own unsubscribe as a handle the scope owns — disposing
+    the scope (on expiry, concentration loss, or dispel) tears the mechanics down with
+    the condition.
+
+    *bindings* are already-resolved values (e.g. Charmed's ``charmer`` → the caster),
+    captured against the *cast* invocation before the caster was rebound here, so they
+    flow through the trigger's ``_capture_bindings`` pass-through branch unchanged.
     """
     blocks = [dict(b) for b in (rule.program or [])]
     if bindings:
         for tb in blocks:
             tb["bindings"] = bindings
-    child = inv.child()
+    child = inv.child(caster=conditioned, target=conditioned)
     child.active_scope = scope
     run_program(parse_program(blocks), child)
 
@@ -130,9 +130,13 @@ def apply_condition(block: Block, inv: Invocation) -> None:
     if rule is not None:
         # `instance_fields` is the legacy-step field name (see the authoring guide);
         # `bindings` is the native block spelling. Accept either — the rider captures
-        # them as closure values (Charmed's `charmer`).
-        bindings = block.get("bindings") or block.get("instance_fields")
-        _install_condition_rider(inv, rule, bindings, scope)
+        # them as closure values (Charmed's `charmer`). Resolve them **now**, against
+        # this cast invocation (where `event.caster` is the spell caster), before the
+        # rider is installed on a child whose caster is the conditioned entity — so a
+        # binding like `charmer: "event.caster"` still resolves to the caster.
+        raw_bindings = block.get("bindings") or block.get("instance_fields")
+        bindings = _capture_bindings(raw_bindings, inv)
+        _install_condition_rider(inv, rule, target, bindings, scope)
 
     inv.event_bus.emit(
         EventType.CONDITION_ADDED,

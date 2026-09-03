@@ -22,7 +22,7 @@ Attach a labeled StatModifier to the target.
 
 | Arg | Req. | Kind | |
 |---|---|---|---|
-| `target` |  | `caster` / `defender` | 'caster' acts on the caster; otherwise the current target. |
+| `target` |  | `self` / `current` | 'self' acts on the block's owner (caster/holder); 'current' acts on the current target slot (the default). |
 | `stat` | yes | a string | Stat to modify: 'ac', 'spell_save_dc', 'saving_throw.<ability>', 'max_hp', … |
 | `value` | yes | an expression | How much to add (negative to subtract). |
 | `source` |  | a string | Label for what applied this (a spell name). |
@@ -40,7 +40,7 @@ Add to a per-turn resource (movement, actions, …) on the target.
 
 | Arg | Req. | Kind | |
 |---|---|---|---|
-| `target` |  | `caster` / `defender` | 'caster' acts on the caster; otherwise the current target. |
+| `target` |  | `self` / `current` | 'self' acts on the block's owner (caster/holder); 'current' acts on the current target slot (the default). |
 | `resource` | yes | `actions` / `bonus_actions` / `reactions` / `movement` | Which per-turn resource to top up. |
 | `amount` | yes | an expression | How much to add. |
 
@@ -61,7 +61,7 @@ Add a status condition to the target and install its reactive mechanics.
 
 | Arg | Req. | Kind | |
 |---|---|---|---|
-| `target` |  | `caster` / `defender` | 'caster' acts on the caster; otherwise the current target. |
+| `target` |  | `self` / `current` | 'self' acts on the block's owner (caster/holder); 'current' acts on the current target slot (the default). |
 | `condition_type` | yes | a `ConditionType` name | Which condition to apply. |
 | `duration` |  | an expression | Rounds the condition lasts; omitted = until dispelled. |
 | `source` |  | a string | Label for what applied this (a spell name). |
@@ -169,7 +169,7 @@ Force the target's CON save; on a failure, end its concentration.
 
 | Arg | Req. | Kind | |
 |---|---|---|---|
-| `target` |  | `caster` / `defender` | 'caster' acts on the caster; otherwise the current target. |
+| `target` |  | `self` / `current` | 'self' acts on the block's owner (caster/holder); 'current' acts on the current target slot (the default). |
 | `dc` | yes | an expression | Expression for the save DC, evaluated at fire time. |
 
 | | |
@@ -211,7 +211,7 @@ Grant a temporary AttackAction to the target (e.g. a concentration's attack).
 
 | Arg | Req. | Kind | |
 |---|---|---|---|
-| `target` |  | `caster` / `defender` | 'caster' acts on the caster; otherwise the current target. |
+| `target` |  | `self` / `current` | 'self' acts on the block's owner (caster/holder); 'current' acts on the current target slot (the default). |
 | `name` | yes | a string | Name of the granted action. |
 | `description` |  | a string | Flavour text for the action. |
 | `bonus_to_hit` |  | an expression | Attack bonus for the granted action. |
@@ -256,7 +256,7 @@ Grant temporary hit points to the target (non-stacking, keeps the higher).
 
 | Arg | Req. | Kind | |
 |---|---|---|---|
-| `target` |  | `caster` / `defender` | 'caster' acts on the caster; otherwise the current target. |
+| `target` |  | `self` / `current` | 'self' acts on the block's owner (caster/holder); 'current' acts on the current target slot (the default). |
 | `amount` | yes | an expression | Temporary hit points to grant (non-stacking). |
 
 | | |
@@ -271,7 +271,7 @@ Heal a target by an ``amount`` expression, or a ``formula`` + ``bonus``.
 
 | Arg | Req. | Kind | |
 |---|---|---|---|
-| `target` |  | `caster` / `defender` | 'caster' heals the caster; otherwise the current target. |
+| `target` |  | `self` / `current` | 'self' acts on the block's owner (caster/holder); 'current' acts on the current target slot (the default). |
 | `amount` |  | an expression | Expression for a computed amount; takes precedence over formula. |
 | `formula` |  | a dice formula | Dice formula rolled at cast time. |
 | `bonus` |  | an expression | Added to the formula roll (a number or an expression). |
@@ -328,7 +328,7 @@ Reset the target's action resources to its stat-block defaults.
 
 | Arg | Req. | Kind | |
 |---|---|---|---|
-| `target` |  | `caster` / `defender` | 'caster' acts on the caster; otherwise the current target. |
+| `target` |  | `self` / `current` | 'self' acts on the block's owner (caster/holder); 'current' acts on the current target slot (the default). |
 
 | | |
 |---|---|

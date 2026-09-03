@@ -64,24 +64,24 @@ def _run_state(program_dicts):
 
 def test_grant_temporary_hp_to_defender():
     _, target = _run_state(
-        [{"block": "grant_temporary_hp", "target": "defender", "amount": 10}])
+        [{"block": "grant_temporary_hp", "target": "current", "amount": 10}])
     assert target.temporary_hp == 10
 
 
 def test_grant_temporary_hp_to_caster():
     caster, _ = _run_state(
-        [{"block": "grant_temporary_hp", "target": "caster", "amount": 8}])
+        [{"block": "grant_temporary_hp", "target": "self", "amount": 8}])
     assert caster.temporary_hp == 8
 
 
 def test_apply_condition_adds_the_marker():
     _, target = _run_state(
-        [{"block": "apply_condition", "condition_type": "prone", "target": "defender"}])
+        [{"block": "apply_condition", "condition_type": "prone", "target": "current"}])
     assert sorted(c.condition_type.value for c in target.get_active_conditions()) == ["prone"]
 
 
 def test_add_modifier_changes_the_stat():
-    _, target = _run_state([{"block": "add_modifier", "target": "defender", "stat": "ac",
+    _, target = _run_state([{"block": "add_modifier", "target": "current", "stat": "ac",
                              "value": 2, "source": "Shield of Faith"}])
     assert target.ac == 15  # base 13 + 2
 
