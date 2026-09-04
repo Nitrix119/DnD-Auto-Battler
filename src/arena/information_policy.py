@@ -36,6 +36,9 @@ class InformationPolicy:
         reveal_enemy_resources: Show each enemy's action-economy budget.
         reveal_enemy_conditions: Show the conditions currently on each enemy.
         reveal_enemy_spell_slots: Show each enemy's remaining spell slots.
+        reveal_enemy_actions: Show each enemy's capabilities (attacks and known spells).
+            Hidden-by-default in the info-asymmetry experiments — realistically you learn
+            an enemy's abilities by seeing them used, not from a stat sheet (A3).
     """
 
     reveal_enemy_hp: bool = True
@@ -44,6 +47,7 @@ class InformationPolicy:
     reveal_enemy_resources: bool = True
     reveal_enemy_conditions: bool = True
     reveal_enemy_spell_slots: bool = True
+    reveal_enemy_actions: bool = True
 
     def __post_init__(self) -> None:
         if self.hp_display not in _HP_MODES:

@@ -89,6 +89,25 @@ def test_bucketed_hp_shows_label_not_number(make_entity, make_combat):
     assert enemy_view["hp_bucket"] == "critical"
 
 
+def test_enemy_capabilities_gated_by_policy(make_entity, make_combat):
+    me = make_entity("Fighter", team="a", pos=(0, 0, 0), attacks=[melee_attack()])
+    enemy = make_entity(
+        "Mage", team="b", pos=(5, 0, 0), attacks=[melee_attack("Dagger")],
+        known_spells=["Fireball"],
+    )
+    combat = make_combat([me, enemy])
+
+    shown = build_observation(combat, me, FULL_INFORMATION)["enemies"][0]
+    assert shown["actions"] == ["Dagger"]
+    assert shown["known_spells"] == ["Fireball"]
+
+    hidden = build_observation(
+        combat, me, InformationPolicy(reveal_enemy_actions=False)
+    )["enemies"][0]
+    assert "actions" not in hidden
+    assert "known_spells" not in hidden
+
+
 def test_hidden_ac_and_resources(make_entity, make_combat):
     me, ally, enemy, combat = _setup(make_entity, make_combat)
 

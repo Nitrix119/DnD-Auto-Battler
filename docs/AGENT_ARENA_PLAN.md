@@ -280,8 +280,9 @@ infer, as at a real table.
 
 ## 6. Milestones
 
-**Status: the full offline pipeline runs (steps 1–6 committed) — scripted-vs-scripted
-matches play end-to-end and deterministically. Only the live LLM agent (step 7) remains.**
+**Status: milestone-1 code complete and offline-green. The `LLMAgent` (Claude) is built
+and mock-tested; the only thing left is running it *live* (needs the user's API key). The
+full scripted pipeline runs end-to-end and deterministically.**
 
 ### Milestone 1 — Foundation + one live LLM turn (current)
 TDD throughout (a test that **executes** the loop, not one that inspects shapes —
@@ -297,13 +298,14 @@ CLAUDE.md §4), in order:
 6. ✅ `match.py` (+ `setup.py`) — single-match runner (one agent per team, win = last
    standing, round cap on HP fraction). `setup.build_combat` installs the `rules/global/`
    set (per-turn refill, crits, damage mods) — the arena's mirror of the web's combat wiring.
-7. `LLMAgent` (Claude) — one real agent taking full turns vs `ScriptedAgent`,
-   end-to-end. **Needs an API key + costs real tokens** — coordinate with the user
-   before running live (steps 1–6 run fully offline with no network).
+7. ✅ `llm_agent.py` — `LLMAgent` (Claude), single-shot-per-action tool-use adapter with an
+   injectable client; mock-tested offline. **Live run still pending the user's API key.**
+   Wiring/creds/cost in [AGENT_ARENA_LLM_SETUP.md](AGENT_ARENA_LLM_SETUP.md); live demo
+   `examples/arena_llm_match.py`.
 8. ✅ Demo `examples/arena_match.py` (scripted-vs-scripted, deterministic); README section pending.
 
-`reveal_enemy_actions` is still **to add** to the policy alongside the LLM work (it gates the
-capability visibility used by the observation and by result-shaping).
+✅ `reveal_enemy_actions` added — enemy capabilities (attacks + known spells) show in the
+observation only when revealed (default on; hide it for the info-asymmetry experiments).
 
 ### Deferred (designed-for, not built now)
 - Information-hiding **experiments** + the **batch** match-runner and win-rate /
@@ -325,7 +327,9 @@ capability visibility used by the observation and by result-shaping).
 
 **New (`src/arena/`):** `__init__.py`, `information_policy.py`, `observation.py`,
 `action_space.py`, `tools.py`, `agent.py`, `turn_driver.py`, `transcript.py`, `match.py`,
-`setup.py`.
+`setup.py`, `llm_agent.py`.
+**New (docs/examples):** `docs/AGENT_ARENA_LLM_SETUP.md`, `examples/arena_match.py`,
+`examples/arena_llm_match.py`.
 **New (tests, mirroring `tests/`):** `tests/arena/test_action_space.py`,
 `test_observation.py`, `test_tools.py`, `test_turn_driver.py`, `test_match.py`, and a
 mocked-LLM `test_llm_agent.py` (patch the API client — no network in the suite).

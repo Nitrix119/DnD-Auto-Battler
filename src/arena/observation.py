@@ -103,6 +103,9 @@ def _serialize_enemy(entity: Entity, policy: InformationPolicy) -> Dict[str, Any
         view["resources"] = _resources(entity)
     if policy.reveal_enemy_spell_slots:
         view["spell_slots"] = _spell_slots(entity)
+    if policy.reveal_enemy_actions:
+        view["actions"] = [a.name for a in entity.stat_block.actions + entity.granted_actions]
+        view["known_spells"] = list(entity.stat_block.known_spells)
 
     return view
 
