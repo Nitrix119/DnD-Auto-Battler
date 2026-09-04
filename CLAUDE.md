@@ -231,6 +231,9 @@ TDD is the default workflow, not an afterthought. The suite is a genuine strengt
 An agent should know where a new file belongs without guessing — read the tree
 (`src/` is the engine, `web/` the FastAPI app, `examples/` and `rules/` the JSON
 content). Note `tests/` mirrors the engine; ignore `build/lib/` (stale untracked copy).
+`src/arena/` is the headless agent-vs-agent harness (LLM benchmarking) — a *driver* over
+the engine, not part of it; it depends on `src/combat`/`src/models`, never the reverse. See
+[docs/AGENT_ARENA_PLAN.md](docs/AGENT_ARENA_PLAN.md).
 
 **Content invariants:**
 

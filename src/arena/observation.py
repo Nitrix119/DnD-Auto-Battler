@@ -60,6 +60,7 @@ def _serialize_ally(entity: Entity) -> Dict[str, Any]:
         "name": entity.name,
         "team": entity.team,
         "position": _position(entity),
+        "size_ft": entity.stat_block.size.size_ft,
         "alive": entity.is_alive(),
         "hp": entity.current_hp,
         "max_hp": entity.max_hp,
@@ -82,6 +83,7 @@ def _serialize_enemy(entity: Entity, policy: InformationPolicy) -> Dict[str, Any
         "name": entity.name,
         "team": entity.team,
         "position": _position(entity),
+        "size_ft": entity.stat_block.size.size_ft,
         "alive": entity.is_alive(),
     }
 
@@ -134,4 +136,21 @@ def build_observation(
             _serialize_enemy(e, policy) for e in combat.get_enemies(entity)
         ],
         "legal_actions": legal_actions(combat, entity).to_dict(),
+    }
+
+
+def snapshot_state(combat: "CombatSystem") -> Dict[str, Any]:
+    """Return a neutral, **ungated** full-state snapshot of *combat* for the transcript.
+
+    Unlike :func:`build_observation` (one agent's policy-filtered view), this is ground
+    truth — every combatant in full — so replay and scoring have complete data regardless
+    of what any agent was allowed to see. Positions are in backend feet.
+    """
+    current = combat.get_current_entity()
+    return {
+        "state": combat.state.name,
+        "round": combat.round,
+        "turn": combat.turn,
+        "current_entity_id": current.entity_id if current else None,
+        "entities": [_serialize_ally(e) for e in combat.combatants],
     }

@@ -280,27 +280,30 @@ infer, as at a real table.
 
 ## 6. Milestones
 
-**Status: sensory layer done (steps 1–2 committed); building the motor side next.**
+**Status: the full offline pipeline runs (steps 1–6 committed) — scripted-vs-scripted
+matches play end-to-end and deterministically. Only the live LLM agent (step 7) remains.**
 
 ### Milestone 1 — Foundation + one live LLM turn (current)
 TDD throughout (a test that **executes** the loop, not one that inspects shapes —
 CLAUDE.md §4), in order:
 1. ✅ `information_policy.py` + `observation.py` (with `FULL_INFORMATION`).
 2. ✅ `action_space.py` — the legal-move assembler.
-3. `tools.py` — schemas + `ToolExecutor` (validation + dispatch + structured errors +
+3. ✅ `tools.py` — schemas + `ToolExecutor` (validation + dispatch + structured errors +
    policy-gated result shaping, C3).
-4. `agent.py` — provider-neutral `Agent` base (team-controlling, one action/call, capped
+4. ✅ `agent.py` — provider-neutral `Agent` base (team-controlling, one action/call, capped
    notes) + `RandomAgent`/`ScriptedAgent`.
-5. `turn_driver.py` + `transcript.py` — per-turn loop (one action at a time), the failure
-   budget (3 consecutive / 5 total), the running combat log, and seed+rolls logging.
-6. `match.py` — single-match runner (one agent per team, win = last standing, round cap).
+5. ✅ `turn_driver.py` + `transcript.py` — per-turn loop (one action at a time), the failure
+   budget (3 consecutive / 5 total), and the transcript (seed + rolls + snapshots).
+6. ✅ `match.py` (+ `setup.py`) — single-match runner (one agent per team, win = last
+   standing, round cap on HP fraction). `setup.build_combat` installs the `rules/global/`
+   set (per-turn refill, crits, damage mods) — the arena's mirror of the web's combat wiring.
 7. `LLMAgent` (Claude) — one real agent taking full turns vs `ScriptedAgent`,
    end-to-end. **Needs an API key + costs real tokens** — coordinate with the user
-   before running live (steps 1–6 run fully offline with a mocked client).
-8. Demo script `examples/arena_match.py` + README section.
+   before running live (steps 1–6 run fully offline with no network).
+8. ✅ Demo `examples/arena_match.py` (scripted-vs-scripted, deterministic); README section pending.
 
-`reveal_enemy_actions` is added to the policy alongside steps 3–4 (it gates the capability
-visibility used by the observation and by result-shaping).
+`reveal_enemy_actions` is still **to add** to the policy alongside the LLM work (it gates the
+capability visibility used by the observation and by result-shaping).
 
 ### Deferred (designed-for, not built now)
 - Information-hiding **experiments** + the **batch** match-runner and win-rate /
@@ -321,7 +324,8 @@ visibility used by the observation and by result-shaping).
 ## 7. Files
 
 **New (`src/arena/`):** `__init__.py`, `information_policy.py`, `observation.py`,
-`action_space.py`, `tools.py`, `agent.py`, `turn_driver.py`, `match.py`, `transcript.py`.
+`action_space.py`, `tools.py`, `agent.py`, `turn_driver.py`, `transcript.py`, `match.py`,
+`setup.py`.
 **New (tests, mirroring `tests/`):** `tests/arena/test_action_space.py`,
 `test_observation.py`, `test_tools.py`, `test_turn_driver.py`, `test_match.py`, and a
 mocked-LLM `test_llm_agent.py` (patch the API client — no network in the suite).
@@ -362,7 +366,19 @@ mocked-LLM `test_llm_agent.py` (patch the API client — no network in the suite
 - **Watch item ([CODEBASE_REVIEW.md](CODEBASE_REVIEW.md)):** `observation.py` and the web
   `serialize_combat_state` now describe overlapping entity fields. Kept separate for
   milestone 1 (headless = feet, policy-aware); if they drift, extract one shared entity
-  serializer the web layer wraps with its coordinate swap.
+  serializer the web layer wraps with its coordinate swap. `setup.install_global_rules` and
+  the web's `handle_start_combat` also both load `rules/global/` — a smaller duplication of
+  the same wiring; fold into one shared helper if it grows.
+
+### Two setup gotchas found while building the runner (worth remembering)
+- **Global rules are load-bearing.** The per-turn action-economy **refill** is a global rule
+  in `rules/global/`, not engine-default behaviour. A combat without it never refills
+  resources, so every creature acts once and the fight silently stalemates. `build_combat`
+  installs the globals so no arena caller has to remember (mirrors the web).
+- **Initiative is rolled at `add_combatant` time, not at `start_combat`.** So a reproducibility
+  seed applied at match start does *not* cover turn order. `run_match` reseeds and re-rolls
+  initiative (in stable combatant order) so one seed governs the whole match — initiative and
+  resolution alike.
 
 ---
 

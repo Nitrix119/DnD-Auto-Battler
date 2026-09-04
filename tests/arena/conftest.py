@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+from src.arena.setup import build_combat
 from src.combat import CombatSystem
 from src.combat.spell_registry import SpellRegistry
 from src.loaders import StatBlockLoader
@@ -105,16 +106,13 @@ def make_combat():
     """Return a factory: ``make_combat(entities, registry=None) -> CombatSystem``.
 
     The combat is left in SETUP — the arena's read-only helpers do not require an
-    active turn, and leaving it unstarted keeps positions and resources pristine.
+    active turn, and leaving it unstarted keeps positions and resources pristine. Global
+    rules (per-turn refill, crits, damage modifiers) are installed via ``build_combat``,
+    so multi-turn tests behave like real combat.
     """
 
     def _make(entities, registry=None):
-        combat = CombatSystem()
-        for entity in entities:
-            combat.add_combatant(entity)
-        if registry is not None:
-            combat.spell_registry = registry
-        return combat
+        return build_combat(entities, spell_registry=registry)
 
     return _make
 
