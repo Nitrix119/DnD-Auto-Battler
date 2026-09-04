@@ -14,13 +14,20 @@
 
 ## 0. Where this stands (one breath)
 
-**Nothing built yet.** Branch `feat/agent-arena` off `main`. The engine already
-supplies everything the arena drives — `CombatSystem` is a strict referee, the web
-layer's `_HANDLERS` command vocabulary is a tool schema in all but name, and
+**Sensory layer built and green** (information policy, observation, legal-action
+assembly — committed on `feat/agent-arena`, off `main`). The engine already supplies
+everything the arena drives — `CombatSystem` is a strict referee, the web layer's
+`_HANDLERS` command vocabulary is a tool schema in all but name, and
 `serialize_combat_state` is a ready model for observations. The arena is a **driver
-over the existing engine, not a second engine.** The first milestone builds the
-headless foundation and wires one live Claude agent taking full turns; batch matches,
-info-hiding experiments, and a web spectator are deferred (§6).
+over the existing engine, not a second engine.** Next is the "motor" side (tools +
+executor, agent interface, turn driver, match runner), then one live Claude turn;
+batch matches, info-hiding experiments, and watching battles are deferred (§6).
+
+**Primary purpose: LLM benchmarking** — "which model/prompt plays 5e combat better?"
+The intent shifted from manual/for-fun play to benchmarking as a novel application, so
+fairness, determinism, clean metrics, and provider-neutrality are first-order concerns.
+Decisions of intent are recorded in [AGENT_ARENA_DECISIONS.md](AGENT_ARENA_DECISIONS.md);
+the important ones are folded into the sections below.
 
 ---
 
@@ -34,15 +41,22 @@ fight — Claude vs Claude, Claude vs another provider — to compare who plays 
 better. A first-class **information policy** lets us hide facts (enemy HP, AC, …) and
 measure how that changes play.
 
-**Locked-in decisions (from planning Q&A):**
+**Locked-in decisions** (from [AGENT_ARENA_DECISIONS.md](AGENT_ARENA_DECISIONS.md)):
+- **Benchmarking is the point** (A1) — measure model skill; **neutral** system prompt
+  (A2), no coaching, so we test the model's *own* tactics.
 - **Headless-first.** A pure-Python arena drives `CombatSystem` directly — no browser,
-  deterministic, batchable. A web spectator bridge is a later phase.
-- **First milestone = foundation + one live LLM turn**, proving the full
-  observe→decide→act→observe loop before automating matches.
-- **Provider-agnostic agent interface**, concrete Claude implementation now; a
-  non-Claude implementation is a later drop-in subclass.
-- **Information policy is a seam from day one** (default: reveal everything); the
-  hide-info *experiments* and *eval batch* come later.
+  deterministic, batchable. Watching battles comes via a **replay** (§6), not live play.
+- **One agent per team** (B1) — one brain controls all of a side's creatures; multi-agent
+  teams are a later experiment. The interface stays written so per-entity is possible.
+- **One action at a time** (B2) — the agent sees each result before choosing the next;
+  fidelity beats the cost saving of whole-turn batching.
+- **Provider-neutral, Claude-first** (E4) — Claude is the first adapter, but the core
+  (tools, observations, the `Agent` interface) must stay plain-JSON and easy to point at
+  other providers (OpenRouter, open-weight models); no Claude-only constructs leak in.
+- **Information policy is a seam from day one** (code default `FULL_INFORMATION`); enemy
+  facts — HP/AC/resources/conditions/slots **and capabilities** — hide via toggles for the
+  info-asymmetry experiments (A3). The *experiment* default is hidden; the *code* default
+  stays reveal-all so milestone-1 wiring is unaffected.
 
 ---
 
@@ -116,12 +130,14 @@ Match (two teams, seeded RNG)
   `self`, allies, enemies, round/turn, and an embedded **legal-options menu**. Runs each
   *enemy* through the `InformationPolicy`.
 
-- **`information_policy.py`** — `InformationPolicy` dataclass, the experiment knob:
-  `reveal_enemy_hp`, `hp_display` (`exact`|`bucketed`|`hidden`), `reveal_enemy_ac`,
-  `reveal_enemy_resources`, `reveal_enemy_conditions`, `reveal_enemy_spell_slots`.
-  Ships now with a `FULL_INFORMATION` default so milestone 1 is unaffected. Position is
-  never hidden in v1 (the engine needs it for range/overlap); fog-of-war is a separate,
-  later design.
+- **`information_policy.py`** — `InformationPolicy` dataclass, the experiment knob.
+  Shipped toggles: `reveal_enemy_hp`, `hp_display` (`exact`|`bucketed`|`hidden`),
+  `reveal_enemy_ac`, `reveal_enemy_resources`, `reveal_enemy_conditions`,
+  `reveal_enemy_spell_slots`. **To add:** `reveal_enemy_actions` (A3) — an enemy's
+  attacks/known spells, hidden by default (you learn them by being hit, via the combat
+  log). Default `FULL_INFORMATION` keeps milestone-1 wiring unaffected. Position is never
+  hidden in v1 (the engine needs it for range/overlap); fog-of-war is a separate, later
+  design.
 
 - **`action_space.py`** — **the one real engine gap.** `legal_actions(combat, entity)
   -> LegalActions`. Nothing today assembles the true legal set; this does, from
@@ -144,28 +160,48 @@ Match (two teams, seeded RNG)
   `ValueError`s and return `{ "ok": false, "error": "<message>" }` (the self-correction
   signal). The arena's mirror of the web `_HANDLERS`. **No second resolution path**
   (CLAUDE.md §3).
+  **Resolution transparency (C3):** a success result always states the *outcome*
+  (hit/miss, save success, damage dealt) and the acting agent's **own roll**; the values
+  it rolled *against* — target AC, spell save DC, and the target's resulting HP — are
+  gated by the same `InformationPolicy`, so a hidden-info match reports "hit for 7", not
+  "19 vs AC 15 → 7". Result-shaping therefore takes the actor's policy.
 
-- **`agent.py`** — the **provider-agnostic** contract: abstract
-  `Agent.decide(observation, tools) -> list[ToolCall]`. Concrete:
+- **`agent.py`** — the **provider-neutral** contract (E4): abstract
+  `Agent.decide(observation, tools) -> ToolCall` (one action per call — B2). An agent
+  controls a **team** (B1): the driver invokes it for whichever of its creatures is
+  active, so the observation's `self` rotates. It may keep a small, strictly length-capped
+  **notes** string carried turn-to-turn (B3) — the agent's own scratchpad memory across
+  its turns; verbose per-turn reasoning is discarded. Concrete:
   - `RandomAgent` / `ScriptedAgent` — deterministic. **Built now** as test fixtures
     (deterministic driver tests need a non-LLM agent) and the first-milestone sparring
     partner. Random picks uniformly among `legal_actions`; Scripted does "move toward
     nearest enemy, use highest-expected-damage affordable attack."
-  - `LLMAgent` (Claude) — §4. Provider-neutral shapes mean a future `OpenAIAgent`
-    (user-added) is a new subclass, not a rewrite.
+  - `LLMAgent` (Claude) — §4. Plain-JSON tools/observations mean another provider is a new
+    adapter class, not a rewrite; nothing Claude-specific leaks into the core.
 
-- **`turn_driver.py`** — `run_turn(...)`: build observation + menu, call the agent,
-  execute each tool call, feed results back, repeat until `end_turn` **or** a guard
-  trips (max tool-calls per turn, or no legal actions) — the loop-safety valve.
-  Auto-`end_turn` when out of options.
+- **`turn_driver.py`** — `run_turn(...)`: build observation + menu, call the agent for
+  **one** action (B2), execute it, feed the result back, and repeat until `end_turn` or a
+  guard trips. Guards: no legal actions left, a per-turn action cap, and the **failure
+  budget** (C2) — **3 consecutive or 5 total** failed/illegal tool calls in a turn →
+  auto-`end_turn`, logging the wasted turn (illegal-move rate is a metric); a total
+  protocol breakdown (no parseable call across retries) is the only forfeit. The compact
+  running **combat log** (what each side just did) is assembled here for the next
+  observation, so an agent remembers what it has *seen* even though its raw reasoning is
+  dropped (B3).
 
 - **`match.py`** — `MatchRunner`: build a `CombatSystem` from two rosters
   ([StatBlockLoader](../src/loaders/stat_block_loader.py) + spell registry), seed the
-  RNG, assign an `Agent` per entity/team, loop `run_turn` on
-  `combat.get_current_entity()` until `ENDED`. Returns a `MatchResult` + transcript.
+  RNG, assign **one `Agent` per team** (B1), loop `run_turn` on
+  `combat.get_current_entity()` until `ENDED`. Win = last team standing; a hard **round
+  cap** (start ~20, tune down once we see real fight lengths — tables run ~6–8 rounds)
+  ends a runaway match, decided on remaining team-HP fraction (E1). Returns a
+  `MatchResult` + transcript.
 
 - **`transcript.py`** — JSONL logging: one record per observation, tool call, dice
-  result, turn boundary. Enables replay, debugging, scoring.
+  result, and turn boundary, **plus the match's RNG seed and the concrete rolls**. Logs
+  everything useful so metrics are computed from the data, never by re-running the LLMs
+  (E2), and so a match can be **replayed** deterministically — by re-seeding the RNG or by
+  reading the recorded rolls straight back (E5, §6 replay).
 
 ### Reuse, don't re-create
 `CombatSystem` (referee + `resolve_*`/`move_entity`/`end_turn`/`get_enemies`/`get_allies`/
@@ -181,10 +217,19 @@ Match (two teams, seeded RNG)
 
 - **Model `claude-opus-5`** by default (constructor takes a `model` string, so models
   can be pitted against each other), **adaptive thinking** (`thinking={"type":
-  "adaptive"}`), `output_config={"effort": "high"}`.
+  "adaptive"}`). Effort starts at **`medium`** for the first live runs to hold cost down
+  while shaking out bugs (E3), rising later if quality needs it.
 - **`tools=`** the `tools.py` schemas; the **observation** (state + legal menu) in the
-  user message; a **system prompt** with role, objective ("defeat the enemy team"), and
-  rules of engagement (act only via tools; the referee enforces legality).
+  user message; a lean **system prompt**: role, objective ("defeat the enemy team"),
+  rules of engagement (act only via tools; the referee enforces legality), and a short
+  **"how this engine works"** note — turn/resource model, positions in feet, targeting.
+  **Neutral, not coached** (A2): no tactical advice; the model supplies its own strategy.
+- **Honesty about the engine (D2):** the prompt states what is *not* modelled yet
+  (opportunity attacks / reactions on other turns, legendary actions in milestone 1) so
+  the agent plans against the real simulation. **Free-form (gridless) movement is a
+  deliberate design choice, not a limitation** — it replaced an earlier grid; grids are a
+  tabletop simplification, not canonical (cf. Baldur's Gate 3) — so present it as the
+  intended model, framing only genuinely-absent mechanics as gaps.
 - Loop: send → while `stop_reason == "tool_use"`, execute each `tool_use` block via
   `ToolExecutor`, return **all** results as `tool_result` blocks in **one** user message
   (parallel-tool-use rule), continue until `end_turn` or the per-turn guard. Illegal
@@ -214,8 +259,9 @@ class InformationPolicy:
     reveal_enemy_resources: bool = True
     reveal_enemy_conditions: bool = True
     reveal_enemy_spell_slots: bool = True
+    reveal_enemy_actions: bool = True   # enemy attacks/known spells (to add, A3)
 
-FULL_INFORMATION = InformationPolicy()   # milestone-1 default
+FULL_INFORMATION = InformationPolicy()   # milestone-1 default (reveal all)
 ```
 
 An experiment is a one-line policy change + a batch run: build
@@ -223,34 +269,52 @@ An experiment is a one-line policy change + a batch run: build
 compare against `FULL_INFORMATION`. No engine edits — the policy is the *only* thing
 shaping the enemy view.
 
+**Action results obey the same policy (C3).** After an attack/spell, the agent always
+learns the outcome (hit/miss, save success, damage dealt) and its **own** roll, but the
+number it rolled *against* is gated: the target's AC/DC only when `reveal_enemy_ac` is
+set, the target's resulting HP only when `reveal_enemy_hp` is set. Under hidden info the
+agent knows it hit and dealt 7, but not the AC it beat or the enemy's HP left — it must
+infer, as at a real table.
+
 ---
 
 ## 6. Milestones
 
-**Status: not started (branch `feat/agent-arena`).**
+**Status: sensory layer done (steps 1–2 committed); building the motor side next.**
 
 ### Milestone 1 — Foundation + one live LLM turn (current)
 TDD throughout (a test that **executes** the loop, not one that inspects shapes —
 CLAUDE.md §4), in order:
-1. `information_policy.py` + `observation.py` (with `FULL_INFORMATION`).
-2. `action_space.py` — the legal-move assembler.
-3. `tools.py` — schemas + `ToolExecutor` (validation + dispatch + structured errors).
-4. `agent.py` — `Agent` base + `RandomAgent`/`ScriptedAgent`.
-5. `turn_driver.py` + `transcript.py` — per-turn loop + safety guard.
-6. `match.py` — single-match runner.
+1. ✅ `information_policy.py` + `observation.py` (with `FULL_INFORMATION`).
+2. ✅ `action_space.py` — the legal-move assembler.
+3. `tools.py` — schemas + `ToolExecutor` (validation + dispatch + structured errors +
+   policy-gated result shaping, C3).
+4. `agent.py` — provider-neutral `Agent` base (team-controlling, one action/call, capped
+   notes) + `RandomAgent`/`ScriptedAgent`.
+5. `turn_driver.py` + `transcript.py` — per-turn loop (one action at a time), the failure
+   budget (3 consecutive / 5 total), the running combat log, and seed+rolls logging.
+6. `match.py` — single-match runner (one agent per team, win = last standing, round cap).
 7. `LLMAgent` (Claude) — one real agent taking full turns vs `ScriptedAgent`,
    end-to-end. **Needs an API key + costs real tokens** — coordinate with the user
    before running live (steps 1–6 run fully offline with a mocked client).
 8. Demo script `examples/arena_match.py` + README section.
 
+`reveal_enemy_actions` is added to the policy alongside steps 3–4 (it gates the capability
+visibility used by the observation and by result-shaping).
+
 ### Deferred (designed-for, not built now)
 - Information-hiding **experiments** + the **batch** match-runner and win-rate /
-  efficiency / illegal-move **scoring**.
-- **Web spectator bridge**: reuse `serialize_combat_state` + reintroduce a keyed
-  session store (removed per CLAUDE.md §9 2026-08-08) so a match can be watched live.
-- `legendary_action` / **reaction** support in the tool set (these fire on *other*
-  entities' turns — outside the milestone-1 "own turn" loop).
-- Richer heuristics; non-Claude concrete agent.
+  illegal-move / efficiency **scoring** (computed from transcripts, not re-runs — E2).
+- **Battle replay — the priority way to watch (E5):** since the transcript logs every
+  action plus the seed/rolls, a replay feeds a recorded match into the existing web
+  renderer to watch it back — no live agents, no re-run. Cheaper and simpler than live
+  spectating, and the natural basis for a future "watch the newest battles" feature online.
+- **Live web spectator:** watching a match *as it runs* (reuse `serialize_combat_state` +
+  reintroduce a keyed session store, removed per CLAUDE.md §9 2026-08-08). After replay.
+- `legendary_action` / **reaction** support in the tool set (fire on *other* entities'
+  turns — outside the milestone-1 "own turn" loop).
+- **Multi-agent teams** (B1) — several brains per side, coordinating; richer heuristics;
+  non-Claude adapters (E4).
 
 ---
 
@@ -304,12 +368,14 @@ mocked-LLM `test_llm_agent.py` (patch the API client — no network in the suite
 
 ## 10. Open questions (for iteration, non-blocking)
 
-1. **Turn granularity:** one tool call at a time (see each result before the next — truer
-   to "attack, see if it lands, then decide the bonus action") vs. plan a whole turn as
-   parallel calls. Recommendation: one-at-a-time within a turn, guarded by the per-turn cap.
-2. **Reactions / legendary actions** fire on *other* entities' turns — a dedicated design
+Resolved in [AGENT_ARENA_DECISIONS.md](AGENT_ARENA_DECISIONS.md): turn granularity (one
+action at a time), agency (one agent per team), failure handling, resolution transparency,
+and scoring (log-all, win-rate + illegal-move-rate first). Still genuinely open:
+
+1. **Failure budget tuning:** 3-consecutive / 5-total is a starting point (C2) — revisit
+   once we see how often strong models actually fumble the tool schema.
+2. **Round-cap value:** start ~20; likely lower after observing real fight lengths (E1).
+3. **Reactions / legendary actions** fire on *other* entities' turns — a dedicated design
    when added.
-3. **Scoring metrics** for the eval phase: win-rate, damage-per-turn, resource efficiency,
-   illegal-move rate, turns-to-win.
-4. **Position / fog-of-war:** v1 always reveals position (engine needs it). Is hidden
-   positioning a later goal?
+4. **Position / fog-of-war:** v1 always reveals position (engine needs it). Hidden
+   positioning is a larger later design.
