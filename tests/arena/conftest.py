@@ -5,13 +5,39 @@ known positions and hand them specific attacks/spells, then exercise the arena's
 read-only helpers (observation, legal-action assembly) against the real engine.
 """
 
+from pathlib import Path
+
 import pytest
 
 from src.combat import CombatSystem
 from src.combat.spell_registry import SpellRegistry
+from src.loaders import StatBlockLoader
 from src.models import AbilityScores, AttackAction, Damage, DamageType, Entity, StatBlock
 from src.models.action import SpellAction
 from src.models.spell_properties import RangeType, SpellRange, TargetingType
+from src.utils import dice
+
+_SPELLS_DIR = Path(__file__).resolve().parents[2] / "examples" / "spells"
+
+
+@pytest.fixture(autouse=True)
+def _seed_rng():
+    """Seed the shared RNG so any dice rolled in a test are reproducible."""
+    dice.seed_rng(1234)
+
+
+def force_turn(combat: CombatSystem, entity: Entity) -> None:
+    """Point the initiative tracker at *entity*'s slot (make it their turn)."""
+    for i, entry in enumerate(combat.initiative_tracker.initiative_order):
+        if entry.entity is entity:
+            combat.initiative_tracker.current_turn_index = i
+            return
+    raise AssertionError(f"{entity.name} is not in the initiative order")
+
+
+def load_spell(filename: str) -> SpellAction:
+    """Load a real spell from ``examples/spells`` (a valid block program)."""
+    return StatBlockLoader.load_spell_from_json(str(_SPELLS_DIR / filename))
 
 
 def melee_attack(name: str = "Longsword") -> AttackAction:
