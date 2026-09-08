@@ -26,15 +26,20 @@ const el = {
     slider:   document.getElementById('pb-slider'),
     counter:  document.getElementById('pb-counter'),
     speed:    document.getElementById('pb-speed'),
+    timeline: document.getElementById('pb-timeline'),
     srcName:  document.getElementById('pb-source-name'),
     file:     document.getElementById('pb-file'),
 };
+
+const escapeHtml = (s) => String(s).replace(/[&<>"]/g, (c) =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 // ── Per-match state ─────────────────────────────────────────────────────────
 let steps = [];
 let statBlocks = {};
 let teamIndex = {};     // team string → 1 | 2 | 0 (token/card colour)
 let cardRefs = {};      // entity id → { root, hpFill, hpText, pos, cond }
+let tlRefs = [];        // step index → timeline row element
 let player = null;
 
 // ── Camera auto-fit (no pan/zoom input on this page) ────────────────────────
@@ -139,6 +144,28 @@ function updateCards(step) {
     }
 }
 
+// ── Event timeline ──────────────────────────────────────────────────────────
+function buildTimeline() {
+    el.timeline.innerHTML = '';
+    tlRefs = [];
+    for (let i = 0; i < steps.length; i++) {
+        const s = steps[i];
+        const item = document.createElement('div');
+        item.className = 'pb-tl-item' + (s.tone ? ` ${s.tone}` : '');
+        item.dataset.index = String(i);
+        const tag = s.round > 0 ? `R${s.round}` : '•';
+        item.innerHTML = `<span class="pb-tl-tag">${tag}</span>`
+                       + `<span class="pb-tl-text">${escapeHtml(s.caption)}</span>`;
+        el.timeline.appendChild(item);
+        tlRefs.push(item);
+    }
+}
+
+function updateTimeline(index) {
+    tlRefs.forEach((it, i) => it.classList.toggle('active', i === index));
+    tlRefs[index]?.scrollIntoView({ block: 'nearest' });
+}
+
 // ── Token sync ──────────────────────────────────────────────────────────────
 function syncTokens(step) {
     const seen = new Set();
@@ -173,14 +200,30 @@ function renderStep(index, { direction } = { direction: 0 }) {
 
     syncTokens(step);
     updateCards(step);
+    updateTimeline(index);
 
     el.round.textContent = step.round > 0 ? `Round ${step.round} · Turn ${step.turn}` : 'Setup';
     el.desc.textContent = step.caption;
+    el.desc.className = step.tone || '';   // crit → gold, fumble → red (see CSS)
 
-    // One-shot damage/miss labels only when moving forward (not scrubbing back).
+    // One-shot effects only when moving forward (not scrubbing back).
     if (step.fx && direction === 1) {
         const t = step.entities[step.fx.targetId];
-        if (t) spawnFloatingLabel(t.cellX, t.cellY, step.fx.text, step.fx.hit);
+        if (t) {
+            let color = null, scale = 1.0;
+            if (step.fx.crit)   { color = '255, 200, 60';  scale = 1.5; }
+            else if (step.fx.fumble) { color = '150, 150, 165'; scale = 1.1; }
+            spawnFloatingLabel(t.cellX, t.cellY, step.fx.text, step.fx.hit, scale, color);
+        }
+        // Flash the struck combatant's card on damage.
+        if (step.fx.hit) {
+            const ref = cardRefs[step.fx.targetId];
+            if (ref) {
+                ref.root.classList.remove('flash-dmg');
+                void ref.root.offsetWidth;   // reflow so the animation re-triggers
+                ref.root.classList.add('flash-dmg');
+            }
+        }
     }
 
     el.slider.value = String(index);
@@ -216,6 +259,7 @@ function loadMatch(text, sourceName) {
     el.slider.max = String(Math.max(0, steps.length - 1));
 
     buildCards(steps[0]);
+    buildTimeline();
     fitCamera();
 
     player = createPlayer({
@@ -249,6 +293,11 @@ el.play.addEventListener('click', () => player?.toggle());
 el.jumpStart.addEventListener('click', () => player?.seek(0));
 el.jumpEnd.addEventListener('click', () => player?.seek(steps.length - 1));
 el.slider.addEventListener('input', (e) => player?.seek(e.target.value));
+
+el.timeline.addEventListener('click', (e) => {
+    const item = e.target.closest('.pb-tl-item');
+    if (item && player) player.seek(Number(item.dataset.index));
+});
 
 el.speed.addEventListener('click', (e) => {
     const btn = e.target.closest('.pb-speed-btn');

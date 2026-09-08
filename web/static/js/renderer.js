@@ -269,16 +269,20 @@ function renderFloatingLabels() {
         ctx.roundRect(sx - tw / 2, sy - th / 2, tw, th, th / 2);
         ctx.fill();
 
-        ctx.fillStyle = lbl.hit
-            ? `rgba(115, 210, 85,  ${alpha})`
-            : `rgba(210, 85,  85,  ${alpha})`;
+        ctx.fillStyle = lbl.color
+            ? `rgba(${lbl.color}, ${alpha})`
+            : lbl.hit
+                ? `rgba(115, 210, 85,  ${alpha})`
+                : `rgba(210, 85,  85,  ${alpha})`;
         ctx.fillText(lbl.text, sx, sy);
     }
     ctx.restore();
 }
 
-export function spawnFloatingLabel(wx, wy, text, hit, scale = 1.0) {
-    state.floatingLabels.push({ text, wx, wy, hit, scale, t0: performance.now() });
+// `color` (optional) is an "r, g, b" string that overrides the hit/miss colouring —
+// used by playback for crit/fumble labels. Omitted by the live battle page.
+export function spawnFloatingLabel(wx, wy, text, hit, scale = 1.0, color = null) {
+    state.floatingLabels.push({ text, wx, wy, hit, scale, color, t0: performance.now() });
     _ensureFloatLoop();
 }
 

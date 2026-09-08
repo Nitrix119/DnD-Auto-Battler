@@ -69,19 +69,25 @@ function describeAction(entities, rec) {
         const target = nameOf(entities, res.target_id);
         const weapon = args.action_name ? ` with ${args.action_name}` : "";
         const roll = res.roll || {};
+        const d20 = roll.attack_roll;          // the raw d20 face (before modifiers)
+        const crit = res.hit && d20 === 20;
+        const fumble = !res.hit && d20 === 1;
         const rollTxt =
             roll.attack_total != null
                 ? ` (roll ${roll.attack_total} vs AC ${roll.target_ac})`
                 : "";
         if (res.hit) {
+            const verb = crit ? "CRIT" : "HIT";
             return {
-                caption: `${actor} attacks ${target}${weapon}: HIT for ${res.damage}${rollTxt}`,
-                fx: { targetId: res.target_id, text: `-${res.damage}`, hit: true },
+                caption: `${actor} attacks ${target}${weapon}: ${verb} for ${res.damage}${crit ? " (nat 20)" : rollTxt}`,
+                fx: { targetId: res.target_id, text: crit ? `CRIT ${res.damage}` : `-${res.damage}`, hit: true, crit },
+                tone: crit ? "crit" : null,
             };
         }
         return {
-            caption: `${actor} attacks ${target}${weapon}: MISS${rollTxt}`,
-            fx: { targetId: res.target_id, text: "miss", hit: false },
+            caption: `${actor} attacks ${target}${weapon}: ${fumble ? "FUMBLE (nat 1)" : `MISS${rollTxt}`}`,
+            fx: { targetId: res.target_id, text: fumble ? "fumble" : "miss", hit: false, fumble },
+            tone: fumble ? "fumble" : null,
         };
     }
 
@@ -160,7 +166,7 @@ export function buildSteps(records) {
                 // end_turn carries no visible change — fold nothing, add no step.
                 if (call.name === "end_turn") break;
 
-                const { caption, fx } = describeAction(entities, rec);
+                const { caption, fx, tone } = describeAction(entities, rec);
                 // Apply the visible effect to the running fold.
                 const res = rec.result || {};
                 if (call.name === "attack" && res.hit && res.target_id in entities) {
@@ -179,6 +185,7 @@ export function buildSteps(records) {
                     entities: clone(entities),
                     caption,
                     fx,
+                    tone: tone ?? null,
                 });
                 break;
             }
