@@ -13,6 +13,7 @@ const DEFAULT_INTERVAL_MS = 500; // 2 steps per second
 export function createPlayer({ stepCount, onStep, onStateChange, intervalMs = DEFAULT_INTERVAL_MS }) {
     let index = 0;
     let timer = null;
+    let interval = intervalMs;
 
     const atEnd = () => index >= stepCount - 1;
     const isPlaying = () => timer !== null;
@@ -46,8 +47,19 @@ export function createPlayer({ stepCount, onStep, onStateChange, intervalMs = DE
                 return;
             }
             go(index + 1, +1);
-        }, intervalMs);
+        }, interval);
         emitState();
+    }
+
+    // Change playback rate; if a timer is running, restart it at the new interval so
+    // the change takes effect immediately (index preserved).
+    function setSpeed(multiplier) {
+        interval = DEFAULT_INTERVAL_MS / multiplier;
+        if (isPlaying()) {
+            clearInterval(timer);
+            timer = null;
+            play();
+        }
     }
 
     return {
@@ -57,6 +69,7 @@ export function createPlayer({ stepCount, onStep, onStateChange, intervalMs = DE
         play,
         pause,
         toggle: () => (isPlaying() ? pause() : play()),
+        setSpeed,
         isPlaying,
         get index() { return index; },
         emitState,

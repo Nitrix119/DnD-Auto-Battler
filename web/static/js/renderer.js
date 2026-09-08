@@ -38,6 +38,16 @@ function drawOneToken(token) {
         ctx.stroke();
     }
 
+    // Playback rings the current actor via `token.highlight`; never set on the live
+    // battle page, so this is inert there.
+    if (token.highlight) {
+        ctx.beginPath();
+        ctx.arc(sx, sy, sr + 4, 0, Math.PI * 2);
+        ctx.strokeStyle = "rgba(218, 165, 32, 0.95)";
+        ctx.lineWidth   = 2.5;
+        ctx.stroke();
+    }
+
     ctx.beginPath();
     ctx.arc(sx, sy, sr, 0, Math.PI * 2);
     if (red) {

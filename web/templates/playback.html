@@ -30,11 +30,19 @@
 
     <!-- Bottom-center: transport controls -->
     <div id="pb-controls">
+        <button id="pb-jump-start" class="pb-btn" title="Jump to start">⏮⏮</button>
         <button id="pb-step-back" class="pb-btn" title="Step back (←)">⏮</button>
         <button id="pb-play" class="pb-btn pb-play" title="Play / pause (space)">▶</button>
         <button id="pb-step-fwd" class="pb-btn" title="Step forward (→)">⏭</button>
+        <button id="pb-jump-end" class="pb-btn" title="Jump to end">⏭⏭</button>
         <input type="range" id="pb-slider" min="0" max="0" value="0" step="1" title="Scrub">
         <span id="pb-counter">0 / 0</span>
+        <div id="pb-speed" title="Playback speed">
+            <button class="pb-speed-btn" data-speed="0.5">0.5×</button>
+            <button class="pb-speed-btn active" data-speed="1">1×</button>
+            <button class="pb-speed-btn" data-speed="2">2×</button>
+            <button class="pb-speed-btn" data-speed="4">4×</button>
+        </div>
     </div>
 
     <script type="module" src="/static/js/playback.js"></script>

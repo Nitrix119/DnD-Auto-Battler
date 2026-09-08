@@ -86,9 +86,13 @@
     flex-direction: column;
     gap: 12px;
     z-index: 10;
-    pointer-events: none;
-    max-height: 90vh;
+    /* auto (not none) so the stack scrolls when it overflows and cards are clickable */
+    pointer-events: auto;
+    max-height: 92vh;
     overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+    padding-right: 4px;
 }
 
 .pb-card {
@@ -104,6 +108,29 @@
 .pb-card.team-1 { border-left-color: rgba(80, 140, 255, 0.85); }
 .pb-card.team-2 { border-left-color: rgba(200, 70, 70, 0.85); }
 .pb-card.dead   { opacity: 0.5; filter: grayscale(0.6); }
+.pb-card.collapsible { cursor: pointer; }
+.pb-card.collapsible:hover { border-color: rgba(255, 255, 255, 0.22); }
+
+/* Chevron + collapsible details */
+.pb-chevron {
+    display: inline-block;
+    margin-left: 0.35rem;
+    font-size: 0.6rem;
+    opacity: 0.6;
+    transition: transform 0.15s;
+}
+
+.pb-card.expanded .pb-chevron { transform: rotate(90deg); }
+
+.pb-card-details { display: none; }
+.pb-card.expanded .pb-card-details { display: block; }
+
+/* First block inside details owns the separator; drop the inner one to avoid doubling */
+.pb-card-details > :first-child {
+    border-top: none;
+    margin-top: 0.5rem;
+    padding-top: 0;
+}
 
 .pb-card-name {
     font-size: 0.85rem;
@@ -257,4 +284,35 @@
     color: rgba(255, 255, 255, 0.60);
     min-width: 62px;
     text-align: right;
+}
+
+#pb-speed {
+    display: flex;
+    gap: 2px;
+    margin-left: 4px;
+    border-left: 1px solid rgba(255, 255, 255, 0.12);
+    padding-left: 10px;
+}
+
+.pb-speed-btn {
+    height: 30px;
+    min-width: 34px;
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    border-radius: 7px;
+    color: rgba(255, 255, 255, 0.60);
+    font: 0.72rem/1 monospace;
+    cursor: pointer;
+    transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+
+.pb-speed-btn:hover {
+    background: rgba(255, 255, 255, 0.10);
+    color: rgba(255, 255, 255, 0.85);
+}
+
+.pb-speed-btn.active {
+    background: rgba(255, 220, 120, 0.15);
+    border-color: rgba(255, 220, 120, 0.40);
+    color: rgba(255, 220, 120, 0.95);
 }

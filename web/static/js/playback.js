@@ -4,7 +4,7 @@
 // no WebSocket and no engine. Reuses renderer.js + state.js unchanged.
 
 import {
-    tokens, camera, canvas,
+    tokens, camera, canvas, state,
     CELL_PX, CELL_FEET, ZOOM_MIN, ZOOM_MAX,
 } from './state.js';
 import { draw, resize, spawnFloatingLabel } from './renderer.js';
@@ -18,11 +18,14 @@ const el = {
     round:    document.getElementById('pb-round'),
     desc:     document.getElementById('pb-desc'),
     panels:   document.getElementById('combatant-panels'),
+    jumpStart: document.getElementById('pb-jump-start'),
     stepBack: document.getElementById('pb-step-back'),
     play:     document.getElementById('pb-play'),
     stepFwd:  document.getElementById('pb-step-fwd'),
+    jumpEnd:  document.getElementById('pb-jump-end'),
     slider:   document.getElementById('pb-slider'),
     counter:  document.getElementById('pb-counter'),
+    speed:    document.getElementById('pb-speed'),
     srcName:  document.getElementById('pb-source-name'),
     file:     document.getElementById('pb-file'),
 };
@@ -90,17 +93,26 @@ function buildCards(step) {
     for (const e of ents) {
         const sb = statBlocks[e.id];
         const ti = teamIndex[e.team] ?? 0;
+        const details = abilitiesHtml(sb) + optionsHtml(sb);
+        const hasDetails = details.length > 0;
         const root = document.createElement('div');
         root.className = `pb-card team-${ti}`;
+        // Compact block (always shown) + a collapsible details block. Legacy
+        // transcripts carry no stat block, so those cards have nothing to expand.
         root.innerHTML =
             `<div class="pb-card-name"><span>${e.name}</span>`
-          + `<span class="pb-card-team">Team ${e.team ?? '—'}</span></div>`
+          + `<span class="pb-card-team">Team ${e.team ?? '—'}`
+          + (hasDetails ? `<span class="pb-chevron">▸</span>` : '')
+          + `</span></div>`
           + `<div class="pb-hpbar"><div class="pb-hpbar-fill"></div></div>`
           + `<div class="pb-stat-row"><span class="hp"></span><span><span class="k">AC</span> ${e.ac ?? '—'}</span></div>`
           + `<div class="pb-stat-row"><span class="k">POS</span><span class="pos"></span></div>`
           + `<div class="pb-stat-row cond-row"><span class="k">COND</span><span class="cond">—</span></div>`
-          + abilitiesHtml(sb)
-          + optionsHtml(sb);
+          + (hasDetails ? `<div class="pb-card-details">${details}</div>` : '');
+        if (hasDetails) {
+            root.classList.add('collapsible');
+            root.addEventListener('click', () => root.classList.toggle('expanded'));
+        }
         el.panels.appendChild(root);
         cardRefs[e.id] = {
             root,
@@ -146,6 +158,7 @@ function syncTokens(step) {
         tok.maxHp = e.maxHp;
         tok.ac = e.ac;
         tok.dead = !e.alive;
+        tok.highlight = e.id === step.currentId;
     }
     // Drop any token no longer in the match (defensive; entities are stable here).
     for (let i = tokens.length - 1; i >= 0; i--) {
@@ -233,7 +246,24 @@ function initCanvas() {
 el.stepBack.addEventListener('click', () => player?.stepBackward());
 el.stepFwd.addEventListener('click', () => player?.stepForward());
 el.play.addEventListener('click', () => player?.toggle());
+el.jumpStart.addEventListener('click', () => player?.seek(0));
+el.jumpEnd.addEventListener('click', () => player?.seek(steps.length - 1));
 el.slider.addEventListener('input', (e) => player?.seek(e.target.value));
+
+el.speed.addEventListener('click', (e) => {
+    const btn = e.target.closest('.pb-speed-btn');
+    if (!btn || !player) return;
+    player.setSpeed(Number(btn.dataset.speed));
+    el.speed.querySelectorAll('.pb-speed-btn').forEach((b) => b.classList.toggle('active', b === btn));
+});
+
+// Track the cursor's grid position so renderer's bottom-left readout works, the same
+// conversion the battle page uses (input.js). No pan/zoom here, so this is all we need.
+window.addEventListener('mousemove', (e) => {
+    state.cursorWorld.x = (e.clientX - camera.x) / (CELL_PX * camera.zoom);
+    state.cursorWorld.y = (e.clientY - camera.y) / (CELL_PX * camera.zoom);
+    if (steps.length) draw();
+});
 
 el.file.addEventListener('change', async (e) => {
     const file = e.target.files?.[0];
