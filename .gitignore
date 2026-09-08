@@ -114,6 +114,8 @@ secrets/
 *.jsonl
 llm_match.jsonl
 match.jsonl
+# ...but the playback page ships a committed demo match under static/matches.
+!web/static/matches/*.jsonl
 
 # Spyder project settings
 .spyderproject

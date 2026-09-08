@@ -1,0 +1,260 @@
+/* ── Match playback UI ──────────────────────────────────────────────────────
+   Playback-only chrome. Reuses battle.css for the canvas and card typography;
+   this file adds the transport bar, caption, source picker, and combatant cards.
+   The live-battle page does not load this file. */
+
+/* ── Source / file picker (top-left) ────────────────────────────────────────── */
+
+#pb-source {
+    position: fixed;
+    top: 14px;
+    left: 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: rgba(0, 0, 0, 0.60);
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    border-radius: 10px;
+    padding: 7px 12px;
+    backdrop-filter: blur(6px);
+    z-index: 20;
+}
+
+#pb-source-name {
+    font: 12px/1 monospace;
+    color: rgba(255, 255, 255, 0.70);
+    max-width: 40vw;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#pb-file-label {
+    font-size: 0.74rem;
+    color: rgba(255, 255, 255, 0.80);
+    background: rgba(255, 255, 255, 0.07);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 6px;
+    padding: 0.2rem 0.6rem;
+    cursor: pointer;
+    transition: background 0.12s, border-color 0.12s;
+}
+
+#pb-file-label:hover {
+    background: rgba(255, 255, 255, 0.14);
+    border-color: rgba(255, 255, 255, 0.25);
+}
+
+/* ── Caption (top-center) ────────────────────────────────────────────────────── */
+
+#pb-caption {
+    position: fixed;
+    top: 14px;
+    left: 50%;
+    transform: translateX(-50%);
+    max-width: 60vw;
+    text-align: center;
+    background: rgba(0, 0, 0, 0.60);
+    border-radius: 12px;
+    padding: 8px 20px;
+    backdrop-filter: blur(6px);
+    z-index: 15;
+    pointer-events: none;
+}
+
+#pb-round {
+    font-size: 0.66rem;
+    text-transform: uppercase;
+    letter-spacing: 0.10em;
+    color: rgba(255, 220, 120, 0.85);
+    margin-bottom: 3px;
+}
+
+#pb-desc {
+    font: 0.9rem/1.3 monospace;
+    color: rgba(255, 255, 255, 0.90);
+}
+
+/* ── Combatant cards (right, stacked) ────────────────────────────────────────── */
+
+#combatant-panels {
+    position: fixed;
+    top: 50%;
+    right: 20px;
+    transform: translateY(-50%);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    z-index: 10;
+    pointer-events: none;
+    max-height: 90vh;
+    overflow-y: auto;
+}
+
+.pb-card {
+    min-width: 205px;
+    background: rgba(0, 0, 0, 0.60);
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    border-left-width: 3px;
+    border-radius: 12px;
+    padding: 0.85rem 1.1rem;
+    backdrop-filter: blur(6px);
+}
+
+.pb-card.team-1 { border-left-color: rgba(80, 140, 255, 0.85); }
+.pb-card.team-2 { border-left-color: rgba(200, 70, 70, 0.85); }
+.pb-card.dead   { opacity: 0.5; filter: grayscale(0.6); }
+
+.pb-card-name {
+    font-size: 0.85rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    color: rgba(255, 255, 255, 0.92);
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 0.5rem;
+}
+
+.pb-card-team {
+    font-size: 0.62rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: rgba(255, 255, 255, 0.35);
+}
+
+/* HP bar */
+.pb-hpbar {
+    height: 7px;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.10);
+    overflow: hidden;
+    margin: 0.55rem 0 0.3rem;
+}
+
+.pb-hpbar-fill {
+    height: 100%;
+    background: rgba(115, 210, 85, 0.85);
+    transition: width 0.25s ease, background 0.25s ease;
+}
+
+.pb-hpbar-fill.low  { background: rgba(230, 180, 60, 0.90); }
+.pb-hpbar-fill.crit { background: rgba(220, 80, 80, 0.90); }
+
+.pb-stat-row {
+    display: flex;
+    justify-content: space-between;
+    font: 0.78rem/1.5 monospace;
+    color: rgba(255, 255, 255, 0.80);
+}
+
+.pb-stat-row .k { color: rgba(255, 255, 255, 0.38); }
+
+/* Ability grid */
+.pb-abilities {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 0.25rem;
+    margin-top: 0.6rem;
+    padding-top: 0.55rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.pb-ability {
+    text-align: center;
+}
+
+.pb-ability .ab-name {
+    font-size: 0.55rem;
+    letter-spacing: 0.04em;
+    color: rgba(255, 255, 255, 0.35);
+}
+
+.pb-ability .ab-val {
+    font: 0.72rem/1.3 monospace;
+    color: rgba(255, 255, 255, 0.85);
+}
+
+/* Actions / spells the combatant had available */
+.pb-options {
+    margin-top: 0.55rem;
+    padding-top: 0.5rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.pb-options .k {
+    font-size: 0.58rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: rgba(255, 255, 255, 0.35);
+    display: block;
+    margin-bottom: 0.25rem;
+}
+
+.pb-option {
+    font: 0.72rem/1.4 monospace;
+    color: rgba(200, 220, 255, 0.85);
+}
+
+.pb-option .rng {
+    color: rgba(255, 255, 255, 0.40);
+}
+
+/* ── Transport controls (bottom-center) ──────────────────────────────────────── */
+
+#pb-controls {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: rgba(0, 0, 0, 0.62);
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    border-radius: 14px;
+    padding: 8px 16px;
+    backdrop-filter: blur(6px);
+    z-index: 20;
+}
+
+.pb-btn {
+    height: 38px;
+    min-width: 42px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 9px;
+    color: rgba(255, 255, 255, 0.85);
+    font-size: 1rem;
+    cursor: pointer;
+    transition: background 0.12s, border-color 0.12s;
+}
+
+.pb-btn:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.13);
+    border-color: rgba(255, 255, 255, 0.25);
+}
+
+.pb-btn:disabled {
+    opacity: 0.35;
+    cursor: default;
+}
+
+.pb-btn.pb-play {
+    font-size: 1.05rem;
+    color: rgba(255, 220, 120, 0.95);
+}
+
+#pb-slider {
+    width: 260px;
+    max-width: 40vw;
+    accent-color: rgba(255, 220, 120, 0.9);
+    cursor: pointer;
+}
+
+#pb-counter {
+    font: 0.76rem/1 monospace;
+    color: rgba(255, 255, 255, 0.60);
+    min-width: 62px;
+    text-align: right;
+}

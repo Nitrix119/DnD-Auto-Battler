@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Playback — D&D Auto Battler</title>
+    <link rel="stylesheet" href="/static/css/battle.css">
+    <link rel="stylesheet" href="/static/css/playback.css">
+</head>
+<body>
+    <canvas id="grid"></canvas>
+
+    <!-- Top-left: which match is loaded + a picker to open any .jsonl locally -->
+    <div id="pb-source">
+        <span id="pb-source-name">sample_match.jsonl</span>
+        <label id="pb-file-label" title="Open a match transcript (.jsonl)">
+            Open…
+            <input type="file" id="pb-file" accept=".jsonl,.json,application/json" hidden>
+        </label>
+    </div>
+
+    <!-- Top-center: round/turn + a description of the current step -->
+    <div id="pb-caption">
+        <div id="pb-round">—</div>
+        <div id="pb-desc">Loading match…</div>
+    </div>
+
+    <!-- Right: one card per combatant (built by playback.js) -->
+    <div id="combatant-panels"></div>
+
+    <!-- Bottom-center: transport controls -->
+    <div id="pb-controls">
+        <button id="pb-step-back" class="pb-btn" title="Step back (←)">⏮</button>
+        <button id="pb-play" class="pb-btn pb-play" title="Play / pause (space)">▶</button>
+        <button id="pb-step-fwd" class="pb-btn" title="Step forward (→)">⏭</button>
+        <input type="range" id="pb-slider" min="0" max="0" value="0" step="1" title="Scrub">
+        <span id="pb-counter">0 / 0</span>
+    </div>
+
+    <script type="module" src="/static/js/playback.js"></script>
+</body>
+</html>

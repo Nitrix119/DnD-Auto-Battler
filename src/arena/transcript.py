@@ -33,8 +33,29 @@ class Transcript:
         """Append one record of *kind* with arbitrary JSON-serializable *data*."""
         self.records.append({"i": len(self.records), "kind": kind, **data})
 
-    def match_start(self, teams: Dict[Optional[str], List[str]], **meta: Any) -> None:
-        self.log("match_start", seed=self.seed, teams=teams, **meta)
+    def match_start(
+        self,
+        teams: Dict[Optional[str], List[str]],
+        *,
+        combatants: Optional[List[Dict[str, Any]]] = None,
+        initial_state: Optional[Dict[str, Any]] = None,
+        **meta: Any,
+    ) -> None:
+        """Log the opening record.
+
+        ``combatants`` are static stat blocks (see
+        :func:`~src.arena.observation.serialize_stat_block`) and ``initial_state`` is a
+        pre-combat full snapshot (see :func:`~src.arena.observation.snapshot_state`).
+        Both are optional so a bare match still logs; they let a replay start from an
+        exact frame 0 and show every combatant's options. Absent keys are omitted, not
+        logged as ``null``.
+        """
+        extra: Dict[str, Any] = {}
+        if combatants is not None:
+            extra["combatants"] = combatants
+        if initial_state is not None:
+            extra["initial_state"] = initial_state
+        self.log("match_start", seed=self.seed, teams=teams, **extra, **meta)
 
     def turn_start(self, entity_id: str, round_num: int, turn_num: int) -> None:
         self.log("turn_start", entity_id=entity_id, round=round_num, turn=turn_num)

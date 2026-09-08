@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Dict, List, Optional
 
 from src.arena.agent import Agent
 from src.arena.information_policy import FULL_INFORMATION, InformationPolicy
+from src.arena.observation import serialize_stat_block, snapshot_state
 from src.arena.tools import ToolExecutor
 from src.arena.transcript import Transcript
 from src.arena.turn_driver import run_turn
@@ -130,7 +131,12 @@ def run_match(
     executor = ToolExecutor(combat)
     if transcript is not None:
         transcript.seed = seed
-        transcript.match_start(_teams(combat), round_cap=round_cap)
+        transcript.match_start(
+            _teams(combat),
+            combatants=[serialize_stat_block(e) for e in combat.combatants],
+            initial_state=snapshot_state(combat),
+            round_cap=round_cap,
+        )
 
     combat.start_combat()
     while combat.state == CombatState.ACTIVE and combat.round <= round_cap:

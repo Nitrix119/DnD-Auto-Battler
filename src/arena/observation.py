@@ -142,6 +142,56 @@ def build_observation(
     }
 
 
+def _serialize_action(action: Any) -> Dict[str, Any]:
+    """A static, JSON-safe view of one action — name, reach, and damage formulas.
+
+    Reads the *authoring* fields (not a resolved roll), so it shows the option the
+    agent had rather than any one outcome. ``range_ft`` is present only on weapon
+    attacks; spells carry their reach elsewhere and report ``None`` here.
+    """
+    return {
+        "name": action.name,
+        "description": action.description,
+        "range_ft": getattr(action, "range_ft", None),
+        "damage": [
+            {"damage_type": d.damage_type.value, "formula": d.formula or str(d.amount)}
+            for d in action.damage
+        ],
+    }
+
+
+def serialize_stat_block(entity: Entity) -> Dict[str, Any]:
+    """A static, ground-truth view of an entity's *template* for the transcript.
+
+    Unlike :func:`_serialize_ally` (mutable per-turn state), this captures the fixed
+    stat block — abilities, AC, max HP, the full action menu and known spells — so a
+    replay can show *every option a combatant (and the agent behind it) had*, not just
+    what it used. Pure: it reads the immutable ``StatBlock`` and never mutates anything.
+    """
+    block = entity.stat_block
+    scores = block.ability_scores
+    mods = scores.get_all_modifiers()
+    return {
+        "entity_id": entity.entity_id,
+        "name": entity.name,
+        "team": entity.team,
+        "size_ft": block.size.size_ft,
+        "max_hp": entity.max_hp,
+        "ac": entity.ac,
+        "proficiency_bonus": block.proficiency_bonus,
+        "abilities": {
+            ability: {"score": getattr(scores, ability), "modifier": mods[ability]}
+            for ability in mods
+        },
+        "speed": dict(block.resource_defaults),
+        "actions": [
+            _serialize_action(a) for a in block.actions + entity.granted_actions
+        ],
+        "known_spells": list(block.known_spells),
+        "spellcasting_ability": block.spellcasting_ability,
+    }
+
+
 def snapshot_state(combat: "CombatSystem") -> Dict[str, Any]:
     """Return a neutral, **ungated** full-state snapshot of *combat* for the transcript.
 

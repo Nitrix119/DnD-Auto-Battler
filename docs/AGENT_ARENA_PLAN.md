@@ -310,10 +310,17 @@ observation only when revealed (default on; hide it for the info-asymmetry exper
 ### Deferred (designed-for, not built now)
 - Information-hiding **experiments** + the **batch** match-runner and win-rate /
   illegal-move / efficiency **scoring** (computed from transcripts, not re-runs — E2).
-- **Battle replay — the priority way to watch (E5):** since the transcript logs every
-  action plus the seed/rolls, a replay feeds a recorded match into the existing web
-  renderer to watch it back — no live agents, no re-run. Cheaper and simpler than live
-  spectating, and the natural basis for a future "watch the newest battles" feature online.
+- **Battle replay — the priority way to watch (E5):** _(built — first prototype)._ The
+  standalone `/playback` page (`web/templates/playback.html`, `web/static/js/playback*.js`)
+  reuses the canvas renderer to play a recorded transcript back step-by-step (step
+  fwd/back, play/pause at 2/sec) **entirely client-side** — the server only serves the
+  static page and the match `.jsonl`; no engine, no WebSocket, no session store. Folding
+  the log needs only the per-`turn_end` `snapshot_state` plus action results.
+  `Transcript.match_start` now also logs an `initial_state` snapshot and each combatant's
+  full stat block (abilities, actions, known spells) so playback starts from an exact
+  frame 0 and shows every option the agents had. Natural basis for a future
+  "watch the newest battles" feature online.
+  Next: speed selector, tweened movement, expanded spell FX, per-action snapshots.
 - **Live web spectator:** watching a match *as it runs* (reuse `serialize_combat_state` +
   reintroduce a keyed session store, removed per CLAUDE.md §9 2026-08-08). After replay.
 - `legendary_action` / **reaction** support in the tool set (fire on *other* entities'

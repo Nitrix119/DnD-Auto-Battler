@@ -25,6 +25,11 @@ function drawOneToken(token) {
     const infoHover = token === state.infoHoveredToken;
     const red = token.team === 2;
 
+    // Playback marks defeated combatants with `dead`; live-battle tokens never set
+    // it, so this branch is inert there. Draw them faded rather than removing them.
+    const savedAlpha = ctx.globalAlpha;
+    if (token.dead) ctx.globalAlpha = savedAlpha * 0.28;
+
     if (infoHover) {
         ctx.beginPath();
         ctx.arc(sx, sy, sr + 5, 0, Math.PI * 2);
@@ -55,6 +60,8 @@ function drawOneToken(token) {
         ctx.textAlign    = "left";
         ctx.textBaseline = "top";
     }
+
+    ctx.globalAlpha = savedAlpha;
 }
 
 // Returns the effective range in feet for any action (attack or spell).
