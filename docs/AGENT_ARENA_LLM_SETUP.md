@@ -1,12 +1,14 @@
 # Wiring up the LLM agent
 
-How to run the arena with a real model behind [`src/arena/llm_agent.py`](../src/arena/llm_agent.py).
-Everything else in the arena (scripted agents, matches, transcripts) runs offline; **only the
-`LLMAgent` calls out to a model and spends tokens.**
+How to run the arena with a real model. Two adapters exist —
+[`LLMAgent`](../src/arena/llm_agent.py) (**Claude**, §1–6) and
+[`OpenRouterAgent`](../src/arena/openrouter_agent.py) (**OpenRouter**, incl. free models, §7).
+Everything else (scripted agents, matches, transcripts) runs offline; **only these adapters call
+out to a model and spend tokens.**
 
-> The core arena is provider-neutral (plain-JSON tools and observations). `LLMAgent` is the
-> **Claude** adapter and the first one built; another provider (OpenRouter, an open-weight
-> model, …) is a new `Agent` subclass against the same interface — see *Other providers* below.
+> The core arena is provider-neutral (plain-JSON tools and observations) and the two adapters
+> share their prompt/notes/loop logic via `llm_common`. Sections 1–6 cover Claude; §7 covers
+> OpenRouter and cross-provider (Claude-vs-OpenRouter) matches.
 
 ## 1. Install the dependency
 
@@ -100,12 +102,35 @@ LLMAgent(
 - **Notes scratchpad:** the model may leave a short reminder to its next turn via an optional
   `note` on `end_turn`; it's echoed at the top of the next turn's prompt.
 
-## 7. Other providers
+## 7. OpenRouter (free & other models)
 
-`LLMAgent` is the Claude adapter. To try another provider, write a new `Agent` subclass whose
-`decide(observation, tools)` calls that provider and returns one `ToolCall` — the tools and
-observations are already plain JSON. Nothing else in the arena changes. (This repo's tooling
-generates Claude code only, so a non-Claude adapter is a deliberate addition you own.)
+`OpenRouterAgent` ([`src/arena/openrouter_agent.py`](../src/arena/openrouter_agent.py)) is the
+second adapter — it reaches any model on [OpenRouter](https://openrouter.ai) via their
+OpenAI-compatible API, including **free** ones (e.g. NVIDIA Nemotron). It shares all
+prompt/notes/loop logic with the Claude adapter (`llm_common`); only the request differs. Great
+for cheap experimentation and for surfacing where weaker models fail.
+
+1. **Install** — the `openai` SDK is in the same extra: `pip install -e ".[agents]"`.
+2. **Key (git-safe)** — put your OpenRouter key in **`secrets/openrouter.key`** (the whole
+   `secrets/` dir is git-ignored), or set `OPENROUTER_API_KEY`. The adapter reads it at
+   runtime via `resolve_credential` — it never lands in a command line, output, or Git.
+3. **Pick a tool-capable model** — not every free model supports function calling. Use
+   OpenRouter's **"Tools"** filter; a model without it will make no tool call and the run
+   fails loudly (which is often the point). Pass it with `--model`.
+4. **Run:**
+   ```bash
+   python -m examples.arena_openrouter_match --model nvidia/nemotron-nano-9b-v2:free
+   python -m examples.arena_openrouter_match --opponent claude          # cross-provider!
+   python -m examples.arena_openrouter_match --opponent openrouter:openai/gpt-4o-mini
+   ```
+   `run_match` takes any `Agent` per team, so **Claude-vs-OpenRouter matches work out of the
+   box** — the whole point of "use either". The default `--model` is a placeholder; verify a
+   current free tool-capable slug on OpenRouter, as their catalog changes.
+
+To add yet another provider, write a new `Agent` subclass whose `_request_action` calls it and
+returns one `ToolCall`, delegating `decide` to `llm_common.decide_one_action` — everything else
+is reused. (This repo's tooling generates Claude code only, so non-Claude adapters like the
+OpenRouter one are deliberate additions built against the shared interface.)
 
 ## 8. Troubleshooting
 
@@ -116,3 +141,8 @@ generates Claude code only, so a non-Claude adapter is a deliberate addition you
   usually a prompt/model mismatch. Check the model string and that tools were passed.
 - **A model rejects a parameter** (e.g. forced tool use, or `effort` on an old SDK) — upgrade
   `anthropic`, or adjust the knob for that model.
+- **OpenRouter: `No credential found for OPENROUTER_API_KEY`** — create `secrets/openrouter.key`
+  (git-ignored) with your key, or set `OPENROUTER_API_KEY`.
+- **OpenRouter: `ImportError: ... 'openai' package`** — run `pip install -e ".[agents]"`.
+- **OpenRouter: no tool call / immediate loud failure** — the chosen model likely can't do tool
+  calls. Pick one from OpenRouter's "Tools"-capable list.

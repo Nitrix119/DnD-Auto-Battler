@@ -32,9 +32,11 @@ web = [
     "python-multipart>=0.0.9",
 ]
 # The LLM-backed arena agents. Optional: the engine and the headless arena (scripted
-# agents, matches, transcripts) run without it — only src/arena/llm_agent.py needs it.
+# agents, matches, transcripts) run without these. anthropic -> src/arena/llm_agent.py
+# (Claude); openai -> src/arena/openrouter_agent.py (OpenRouter's OpenAI-compatible API).
 agents = [
     "anthropic>=0.40.0",
+    "openai>=1.0",
 ]
 
 [project.urls]
