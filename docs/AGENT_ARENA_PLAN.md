@@ -280,9 +280,12 @@ infer, as at a real table.
 
 ## 6. Milestones
 
-**Status: milestone-1 code complete and offline-green. The `LLMAgent` (Claude) is built
-and mock-tested; the only thing left is running it *live* (needs the user's API key). The
-full scripted pipeline runs end-to-end and deterministically.**
+**Status: milestone 1 complete and validated live — a Claude-vs-scripted match ran for
+~$0.19 with 0 illegal moves. Since then: durable per-match logging (`Transcript.save_auto`
+→ git-ignored `matches/`), a client-side `/playback` page, and a **second provider adapter
+(OpenRouter, incl. free models)** so Claude / OpenRouter / scripted can be freely mixed
+(cross-provider matches work via `run_match`). Next: batch runner + win-rate scoring, and
+skill-revealing scenarios.**
 
 ### Milestone 1 — Foundation + one live LLM turn (current)
 TDD throughout (a test that **executes** the loop, not one that inspects shapes —
@@ -325,8 +328,9 @@ observation only when revealed (default on; hide it for the info-asymmetry exper
   reintroduce a keyed session store, removed per CLAUDE.md §9 2026-08-08). After replay.
 - `legendary_action` / **reaction** support in the tool set (fire on *other* entities'
   turns — outside the milestone-1 "own turn" loop).
-- **Multi-agent teams** (B1) — several brains per side, coordinating; richer heuristics;
-  non-Claude adapters (E4).
+- **Multi-agent teams** (B1) — several brains per side, coordinating; and richer heuristics.
+  _(Non-Claude adapters (E4) are **done** — `openrouter_agent.py` reaches any OpenRouter
+  model via its OpenAI-compatible API; the shared prompt/loop lives in `llm_common.py`.)_
 
 ---
 
@@ -334,12 +338,14 @@ observation only when revealed (default on; hide it for the info-asymmetry exper
 
 **New (`src/arena/`):** `__init__.py`, `information_policy.py`, `observation.py`,
 `action_space.py`, `tools.py`, `agent.py`, `turn_driver.py`, `transcript.py`, `match.py`,
-`setup.py`, `llm_agent.py`.
+`setup.py`, `llm_common.py` (shared LLM prompt/loop), `llm_agent.py` (Claude),
+`openrouter_agent.py` (OpenRouter), `credentials.py` (git-safe key resolution).
 **New (docs/examples):** `docs/AGENT_ARENA_LLM_SETUP.md`, `examples/arena_match.py`,
-`examples/arena_llm_match.py`.
+`examples/arena_llm_match.py`, `examples/arena_openrouter_match.py`.
 **New (tests, mirroring `tests/`):** `tests/arena/test_action_space.py`,
-`test_observation.py`, `test_tools.py`, `test_turn_driver.py`, `test_match.py`, and a
-mocked-LLM `test_llm_agent.py` (patch the API client — no network in the suite).
+`test_observation.py`, `test_tools.py`, `test_turn_driver.py`, `test_match.py`,
+`test_transcript.py`, and mocked-client `test_llm_agent.py` / `test_llm_common.py` /
+`test_openrouter_agent.py` / `test_credentials.py` (no network in the suite).
 **New (demo):** `examples/arena_match.py`.
 **Modified:** `pyproject.toml` (`anthropic` under `[agents]`), `README.md`,
 `CLAUDE.md` §8 (document `src/arena/`).
