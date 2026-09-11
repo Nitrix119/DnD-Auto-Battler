@@ -67,6 +67,9 @@ def main() -> None:
             line = call["name"]
         print(f"  [{actor}] {line}")
 
+    path = transcript.save_auto(label="scripted-vs-scripted")
+    print(f"\nTranscript saved to {path} ({len(transcript.records)} records).")
+
 
 if __name__ == "__main__":
     main()

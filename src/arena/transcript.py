@@ -10,11 +10,20 @@ The records are plain dicts and serialize to JSONL (one record per line).
 """
 
 import json
+import re
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from src.arena.tools import ToolCall
+
+DEFAULT_MATCH_DIR = "matches"
+
+
+def _slugify(label: str) -> str:
+    """Reduce *label* to a filename-safe token (letters, digits, dot, dash, underscore)."""
+    return re.sub(r"[^A-Za-z0-9._-]+", "-", label).strip("-")
 
 
 @dataclass
@@ -83,3 +92,28 @@ class Transcript:
 
     def save(self, path: str) -> None:
         Path(path).write_text(self.to_jsonl(), encoding="utf-8")
+
+    def save_auto(self, directory: str = DEFAULT_MATCH_DIR, label: str = "") -> Path:
+        """Write the transcript under *directory* with a unique, sortable filename.
+
+        Names are ``YYYYMMDD_HHMMSS_<label>_seed<seed>.jsonl`` (Windows-safe — no colons),
+        so runs sort chronologically and never overwrite each other. A same-second collision
+        gets a ``_2``/``_3`` suffix. Returns the path written. The directory is created if
+        needed; ``matches/`` is git-ignored, so logs stay out of Git. Open any of them in the
+        ``/playback`` page via its file picker.
+        """
+        target = Path(directory)
+        target.mkdir(parents=True, exist_ok=True)
+
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        seed_part = f"seed{self.seed}" if self.seed is not None else "noseed"
+        base = "_".join(p for p in (stamp, _slugify(label), seed_part) if p)
+
+        path = target / f"{base}.jsonl"
+        n = 2
+        while path.exists():
+            path = target / f"{base}_{n}.jsonl"
+            n += 1
+
+        self.save(str(path))
+        return path

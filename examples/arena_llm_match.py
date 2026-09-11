@@ -66,8 +66,8 @@ def main() -> None:
     for team, frac in result.hp_fraction.items():
         print(f"  team {team}: {frac:.0%} HP remaining")
 
-    path = "llm_match.jsonl"
-    transcript.save(path)
+    label = f"{args.model}_vs_{'llm' if args.llm_vs_llm else 'scripted'}"
+    path = transcript.save_auto(label=label)
     print(f"\nTranscript saved to {path} ({len(transcript.records)} records).")
 
 
